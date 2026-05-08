@@ -120,18 +120,9 @@ A question is removed from this list when a decision is made and recorded in the
 
 ---
 
-### Q2-3: Intraday minute-bar data source for backtesting
+### ~~Q2-3: Intraday minute-bar data source for backtesting~~ ✓ RESOLVED
 
-**Context:** Backtesting the intraday track requires historical minute-bar OHLCV data to compute ORB levels, VWAP, and per-minute volume. Kite Connect's historical API provides up to 60 days of minute-bar data per instrument. Walk-forward backtesting needs 2-4 years of data.
-
-**Question:** Where does historical minute-bar data come from for intraday backtest periods beyond the Kite 60-day window?
-
-**Options:**
-- A: Accept that intraday track cannot be fully walk-forward backtested. Use paper trading (6+ months) as the only validation gate for intraday. Walk-forward applies to long-term and swing only.
-- B: Purchase historical minute-bar data from a vendor (NSE tick data archives, Refinitiv, or Indian vendors like GlobalDataFeeds or Truedata). Cost: ₹2,000-10,000/year.
-- C: Build up minute-bar data organically — collect and store 1-minute bars from the live Kite tick feed daily. After 1 year, walk-forward on that data. Live paper trading serves as validation in the interim.
-
-**Action needed:** Operator decision. This affects both Phase 2 (collector adds a `minute_bars` table) and Phase 4 (backtesting harness).
+**Decision (2026-05-09):** Option C — organic accumulation via Kite tick feed into date-partitioned parquet files. No vendor cost; Kite/Fyers provide up to 60-day rolling window via API, but this window is insufficient for walk-forward backtesting. The collector writes minute bars to parquet from day one of operation. After ~12 months, the intraday track becomes walk-forward testable. In the interim, paper trading is the validation gate. `prices_minute` table is parquet-only (never SQLite). Documented in `designs/phase-2-collector.md`.
 
 ---
 
