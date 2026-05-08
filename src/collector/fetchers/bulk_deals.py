@@ -16,7 +16,7 @@ import uuid
 from datetime import date, datetime
 from pathlib import Path
 
-from collector.base import BaseFetcher, _fmt_dt
+from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
 from collector.models import (
     DataSource,
     Exchange,
@@ -68,6 +68,11 @@ class NseBulkDealsFetcher(BaseFetcher):
         return _NSE_BULK_DEALS_URL.format(date=d.strftime("%d%m%Y"))
 
     def validate(self, result: FetchResult) -> None:
+        if result.status_code == 404:
+            # NSE publishes nothing on weekends/holidays — not a retryable error.
+            raise PermanentFetchError(
+                "NSE bulk deals: 404 — no file for this date (market closed?)"
+            )
         if result.status_code != 200:
             raise ValueError(f"NSE bulk deals: HTTP {result.status_code}")
         text = result.body.decode("utf-8", errors="replace")

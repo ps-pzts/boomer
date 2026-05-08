@@ -18,7 +18,7 @@ import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
-from collector.base import BaseFetcher
+from collector.base import BaseFetcher, PermanentFetchError
 from collector.models import DataSource, Exchange, FetchResult, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,7 @@ class NsePricesFetcher(BaseFetcher):
 
     def validate(self, result: FetchResult) -> None:
         if result.status_code == 404:
-            # Holiday or non-trading day — not an error; caller should handle.
-            raise ValueError("NSE prices: 404 — likely non-trading day")
+            raise PermanentFetchError("NSE prices: 404 — likely non-trading day")
         if result.status_code != 200:
             raise ValueError(f"NSE prices: HTTP {result.status_code}")
         # Expect CSV content: should contain SYMBOL,SERIES,OPEN,...

@@ -155,5 +155,5 @@ def test_validate_404_raises(tmp_path):
         body=b"Not Found", content_hash="z",
         fetched_at=datetime(2024, 4, 22),
     )
-    with pytest.raises(ValueError, match="404"):
+    with pytest.raises(Exception, match="404"):
         fetcher.validate(bad)

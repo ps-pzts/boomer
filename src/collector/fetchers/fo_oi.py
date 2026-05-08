@@ -21,7 +21,7 @@ import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
-from collector.base import BaseFetcher, _fmt_dt
+from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
 from collector.models import DataSource, FetchResult, InstrumentType, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,9 @@ class FoOiFetcher(BaseFetcher):
 
     def validate(self, result: FetchResult) -> None:
         if result.status_code == 404:
-            raise ValueError("F&O OI: 404 — likely non-trading day or data not published yet")
+            raise PermanentFetchError(
+                "F&O OI: 404 — likely non-trading day or data not published yet"
+            )
         if result.status_code != 200:
             raise ValueError(f"F&O OI: HTTP {result.status_code}")
         # Response is a ZIP; check magic bytes.

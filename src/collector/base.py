@@ -28,6 +28,12 @@ from collector.models import DataSource, FetchResult, ParseStatus, RawArchiveRow
 
 logger = logging.getLogger(__name__)
 
+
+class PermanentFetchError(Exception):
+    """Raised when a fetch should not be retried — e.g. 404 on a date-stamped file
+    that doesn't exist because the market was closed today."""
+
+
 # Exponential backoff delays in seconds: attempt 0→1, 1→2, 2→3, 3→4, 4→alert+stop
 _BACKOFF = [30, 60, 300, 1800]
 
@@ -67,6 +73,9 @@ class BaseFetcher(ABC):
         """
         Full collection cycle for one fetch. Handles backoff and error isolation.
         Returns the RawArchiveRow written, or None if all retries exhausted.
+
+        Raises PermanentFetchError immediately (no retries) — used for 404s on
+        date-stamped files where the file simply doesn't exist (weekend/holiday).
         """
         url = self.fetch_url(**kwargs)
         for attempt in range(len(_BACKOFF) + 1):
@@ -74,6 +83,9 @@ class BaseFetcher(ABC):
                 result = self.transport(url, **kwargs)
                 self.validate(result)
                 return self.archive(result)
+            except PermanentFetchError as exc:
+                logger.info("fetch skipped source=%s: %s", self.source, exc)
+                return None
             except Exception as exc:
                 if attempt < len(_BACKOFF):
                     delay = _BACKOFF[attempt]
