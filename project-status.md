@@ -6,9 +6,9 @@
 
 ---
 
-## Status: Phase 3 complete
+## Status: Phase 4 complete
 
-**Current phase:** Phase 3 (Brain) implemented and tested. Ready to begin Phase 4 (Executor).
+**Current phase:** Phase 4 (Executor & Backtesting) implemented and tested. Ready to begin Phase 5 (Orchestrator & Ops).
 
 **Last updated:** 2026-05-10
 
@@ -31,14 +31,13 @@
 
 ## What's in progress
 
-_Nothing — Phase 3 complete, Phase 4 not started._
+_Nothing — Phase 4 complete, Phase 5 not started._
 
 ---
 
 ## What's next (implementation order)
 
-1. **Phase 4: Executor** — broker abstraction, GTT lifecycle, backtesting engine
-2. **Phase 5: Orchestrator** — scheduler, dashboard, alert layer
+1. **Phase 5: Orchestrator** — scheduler, dashboard, alert layer
 
 ---
 
@@ -62,13 +61,36 @@ Key ones resolved in Phase 3 implementation:
 - Q3-1: bull_volatile now covers all above-DMA states with elevated VIX; ATR stops scaled 1.5× in Volatile Uptrend
 - Q3-2: Option B — red-flag filings (fraud, auditor change, pledging) trigger immediate Stage 4b exit re-evaluation; entries still morning-batch only
 
-Key ones to resolve before first live trade:
-- Q4-1: LTP source contract (Kite WebSocket vs REST fallback)
-- Q4-3: Fyers GTC OCO verification (confirm API supports it before coding)
+Key ones resolved in Phase 4 implementation:
+- Q4-1: Kite WebSocket tick feed is authoritative LTP; 5-minute staleness threshold falls back to REST quote
+- Q4-3: FyersBroker confirmed (user has API access); GTC/OCO pending paper-trading verification before first live delivery trade
+- Q4-2: Trailing stops continue in paused mode; orchestrator (Phase 5) owns pause/resume signal
+- Q3-5: `graduate_position()` implemented — cancels OCO, places 3×ATR stop OCO, updates track to long_term
 
 ---
 
 ## Change log
+
+### 2026-05-10 — Phase 4: Executor & Backtesting
+
+- `migrations/0004_executor_schema.sql`: 9 tables — orders, executions, positions, gtt_orders, reconciliation_alerts, executor_errors, backtest_runs, backtest_trades, backtest_daily_state
+- `src/executor/models.py`: OrderStatus (10 states), ALLOWED_TRANSITIONS dict, TERMINAL_STATUSES, GttStatus/OrderSide/OrderType/OrderValidity/ProductType/GttType/BrokerName enums; OrderRequest/GttRequest/OrderRecord/PositionRecord/GttOrderRecord/BrokerPosition/BrokerFunds/PriceBar/StateMachineError/PreTradeCheckError dataclasses
+- `src/executor/brokers/base.py`: Abstract Broker — 15 interface methods; `get_historical_ohlcv()` and `get_ltp()` as optional overrides
+- `src/executor/brokers/mock_broker.py`: `set_price_bar()` drives time; deterministic fills (market at open, limit when bar crosses, GTT single/OCO trigger detection)
+- `src/executor/brokers/paper_broker.py`: Wraps MockBroker with live KiteBroker as price source; `register_tick()` feeds fills
+- `src/executor/brokers/kite_broker.py`: kiteconnect SDK; Kite WebSocket authoritative tick feed; 5-min LTP staleness; GTT single/OCO; historical OHLCV (1 instrument/request per Q4-4)
+- `src/executor/brokers/fyers_broker.py`: fyers-apiv3 SDK; NSE:SYMBOL-EQ format; GTT single/OCO via `triggerType=1/2`; `on_tick()` no-op (Kite is authoritative)
+- `src/executor/order_manager.py`: `_TRACK_BROKER = {intraday: KITE, swing: FYERS, long_term: FYERS}`; 8 pre-trade checks (qty, price sanity 5%, idempotency 30s, funds, symbol, market hours, circuit 20%, GTT dup); state machine enforces ALLOWED_TRANSITIONS
+- `src/executor/gtt_manager.py`: GTT lifecycle (place/modify/cancel/trail); `trail_stop()` — gain ≥ 2×ATR advances stop 1×ATR; `daily_reconcile()` syncs broker GTT status; `graduate_position()` hook to PositionManager
+- `src/executor/reconciliation.py`: 60s intraday (Kite positions + Fyers holdings), EOD full (both brokers + cash); `has_open_alerts()` / `resolve_alert()` for blocking
+- `src/executor/position_manager.py`: `open_position()` sets unprotected_flag=1; `graduate_position()` swing→long_term reclassification; `handle_exit_recommendation()` auto-submits for swing/intraday, defers long_term unless forced_derisking
+- `src/executor/intraday.py`: 30-min cycle with threading.Lock (skip if busy); 30-min signal validity; 60-min per-stock cooldown; 3 failures → disabled_for_day; `square_off_all_intraday()` checks 09:30-09:50 UTC (15:00-15:20 IST)
+- `src/backtester/costs.py`: Indian cost model — intraday (min(₹20, 0.03%) brokerage + 0.025% STT sell-only + exchange + GST + SEBI + stamp); delivery (₹0 brokerage + 0.1% STT both legs); worked example matches Phase 4 design doc
+- `src/backtester/slippage.py`: Market 5 bps base × liquidity/volatility adj; stop 1.5× base; limit fills at limit price; `SlippageResult` dataclass
+- `src/backtester/simulation.py`: `BacktestSimulation(db, config, price_loader, feature_loader, universe)` — full walk-forward; Sharpe threshold 1.3 (survivorship bias correction); holdout tracking via code hash; persists runs/trades/daily_states to SQLite
+- 93 new executor+backtester tests (315 total); 0 failures; lint clean (ruff)
+- Bug fixed: GTT `daily_reconcile()` key lookup — extended to handle `broker_gtt_id` key in MockBroker dicts alongside `id`/`trigger_id`
+- Bug fixed: circuit check test — price sanity check (5%) fires before circuit check (20%) for the same extreme-price scenario; test renamed to `test_extreme_price_rejected`
 
 ### 2026-05-10 — Phase 3: Brain Framework
 
