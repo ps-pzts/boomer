@@ -108,7 +108,7 @@ def _write_conn() -> sqlite3.Connection:
 @app.get("/", response_class=HTMLResponse)
 async def today(request: Request, _: AuthDep) -> HTMLResponse:
     snap = get_today_snapshot(DB_PATH, _run_date())
-    return templates.TemplateResponse("today.html", {"request": request, "snap": snap})
+    return templates.TemplateResponse(request, "today.html", {"snap": snap})
 
 
 # ─── View 2: Approvals ─────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ async def today(request: Request, _: AuthDep) -> HTMLResponse:
 @app.get("/approvals", response_class=HTMLResponse)
 async def approvals(request: Request, _: AuthDep) -> HTMLResponse:
     recs = get_pending_recommendations(DB_PATH)
-    return templates.TemplateResponse("approvals.html", {"request": request, "recs": recs})
+    return templates.TemplateResponse(request, "approvals.html", {"recs": recs})
 
 
 @app.post("/approvals/{rec_id}/approve")
@@ -185,8 +185,7 @@ async def positions(request: Request, _: AuthDep, page: int = 1) -> HTMLResponse
     total = len(all_pos)
     start = (page - 1) * PAGE_SIZE
     page_pos = all_pos[start : start + PAGE_SIZE]
-    return templates.TemplateResponse("positions.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "positions.html", {
         "positions": page_pos,
         "total": total,
         "page": page,
@@ -200,7 +199,7 @@ async def positions(request: Request, _: AuthDep, page: int = 1) -> HTMLResponse
 @app.get("/capital", response_class=HTMLResponse)
 async def capital_risk(request: Request, _: AuthDep) -> HTMLResponse:
     view = get_capital_view(DB_PATH)
-    return templates.TemplateResponse("capital_risk.html", {"request": request, "capital": view})
+    return templates.TemplateResponse(request, "capital_risk.html", {"capital": view})
 
 
 # ─── View 5: System Health ────────────────────────────────────────────────────
@@ -209,8 +208,7 @@ async def capital_risk(request: Request, _: AuthDep) -> HTMLResponse:
 async def system_health(request: Request, _: AuthDep) -> HTMLResponse:
     runs = get_recent_task_runs(DB_PATH, hours=24)
     errors = get_recent_errors(DB_PATH, limit=50)
-    return templates.TemplateResponse("system_health.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "system_health.html", {
         "task_runs": runs,
         "errors": errors,
     })
