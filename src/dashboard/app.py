@@ -107,6 +107,11 @@ def _write_conn() -> sqlite3.Connection:
 
 # ─── View 1: Today ─────────────────────────────────────────────────────────────
 
+@app.get("/boomer")
+async def boomer_redirect(_: AuthDep) -> RedirectResponse:
+    return RedirectResponse("/", status_code=301)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def today(request: Request, _: AuthDep) -> HTMLResponse:
     snap = get_today_snapshot(DB_PATH, _run_date())
