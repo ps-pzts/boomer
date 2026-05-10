@@ -39,6 +39,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from ..banner import log_dashboard_online
 from .queries import (
     get_capital_view,
     get_open_positions,
@@ -87,6 +88,7 @@ AuthDep = Annotated[str, Depends(_verify_credentials)]
 async def startup() -> None:
     import asyncio
     asyncio.create_task(live_pusher(DB_PATH))
+    log_dashboard_online()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
