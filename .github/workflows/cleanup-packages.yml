@@ -1,0 +1,133 @@
+name: Cleanup GHCR Packages
+
+on:
+  schedule:
+    - cron: "30 3 * * *" # 3:30 AM UTC = 9 AM IST, daily
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  cleanup:
+    name: Prune old container images
+    runs-on: ubuntu-latest
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: Prune GHCR versions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const PACKAGE   = 'boomer';
+            const KEEP_MAIN = 5;   // most recent sha-* (main branch) builds to keep
+            const KEEP_PR   = 3;   // most recent builds per PR to keep
+
+            const owner = context.repo.owner;
+
+            // ── fetch all versions (org or user account) ──────────────────
+            async function listVersions() {
+              try {
+                const { data } = await github.rest.packages
+                  .getAllPackageVersionsForPackageOwnedByOrg({
+                    org: owner, package_type: 'container', package_name: PACKAGE,
+                    per_page: 100,
+                  });
+                return { data, isOrg: true };
+              } catch {
+                const { data } = await github.rest.packages
+                  .getAllPackageVersionsForPackageOwnedByUser({
+                    username: owner, package_type: 'container', package_name: PACKAGE,
+                    per_page: 100,
+                  });
+                return { data, isOrg: false };
+              }
+            }
+
+            async function deleteVersion(id, isOrg) {
+              if (isOrg) {
+                await github.rest.packages.deletePackageVersionForOrg({
+                  org: owner, package_type: 'container',
+                  package_name: PACKAGE, version_id: id,
+                });
+              } else {
+                await github.rest.packages.deletePackageVersionForUser({
+                  username: owner, package_type: 'container',
+                  package_name: PACKAGE, version_id: id,
+                });
+              }
+            }
+
+            // ── load and sort newest-first ────────────────────────────────
+            const { data: versions, isOrg } = await listVersions();
+            console.log(`Found ${versions.length} total versions (isOrg=${isOrg})`);
+
+            const sorted = [...versions].sort(
+              (a, b) => new Date(b.created_at) - new Date(a.created_at)
+            );
+
+            const tags = v => v.metadata?.container?.tags ?? [];
+
+            // ── group by type ─────────────────────────────────────────────
+            // Main branch: versions tagged sha-* (also carry the `latest` tag)
+            const mainBuilds = sorted.filter(v => tags(v).some(t => t.startsWith('sha-')));
+
+            // PR builds: versions tagged pr-<number>
+            const prMap = {};
+            for (const v of sorted) {
+              const prTag = tags(v).find(t => t.startsWith('pr-'));
+              if (prTag) {
+                const num = prTag.replace(/^pr-/, '');
+                (prMap[num] = prMap[num] ?? []).push(v);
+              }
+            }
+
+            // ── decide what to delete ─────────────────────────────────────
+            const toDelete = new Set();
+
+            // Keep last KEEP_MAIN from main, delete the rest
+            mainBuilds.slice(KEEP_MAIN).forEach(v => toDelete.add(v));
+
+            // Keep last KEEP_PR per PR, delete the rest
+            for (const pvs of Object.values(prMap)) {
+              pvs.slice(KEEP_PR).forEach(v => toDelete.add(v));
+            }
+
+            // Delete all untagged orphan layers
+            sorted.filter(v => tags(v).length === 0).forEach(v => toDelete.add(v));
+
+            console.log(
+              `Keeping: ${mainBuilds.slice(0, KEEP_MAIN).length} main builds, ` +
+              `${Object.keys(prMap).length} PR(s) × up to ${KEEP_PR} each`
+            );
+            console.log(`Deleting: ${toDelete.size} versions`);
+
+            // ── delete ────────────────────────────────────────────────────
+            let deleted = 0, failed = 0;
+            for (const v of toDelete) {
+              const label = tags(v).join(', ') || '(untagged)';
+              try {
+                await deleteVersion(v.id, isOrg);
+                console.log(`  ✓ deleted ${v.id}  [${label}]  ${v.created_at}`);
+                deleted++;
+              } catch (err) {
+                console.error(`  ✗ failed  ${v.id}  [${label}]: ${err.message}`);
+                failed++;
+              }
+            }
+
+            const summary = `Cleanup complete — deleted: ${deleted}, failed: ${failed}`;
+            console.log(summary);
+            await core.summary
+              .addHeading('GHCR Cleanup')
+              .addTable([
+                [{data: 'Metric', header: true}, {data: 'Count', header: true}],
+                ['Total versions found', String(versions.length)],
+                ['Main builds kept',     String(Math.min(mainBuilds.length, KEEP_MAIN))],
+                ['PR builds kept',       String(Object.keys(prMap).length) + ` PR(s) × ${KEEP_PR}`],
+                ['Deleted',              String(deleted)],
+                ['Failed to delete',     String(failed)],
+              ])
+              .write();
