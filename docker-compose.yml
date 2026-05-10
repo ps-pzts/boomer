@@ -1,0 +1,54 @@
+version: "3.9"
+
+# Shared data volume — all containers read/write the same SQLite DB
+volumes:
+  boomer_data:
+
+# Common env — override in .env file (see .env.example)
+x-common-env: &common-env
+  BOOMER_DB_PATH: /var/lib/boomer/boomer.db
+  BOOMER_ARCHIVE_DIR: /var/lib/boomer/archive
+  BOOMER_BACKUP_DIR: /var/lib/boomer/backups
+  PYTHONPATH: /app/src
+  # Broker (required for live/paper — leave blank for dry-run)
+  KITE_API_KEY: ${KITE_API_KEY:-}
+  KITE_ACCESS_TOKEN: ${KITE_ACCESS_TOKEN:-}
+  FYERS_CLIENT_ID: ${FYERS_CLIENT_ID:-}
+  FYERS_ACCESS_TOKEN: ${FYERS_ACCESS_TOKEN:-}
+  # Alerts (optional)
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
+  ALERT_SMTP_PORT: ${ALERT_SMTP_PORT:-587}
+  ALERT_SMTP_USER: ${ALERT_SMTP_USER:-}
+  ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
+  ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+  ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+  # Dashboard auth
+  BASIC_AUTH_USER: ${BASIC_AUTH_USER:-boomer}
+  BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-changeme}
+
+services:
+  # ── Orchestrator ────────────────────────────────────────────────────────────
+  orchestrator:
+    build: .
+    command: python -m src.orchestrator.orchestrator
+    volumes:
+      - boomer_data:/var/lib/boomer
+    environment:
+      <<: *common-env
+    restart: unless-stopped
+
+  # ── Dashboard ───────────────────────────────────────────────────────────────
+  dashboard:
+    build: .
+    command: uvicorn src.dashboard.app:app --host 0.0.0.0 --port 8000
+    volumes:
+      - boomer_data:/var/lib/boomer
+    environment:
+      <<: *common-env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      - orchestrator

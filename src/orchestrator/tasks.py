@@ -51,6 +51,8 @@ def _early_morning_data_check(run_date: str, run_id: int, db_path: str, **_: obj
 
 def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: object) -> None:
     """Compute features for all Nifty 500 stocks as of run_date."""
+    from datetime import date as _date
+
     from src.brain.feature_store import FeatureStore
     from src.brain.features.computers import (
         compute_earnings_quality_features,
@@ -59,23 +61,25 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
         compute_promoter_features,
         compute_smart_money_features,
     )
-
     feature_store = FeatureStore(db_path)
     import sqlite3
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
-    symbols = [r[0] for r in conn.execute(
-        "SELECT DISTINCT symbol FROM instruments WHERE series IN ('EQ','BE') ORDER BY symbol"
-    ).fetchall()]
+    rows = conn.execute(
+        "SELECT DISTINCT nse_symbol FROM instruments WHERE series IN ('EQ','BE')"
+        " AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
+    ).fetchall()
     conn.close()
+    symbols = [r[0] for r in rows]
+    as_of = _date.fromisoformat(run_date)
 
     for sym in symbols:
         try:
-            compute_price_features(sym, run_date, feature_store, db_path)
-            compute_promoter_features(sym, run_date, feature_store, db_path)
-            compute_smart_money_features(sym, run_date, feature_store, db_path)
-            compute_filing_sentiment_features(sym, run_date, feature_store, db_path)
-            compute_earnings_quality_features(sym, run_date, feature_store, db_path)
+            compute_price_features(db_path, feature_store, sym, "NSE", as_of)
+            compute_promoter_features(db_path, feature_store, sym, "NSE", as_of)
+            compute_smart_money_features(db_path, feature_store, sym, "NSE", as_of)
+            compute_filing_sentiment_features(db_path, feature_store, sym, "NSE", as_of)
+            compute_earnings_quality_features(db_path, feature_store, sym, "NSE", as_of)
         except Exception as exc:
             logger.warning("feature_compute_failed symbol=%s error=%s", sym, exc)
     logger.info("morning_batch_features completed symbols=%d run_date=%s", len(symbols), run_date)
@@ -83,6 +87,10 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
 
 def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object) -> None:
     """Generate signals for all universe symbols."""
+    import sqlite3
+    from datetime import UTC
+    from datetime import datetime as _dt
+
     from src.brain.feature_store import FeatureStore
     from src.brain.regime import RegimeDetector
     from src.brain.signals.intraday import IntradaySignalGenerator
@@ -92,12 +100,34 @@ def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object
     feature_store = FeatureStore(db_path)
     regime_detector = RegimeDetector(db_path)
     current_regime = regime_detector.detect(run_date)
+    generated_at = _dt.now(UTC)
 
+    conn = sqlite3.connect(db_path, timeout=5)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT DISTINCT nse_symbol FROM instruments WHERE series IN ('EQ','BE')"
+        " AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
+    ).fetchall()
+    conn.close()
+    symbols = [r[0] for r in rows]
+
+    signal_count = 0
     for GenClass in (LongTermSignalGenerator, SwingSignalGenerator, IntradaySignalGenerator):
         gen = GenClass(db_path=db_path, feature_store=feature_store)
-        gen.generate_all(as_of=run_date, regime=current_regime)
+        for sym in symbols:
+            try:
+                features = feature_store.get_features_as_of(sym, "NSE", run_date)
+                sig = gen.generate(sym, "NSE", features, current_regime, generated_at)
+                if sig:
+                    feature_store.write_signal(sig)
+                    signal_count += 1
+            except Exception as exc:
+                logger.warning("signal_failed symbol=%s track=%s error=%s", sym, gen.track, exc)
 
-    logger.info("morning_batch_signals completed run_date=%s regime=%s", run_date, current_regime)
+    logger.info(
+        "morning_batch_signals completed signals=%d run_date=%s regime=%s",
+        signal_count, run_date, current_regime,
+    )
 
 
 def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_: object) -> None:
@@ -117,17 +147,36 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     pending_signals = conn.execute(
-        "SELECT * FROM signals WHERE signal_date=? AND status='pending'", (run_date,)
+        "SELECT * FROM signals WHERE DATE(generated_at)=?", (run_date,)
     ).fetchall()
     conn.close()
 
-    for sig in pending_signals:
+    for row in pending_signals:
         try:
-            plan = trade_planner.generate(sig["symbol"], sig["track"], run_date)
-            if plan:
-                packager.package(plan, run_date)
+            signal = feature_store.load_signal(row["signal_id"])
+            if signal is None:
+                continue
+            plan = trade_planner.generate(
+                signal=signal,
+                current_price=feature_store.latest_price(signal.stock_symbol, signal.exchange),
+                atr_14d=feature_store.latest_feature(
+                    signal.stock_symbol, signal.exchange, "atr_14d", run_date
+                ),
+                bucket_capital=portfolio.bucket_capital(signal.track, db_path),
+                risk_config=portfolio.risk_config(db_path),
+                generated_at=signal.generated_at,
+            )
+            if plan.decision == "proceed":
+                packager.package(
+                    plan=plan,
+                    entry_plan=None,
+                    signal=signal,
+                    position_size_shares=plan.position_size_shares,
+                )
         except Exception as exc:
-            logger.warning("recommendation_failed symbol=%s error=%s", sig["symbol"], exc)
+            logger.warning(
+                "recommendation_failed signal_id=%s error=%s", row["signal_id"], exc
+            )
 
     logger.info("morning_batch_recommendations completed run_date=%s", run_date)
 
@@ -162,7 +211,7 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     open_positions = conn.execute(
-        "SELECT position_id, symbol, track FROM positions WHERE status='open'"
+        "SELECT position_id, symbol, track FROM positions WHERE is_open=1"
     ).fetchall()
     conn.close()
 

@@ -7,3 +7,6 @@ build/
 .pytest_cache/
 *.db
 *.sqlite
+.env
+data/
+secrets.env

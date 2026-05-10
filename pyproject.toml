@@ -7,8 +7,20 @@ name = "boomer"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+    # Broker SDKs
     "kiteconnect>=5.0",
     "fyers-apiv3>=3.1",
+    # Web / dashboard
+    "fastapi[standard]>=0.111",   # includes uvicorn[standard], jinja2, python-multipart
+    # HTTP (collector fetchers)
+    "requests>=2.32",
+    # Data processing (collector, brain features)
+    "pandas>=2.2",
+    # NLP sentiment (collector)
+    "transformers>=4.40",
+    "torch>=2.3",
+    # Cron scheduling (orchestrator)
+    "croniter>=2.0",
 ]
 
 [project.optional-dependencies]
