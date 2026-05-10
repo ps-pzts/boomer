@@ -7,3 +7,9 @@ build/
 .pytest_cache/
 *.db
 *.sqlite
+.env
+data/
+secrets.env
+
+# Local dev guide — personal reference, not for the repo
+guide.md
