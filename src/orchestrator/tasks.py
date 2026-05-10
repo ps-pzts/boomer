@@ -139,11 +139,42 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
     logger.info("morning_batch_recommendations completed run_date=%s", run_date)
 
 
-def _pre_market_executor_setup(run_date: str, run_id: int, db_path: str, **_: object) -> None:
-    """Refresh broker tokens, sync instruments, pre-validate pending recommendations."""
-    # Token refresh is manual for Fyers (see Q5-3); log a reminder if Fyers token is stale.
-    # Kite token refresh is handled by the KiteBroker initialisation path.
-    logger.info("pre_market_executor_setup run_date=%s — verify broker tokens", run_date)
+def _pre_market_executor_setup(
+    run_date: str, run_id: int, db_path: str, brokers: list | None = None, **_: object
+) -> None:
+    """Refresh broker tokens via TOTP auto-login then re-authenticate broker objects."""
+    brokers = brokers or []
+    logger.info("pre_market_executor_setup run_date=%s — refreshing broker tokens", run_date)
+
+    try:
+        from src.executor.auto_login import refresh_all_broker_tokens
+
+        updated = refresh_all_broker_tokens()
+        if updated:
+            logger.info(
+                "pre_market_executor_setup: tokens refreshed brokers=%s", list(updated.keys())
+            )
+            # Re-authenticate live broker objects so they use the new tokens
+            for broker in brokers:
+                try:
+                    broker.authenticate()
+                    logger.info(
+                        "pre_market_executor_setup: broker re-authenticated broker=%s",
+                        broker.broker_id,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "pre_market_executor_setup: re-auth failed broker=%s error=%s",
+                        broker.broker_id,
+                        exc,
+                    )
+        else:
+            logger.info(
+                "pre_market_executor_setup: no TOTP credentials configured — "
+                "update .env with KITE_TOTP_SECRET / FYERS_TOTP_SECRET for automated login"
+            )
+    except Exception as exc:
+        logger.error("pre_market_executor_setup: auto_login error — %s", exc)
 
 
 def _intraday_cycle(
@@ -199,13 +230,23 @@ def _intraday_squareoff(
 
 
 def _eod_reconciliation(
-    run_date: str, run_id: int, db_path: str, reconciler: object = None, **_: object
+    run_date: str,
+    run_id: int,
+    db_path: str,
+    reconciler: object = None,
+    brokers: list | None = None,
+    **_: object,
 ) -> None:
-    """Full EOD reconciliation: bot positions vs broker positions + orders."""
-    if reconciler is None:
-        logger.warning("eod_reconciliation: no reconciler injected, running stub")
+    """Full EOD reconciliation: bot positions vs broker positions + capital sync."""
+    brokers = brokers or []
+    if reconciler is None and not brokers:
+        logger.warning("eod_reconciliation: no reconciler or brokers configured, skipping")
         return
-    reconciler.run_eod(run_date=run_date)  # type: ignore[attr-defined]
+    if reconciler is not None:
+        reconciler.run_eod(run_date=run_date)  # type: ignore[attr-defined]
+    if brokers:
+        from src.orchestrator.capital_sync import sync_eod_capital
+        sync_eod_capital(db_path, brokers, run_date)
     logger.info("eod_reconciliation completed run_date=%s", run_date)
 
 
@@ -250,11 +291,13 @@ def build_task_registry(
     backup_dir: str,
     intraday_runner: object | None = None,
     reconciler: object | None = None,
+    brokers: list | None = None,
 ) -> dict[str, TaskDefinition]:
     """Return all 12 task definitions wired with runtime dependencies."""
     common = {"db_path": db_path, "archive_dir": archive_dir, "backup_dir": backup_dir}
     intraday_deps = {"intraday_runner": intraday_runner}
-    eod_deps = {"reconciler": reconciler}
+    broker_deps = {"brokers": brokers or []}
+    eod_deps = {"reconciler": reconciler, "brokers": brokers or []}
 
     def _wrap(fn: object, extra: dict) -> object:
         import functools
@@ -309,7 +352,7 @@ def build_task_registry(
         ),
         "pre_market_executor_setup": TaskDefinition(
             task_id="pre_market_executor_setup",
-            fn=_wrap(_pre_market_executor_setup, {}),  # type: ignore[arg-type]
+            fn=_wrap(_pre_market_executor_setup, broker_deps),  # type: ignore[arg-type]
             schedule="0 9 * * 1-5",
             dependencies=["morning_batch_recommendations"],
             timeout_seconds=300,
