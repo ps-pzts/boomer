@@ -48,11 +48,11 @@ _FYERS_VALIDITY = {
 
 # Fyers order status codes → our OrderStatus
 _FYERS_STATUS_MAP: dict[int, OrderStatus] = {
-    1: OrderStatus.PENDING,    # Pending
-    2: OrderStatus.FILLED,     # Traded
+    1: OrderStatus.PENDING,  # Pending
+    2: OrderStatus.FILLED,  # Traded
     4: OrderStatus.CANCELLED,  # Cancelled
-    5: OrderStatus.REJECTED,   # Rejected
-    6: OrderStatus.PARTIAL,    # Partially traded
+    5: OrderStatus.REJECTED,  # Rejected
+    6: OrderStatus.PARTIAL,  # Partially traded
 }
 
 # Fyers GTT type codes
@@ -157,15 +157,17 @@ class FyersBroker(Broker):
             if p.get("netQty", 0) == 0:
                 continue
             sym, exch = self._parse_fyers_symbol(p["symbol"])
-            positions.append(BrokerPosition(
-                symbol=sym,
-                exchange=exch,
-                quantity=p["netQty"],
-                average_price=p.get("netAvg", 0.0),
-                last_price=p.get("ltp", 0.0),
-                product=ProductType.MIS,
-                broker_id=BrokerName.FYERS,
-            ))
+            positions.append(
+                BrokerPosition(
+                    symbol=sym,
+                    exchange=exch,
+                    quantity=p["netQty"],
+                    average_price=p.get("netAvg", 0.0),
+                    last_price=p.get("ltp", 0.0),
+                    product=ProductType.MIS,
+                    broker_id=BrokerName.FYERS,
+                )
+            )
         return positions
 
     def list_holdings(self) -> list[BrokerPosition]:
@@ -176,15 +178,17 @@ class FyersBroker(Broker):
             if h.get("quantity", 0) <= 0:
                 continue
             sym, exch = self._parse_fyers_symbol(h["symbol"])
-            holdings.append(BrokerPosition(
-                symbol=sym,
-                exchange=exch,
-                quantity=h["quantity"],
-                average_price=h.get("costPrice", 0.0),
-                last_price=h.get("ltp", 0.0),
-                product=ProductType.CNC,
-                broker_id=BrokerName.FYERS,
-            ))
+            holdings.append(
+                BrokerPosition(
+                    symbol=sym,
+                    exchange=exch,
+                    quantity=h["quantity"],
+                    average_price=h.get("costPrice", 0.0),
+                    last_price=h.get("ltp", 0.0),
+                    product=ProductType.CNC,
+                    broker_id=BrokerName.FYERS,
+                )
+            )
         return holdings
 
     def get_funds(self) -> BrokerFunds:

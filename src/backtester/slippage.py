@@ -8,9 +8,9 @@ from executor.models import OrderSide, OrderType
 @dataclass(frozen=True)
 class SlippageResult:
     fill_price: float
-    slippage_amount: float   # absolute ₹ per share
-    slippage_bps: float      # basis points of reference price
-    filled: bool             # False if limit order didn't cross
+    slippage_amount: float  # absolute ₹ per share
+    slippage_bps: float  # basis points of reference price
+    filled: bool  # False if limit order didn't cross
 
 
 class SlippageModel:
@@ -32,10 +32,10 @@ class SlippageModel:
         slippage_bps = 0.25/500 × 10000 = 5.0 bps ✓
     """
 
-    BASE_SLIPPAGE_PCT = 0.0005      # 5 bps base for market orders
-    STOP_SLIPPAGE_FACTOR = 1.5      # stops fill worse in fast markets
-    ADV_IMPACT_THRESHOLD = 0.001    # 0.1% of ADV — above this, liquidity penalty kicks in
-    ATR_NORMAL_PCT = 0.02           # 2% ATR reference
+    BASE_SLIPPAGE_PCT = 0.0005  # 5 bps base for market orders
+    STOP_SLIPPAGE_FACTOR = 1.5  # stops fill worse in fast markets
+    ADV_IMPACT_THRESHOLD = 0.001  # 0.1% of ADV — above this, liquidity penalty kicks in
+    ATR_NORMAL_PCT = 0.02  # 2% ATR reference
 
     def simulate_fill(
         self,

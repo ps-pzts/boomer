@@ -98,9 +98,7 @@ class BaseFetcher(ABC):
                     )
                     time.sleep(delay)
                 else:
-                    logger.error(
-                        "fetch exhausted retries source=%s: %s", self.source, exc
-                    )
+                    logger.error("fetch exhausted retries source=%s: %s", self.source, exc)
         return None
 
     # ── abstract methods ──────────────────────────────────────────────────
@@ -196,8 +194,7 @@ class BaseFetcher(ABC):
 
     def mark_parsed(self, raw_id: str, version: str, status: ParseStatus) -> None:
         self._db.execute(
-            "UPDATE raw_archive SET parser_version=?, parsed_at=?, parse_status=? "
-            "WHERE raw_id=?",
+            "UPDATE raw_archive SET parser_version=?, parsed_at=?, parse_status=? WHERE raw_id=?",
             (version, _fmt_dt(_now_utc()), status.value, raw_id),
         )
         self._db.commit()
@@ -219,6 +216,7 @@ class BaseFetcher(ABC):
 
 
 # ── module-level helpers ───────────────────────────────────────────────────────
+
 
 def _now_utc() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)

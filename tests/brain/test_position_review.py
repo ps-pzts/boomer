@@ -6,6 +6,7 @@ Key properties:
   - Non-red-flag filings do NOT trigger mid-session exit
   - Averaging down is never recommended (health score can't fix a bad entry)
 """
+
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -25,6 +26,7 @@ def _make_position(
     minutes_to_squareoff=60.0,
 ) -> PositionRecord:
     import uuid
+
     return PositionRecord(
         position_id=str(uuid.uuid4()),
         stock_symbol="HDFC",
@@ -54,10 +56,16 @@ class TestHealthScore:
         pos = _make_position("long_term", entry=Decimal("1000"), current=Decimal("1100"))
         sig = SignalRecord(
             signal_id=str(uuid.uuid4()),
-            stock_symbol="HDFC", exchange="NSE", track="long_term",
-            direction=Direction.LONG, raw_score=0.6, confidence=0.65,
-            regime_at_signal="bull_calm", contributing_signals=[],
-            feature_snapshot={}, generated_at=datetime.now(UTC),
+            stock_symbol="HDFC",
+            exchange="NSE",
+            track="long_term",
+            direction=Direction.LONG,
+            raw_score=0.6,
+            confidence=0.65,
+            regime_at_signal="bull_calm",
+            contributing_signals=[],
+            feature_snapshot={},
+            generated_at=datetime.now(UTC),
         )
         score = reviewer.health_score(pos, sig, "bull_calm")
         assert score.total_score > 50
@@ -65,8 +73,12 @@ class TestHealthScore:
     def test_all_components_sum_to_total(self, reviewer):
         pos = _make_position()
         score = reviewer.health_score(pos, None, "bull_calm")
-        component_sum = (score.pnl_vs_expected + score.signal_alignment +
-                         score.time_thesis_factor + score.regime_favorable)
+        component_sum = (
+            score.pnl_vs_expected
+            + score.signal_alignment
+            + score.time_thesis_factor
+            + score.regime_favorable
+        )
         assert component_sum == pytest.approx(score.total_score, abs=0.1)
 
     def test_score_capped_at_100(self, reviewer):
@@ -84,8 +96,8 @@ class TestHealthScore:
         pos = _make_position(
             track="long_term",
             entry=Decimal("1000"),
-            current=Decimal("850"),     # 15% loss
-            thesis_refresh_days=120,    # stale thesis
+            current=Decimal("850"),  # 15% loss
+            thesis_refresh_days=120,  # stale thesis
         )
         score = reviewer.health_score(pos, None, "bear")
         if score.total_score < 20:
@@ -107,10 +119,16 @@ class TestThesisBroken:
         pos = _make_position()
         sig = SignalRecord(
             signal_id=str(uuid.uuid4()),
-            stock_symbol="HDFC", exchange="NSE", track="long_term",
-            direction=Direction.SHORT, raw_score=-0.5, confidence=0.6,
-            regime_at_signal="bear", contributing_signals=[],
-            feature_snapshot={}, generated_at=datetime.now(UTC),
+            stock_symbol="HDFC",
+            exchange="NSE",
+            track="long_term",
+            direction=Direction.SHORT,
+            raw_score=-0.5,
+            confidence=0.6,
+            regime_at_signal="bear",
+            contributing_signals=[],
+            feature_snapshot={},
+            generated_at=datetime.now(UTC),
         )
         broken, reason = reviewer.check_thesis_broken(pos, sig, {})
         assert broken is True
@@ -126,10 +144,16 @@ class TestThesisBroken:
         pos = _make_position()
         sig = SignalRecord(
             signal_id=str(uuid.uuid4()),
-            stock_symbol="HDFC", exchange="NSE", track="long_term",
-            direction=Direction.LONG, raw_score=0.6, confidence=0.65,
-            regime_at_signal="bull_calm", contributing_signals=[],
-            feature_snapshot={}, generated_at=datetime.now(UTC),
+            stock_symbol="HDFC",
+            exchange="NSE",
+            track="long_term",
+            direction=Direction.LONG,
+            raw_score=0.6,
+            confidence=0.65,
+            regime_at_signal="bull_calm",
+            contributing_signals=[],
+            feature_snapshot={},
+            generated_at=datetime.now(UTC),
         )
         broken, _ = reviewer.check_thesis_broken(pos, sig, {})
         assert broken is False
@@ -164,7 +188,5 @@ class TestMaterialFilingHandler:
     def test_all_red_flag_categories_trigger(self, reviewer):
         for cat in RED_FLAG_CATEGORIES:
             pos = _make_position()
-            recs = reviewer.handle_material_filing(
-                cat, "HDFC", "NSE", [pos], {}, datetime.now(UTC)
-            )
+            recs = reviewer.handle_material_filing(cat, "HDFC", "NSE", [pos], {}, datetime.now(UTC))
             assert len(recs) == 1, f"category {cat!r} should trigger exit"

@@ -108,34 +108,52 @@ class ReconciliationLoop:
 
         for key, bot_pos in bot_by_symbol.items():
             if key not in broker_by_symbol:
-                alerts.append(self._raise_alert(
-                    broker_id, ReconciliationAlertType.POSITION_BOT_ONLY,
-                    symbol=key[0], exchange=key[1],
-                    bot_value=json.dumps({
-                        "quantity": bot_pos.quantity, "position_id": bot_pos.position_id,
-                    }),
-                    broker_value=None,
-                ))
+                alerts.append(
+                    self._raise_alert(
+                        broker_id,
+                        ReconciliationAlertType.POSITION_BOT_ONLY,
+                        symbol=key[0],
+                        exchange=key[1],
+                        bot_value=json.dumps(
+                            {
+                                "quantity": bot_pos.quantity,
+                                "position_id": bot_pos.position_id,
+                            }
+                        ),
+                        broker_value=None,
+                    )
+                )
             else:
                 broker_pos = broker_by_symbol[key]
                 if bot_pos.quantity != broker_pos.quantity:
-                    alerts.append(self._raise_alert(
-                        broker_id, ReconciliationAlertType.QUANTITY_MISMATCH,
-                        symbol=key[0], exchange=key[1],
-                        bot_value=json.dumps({"quantity": bot_pos.quantity}),
-                        broker_value=json.dumps({"quantity": broker_pos.quantity}),
-                    ))
+                    alerts.append(
+                        self._raise_alert(
+                            broker_id,
+                            ReconciliationAlertType.QUANTITY_MISMATCH,
+                            symbol=key[0],
+                            exchange=key[1],
+                            bot_value=json.dumps({"quantity": bot_pos.quantity}),
+                            broker_value=json.dumps({"quantity": broker_pos.quantity}),
+                        )
+                    )
 
         for key, broker_pos in broker_by_symbol.items():
             if key not in bot_by_symbol:
-                alerts.append(self._raise_alert(
-                    broker_id, ReconciliationAlertType.POSITION_BROKER_ONLY,
-                    symbol=key[0], exchange=key[1],
-                    bot_value=None,
-                    broker_value=json.dumps({
-                        "quantity": broker_pos.quantity, "avg_price": broker_pos.average_price,
-                    }),
-                ))
+                alerts.append(
+                    self._raise_alert(
+                        broker_id,
+                        ReconciliationAlertType.POSITION_BROKER_ONLY,
+                        symbol=key[0],
+                        exchange=key[1],
+                        bot_value=None,
+                        broker_value=json.dumps(
+                            {
+                                "quantity": broker_pos.quantity,
+                                "avg_price": broker_pos.average_price,
+                            }
+                        ),
+                    )
+                )
 
         return alerts
 
@@ -146,12 +164,16 @@ class ReconciliationLoop:
             return []
         # Simple check: broker cash should be positive; deep mismatch flagged
         if funds.available_cash < 0:
-            return [self._raise_alert(
-                broker_id, ReconciliationAlertType.EOD_CASH_MISMATCH,
-                symbol=None, exchange=None,
-                bot_value=None,
-                broker_value=json.dumps({"available_cash": funds.available_cash}),
-            )]
+            return [
+                self._raise_alert(
+                    broker_id,
+                    ReconciliationAlertType.EOD_CASH_MISMATCH,
+                    symbol=None,
+                    exchange=None,
+                    bot_value=None,
+                    broker_value=json.dumps({"available_cash": funds.available_cash}),
+                )
+            ]
         return []
 
     def _load_bot_positions(
@@ -188,7 +210,10 @@ class ReconciliationLoop:
         self._db.commit()
         logger.warning(
             "Reconciliation alert %s broker=%s type=%s symbol=%s",
-            alert_id, broker_id, alert_type, symbol,
+            alert_id,
+            broker_id,
+            alert_type,
+            symbol,
         )
         return alert_id
 
@@ -214,7 +239,8 @@ class ReconciliationLoop:
             unprotected_flag=bool(d.get("unprotected_flag", 0)),
             unprotected_since=(
                 datetime.fromisoformat(d["unprotected_since"])
-                if d.get("unprotected_since") else None
+                if d.get("unprotected_since")
+                else None
             ),
             unmanaged=bool(d.get("unmanaged", 0)),
             health_score=d.get("health_score", 100.0),

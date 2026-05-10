@@ -43,15 +43,26 @@ def _make_raw_row(db, body: bytes, tmp_path: Path) -> RawArchiveRow:
         "INSERT INTO raw_archive (raw_id, source, fetched_at, request_url, "
         "response_status, content_hash, content_path, parse_status) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (raw_id, "fo_oi", "2024-04-22T18:30:00.000000Z", "https://nsearchives.nseindia.com/x",
-         200, chash, rel_path, "pending"),
+        (
+            raw_id,
+            "fo_oi",
+            "2024-04-22T18:30:00.000000Z",
+            "https://nsearchives.nseindia.com/x",
+            200,
+            chash,
+            rel_path,
+            "pending",
+        ),
     )
     db.commit()
     return RawArchiveRow(
-        raw_id=raw_id, source=DataSource.FO_OI,
+        raw_id=raw_id,
+        source=DataSource.FO_OI,
         fetched_at=datetime(2024, 4, 22, 18, 30, 0),
         request_url="https://nsearchives.nseindia.com/x",
-        response_status=200, content_hash=chash, content_path=rel_path,
+        response_status=200,
+        content_hash=chash,
+        content_path=rel_path,
     )
 
 
@@ -137,10 +148,14 @@ def test_validate_requires_zip(tmp_path):
     db = _make_db()
     fetcher = FoOiFetcher(db, tmp_path / "raw")
     from collector.models import FetchResult
+
     bad = FetchResult(
-        source=DataSource.FO_OI, url="x", status_code=200,
+        source=DataSource.FO_OI,
+        url="x",
+        status_code=200,
         body=b"Not a zip file here",
-        content_hash="z", fetched_at=datetime(2024, 4, 22),
+        content_hash="z",
+        fetched_at=datetime(2024, 4, 22),
     )
     with pytest.raises(ValueError, match="ZIP"):
         fetcher.validate(bad)
@@ -150,9 +165,13 @@ def test_validate_404_raises(tmp_path):
     db = _make_db()
     fetcher = FoOiFetcher(db, tmp_path / "raw")
     from collector.models import FetchResult
+
     bad = FetchResult(
-        source=DataSource.FO_OI, url="x", status_code=404,
-        body=b"Not Found", content_hash="z",
+        source=DataSource.FO_OI,
+        url="x",
+        status_code=404,
+        body=b"Not Found",
+        content_hash="z",
         fetched_at=datetime(2024, 4, 22),
     )
     with pytest.raises(Exception, match="404"):

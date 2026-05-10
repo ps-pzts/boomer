@@ -161,11 +161,12 @@ class CapitalLedgerRow:
 @dataclass(frozen=True)
 class LiveCapitalView:
     """Computed on-demand from cash + open positions × LTP. Never persisted."""
+
     total_cash: Decimal
-    open_position_value: Decimal       # sum(qty × LTP) for all open positions
+    open_position_value: Decimal  # sum(qty × LTP) for all open positions
     hwm: Decimal
     intraday_realised_pnl_today: Decimal
-    intraday_unrealised_pnl: Decimal   # sum((LTP - entry) × qty) for open intraday
+    intraday_unrealised_pnl: Decimal  # sum((LTP - entry) × qty) for open intraday
 
     @property
     def live_total_capital(self) -> Decimal:
@@ -198,10 +199,10 @@ class TradeRequest:
     entry_price: Decimal
     stop_loss_price: Decimal
     target_price: Decimal
-    signal_confidence: Decimal    # 0.0–1.0
+    signal_confidence: Decimal  # 0.0–1.0
     sector: str
     current_regime: Regime
-    requested_at: datetime         # UTC
+    requested_at: datetime  # UTC
     # Concentration inputs: existing holding + all pending resting orders for same stock
     existing_position_value: Decimal = Decimal("0")
     pending_order_value: Decimal = Decimal("0")

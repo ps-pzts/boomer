@@ -82,12 +82,12 @@ class InstrumentType(StrEnum):
 @dataclass
 class RawArchiveRow:
     source: DataSource
-    fetched_at: datetime           # UTC
+    fetched_at: datetime  # UTC
     request_url: str
     response_status: int
-    content_hash: str              # SHA-256 hex
-    content_path: str              # path to gzipped payload
-    request_params: str | None = None   # JSON string
+    content_hash: str  # SHA-256 hex
+    content_path: str  # path to gzipped payload
+    request_params: str | None = None  # JSON string
     raw_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     parser_version: str | None = None
     parsed_at: datetime | None = None
@@ -97,19 +97,20 @@ class RawArchiveRow:
 @dataclass
 class FetchResult:
     """Returned by BaseFetcher.fetch(); carries raw payload + metadata before archiving."""
+
     source: DataSource
     url: str
     status_code: int
     body: bytes
     content_hash: str
-    fetched_at: datetime           # UTC
+    fetched_at: datetime  # UTC
     params: dict | None = None
 
 
 @dataclass
 class CollectionRunRow:
     source: DataSource
-    started_at: datetime           # UTC
+    started_at: datetime  # UTC
     run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     ended_at: datetime | None = None
     status: RunStatus = RunStatus.RUNNING

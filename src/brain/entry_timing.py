@@ -3,6 +3,7 @@
 One classifier per track. Each refines the raw entry zone from Stage 3 into
 concrete order parameters (price, strategy, validity, tranche structure).
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -41,15 +42,15 @@ class LongTermClassifier:
             dma_dist_pct = (current_price - float(dma_50)) / current_price * 100.0
             # LT2: price within 3% of 50 DMA (pullback condition)
             if 0 <= dma_dist_pct <= 3.0:
-                lt2_price = Decimal(
-                    str(float(dma_50) + 0.2 * float(atr))
-                ).quantize(Decimal("0.05"))
-                return [EntryPlan(
-                    strategy=EntryStrategy.LT2,
-                    entry_price=lt2_price,
-                    validity_days=30,
-                    tranche_fraction=Decimal("1.0"),
-                )]
+                lt2_price = Decimal(str(float(dma_50) + 0.2 * float(atr))).quantize(Decimal("0.05"))
+                return [
+                    EntryPlan(
+                        strategy=EntryStrategy.LT2,
+                        entry_price=lt2_price,
+                        validity_days=30,
+                        tranche_fraction=Decimal("1.0"),
+                    )
+                ]
 
         # LT1: three tranches over 4–8 weeks
         entry_mid = Decimal(str((float(plan.entry_zone_low) + float(plan.entry_zone_high)) / 2))
@@ -64,19 +65,28 @@ class LongTermClassifier:
         q = Decimal("0.05")
         return [
             EntryPlan(
-                strategy=EntryStrategy.LT1, entry_price=t1_price.quantize(q),
-                validity_days=30, tranche_fraction=Decimal("0.40"),
-                tranche_index=1, total_tranches=3,
+                strategy=EntryStrategy.LT1,
+                entry_price=t1_price.quantize(q),
+                validity_days=30,
+                tranche_fraction=Decimal("0.40"),
+                tranche_index=1,
+                total_tranches=3,
             ),
             EntryPlan(
-                strategy=EntryStrategy.LT1, entry_price=t2_price.quantize(q),
-                validity_days=30, tranche_fraction=Decimal("0.30"),
-                tranche_index=2, total_tranches=3,
+                strategy=EntryStrategy.LT1,
+                entry_price=t2_price.quantize(q),
+                validity_days=30,
+                tranche_fraction=Decimal("0.30"),
+                tranche_index=2,
+                total_tranches=3,
             ),
             EntryPlan(
-                strategy=EntryStrategy.LT1, entry_price=t3_price.quantize(q),
-                validity_days=30, tranche_fraction=Decimal("0.30"),
-                tranche_index=3, total_tranches=3,
+                strategy=EntryStrategy.LT1,
+                entry_price=t3_price.quantize(q),
+                validity_days=30,
+                tranche_fraction=Decimal("0.30"),
+                tranche_index=3,
+                total_tranches=3,
             ),
         ]
 
@@ -97,33 +107,39 @@ class SwingClassifier:
 
         # SW3: catalyst event — pre-catalyst entry
         if days_to_catalyst is not None and 0 <= float(days_to_catalyst) <= 7:
-            return [EntryPlan(
-                strategy=EntryStrategy.SW3,
-                entry_price=current_price.quantize(Decimal("0.05")),
-                validity_days=7,
-                tranche_fraction=Decimal("0.50"),
-                notes="pre-catalyst 50%; full position after bullish catalyst",
-            )]
+            return [
+                EntryPlan(
+                    strategy=EntryStrategy.SW3,
+                    entry_price=current_price.quantize(Decimal("0.05")),
+                    validity_days=7,
+                    tranche_fraction=Decimal("0.50"),
+                    notes="pre-catalyst 50%; full position after bullish catalyst",
+                )
+            ]
 
         # SW1: breakout with volume (momentum mode)
         high_20d = features.get("high_20d")
         if high_20d and volume_zscore >= 0.5:
             trigger = Decimal(str(float(high_20d))) + Decimal("0.3") * atr
-            return [EntryPlan(
-                strategy=EntryStrategy.SW1,
-                entry_price=trigger.quantize(Decimal("0.05")),
-                validity_days=7,
-                tranche_fraction=Decimal("1.0"),
-            )]
+            return [
+                EntryPlan(
+                    strategy=EntryStrategy.SW1,
+                    entry_price=trigger.quantize(Decimal("0.05")),
+                    validity_days=7,
+                    tranche_fraction=Decimal("1.0"),
+                )
+            ]
 
         # SW2: pullback to support (default)
         support = Decimal(str(float(dma_20))) if dma_20 else current_price * Decimal("0.98")
-        return [EntryPlan(
-            strategy=EntryStrategy.SW2,
-            entry_price=(support + Decimal("0.2") * atr).quantize(Decimal("0.05")),
-            validity_days=7,
-            tranche_fraction=Decimal("1.0"),
-        )]
+        return [
+            EntryPlan(
+                strategy=EntryStrategy.SW2,
+                entry_price=(support + Decimal("0.2") * atr).quantize(Decimal("0.05")),
+                validity_days=7,
+                tranche_fraction=Decimal("1.0"),
+            )
+        ]
 
 
 class IntradayClassifier:
@@ -146,34 +162,40 @@ class IntradayClassifier:
 
         if abs(gap_pct) >= GAP_SMALL_MAX_PCT and vwap:
             # Medium gap with news: ride on VWAP pullback
-            return [EntryPlan(
-                strategy=EntryStrategy.ID3,
-                entry_price=Decimal(str(float(vwap))).quantize(Decimal("0.05")),
-                validity_days=1,
-                tranche_fraction=Decimal("1.0"),
-                notes="medium gap ride; enter on VWAP pullback",
-            )]
+            return [
+                EntryPlan(
+                    strategy=EntryStrategy.ID3,
+                    entry_price=Decimal(str(float(vwap))).quantize(Decimal("0.05")),
+                    validity_days=1,
+                    tranche_fraction=Decimal("1.0"),
+                    notes="medium gap ride; enter on VWAP pullback",
+                )
+            ]
 
         # ID2: VWAP pullback (price ran up then pulled back to VWAP)
         if vwap:
             price_vs_open_pct = float(features.get("price_vs_open_pct", 0.0))
             if price_vs_open_pct >= 0.5:
-                return [EntryPlan(
-                    strategy=EntryStrategy.ID2,
-                    entry_price=Decimal(str(float(vwap))).quantize(Decimal("0.05")),
-                    validity_days=1,
-                    tranche_fraction=Decimal("1.0"),
-                )]
+                return [
+                    EntryPlan(
+                        strategy=EntryStrategy.ID2,
+                        entry_price=Decimal(str(float(vwap))).quantize(Decimal("0.05")),
+                        validity_days=1,
+                        tranche_fraction=Decimal("1.0"),
+                    )
+                ]
 
         # ID1: ORB (default); only valid before 11:00 AM
         if orb_high and minutes_elapsed <= ORB_TRIGGER_DEADLINE_MINS:
             trigger = Decimal(str(float(orb_high))) * Decimal("1.001")
-            return [EntryPlan(
-                strategy=EntryStrategy.ID1,
-                entry_price=trigger.quantize(Decimal("0.05")),
-                validity_days=1,
-                tranche_fraction=Decimal("1.0"),
-            )]
+            return [
+                EntryPlan(
+                    strategy=EntryStrategy.ID1,
+                    entry_price=trigger.quantize(Decimal("0.05")),
+                    validity_days=1,
+                    tranche_fraction=Decimal("1.0"),
+                )
+            ]
 
         return []
 

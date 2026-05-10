@@ -1,4 +1,5 @@
 """Tests for CapitalStateManager and HWM mechanics."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -148,13 +149,14 @@ def test_bucket_available_calculation(mgr: CapitalStateManager) -> None:
     )
     # long_term bucket = 80% × 50000 = 40000; deployed 4000 → 36000 available
     assert row.bucket_available(Track.LONG_TERM) == Decimal("36000")
-    assert row.bucket_available(Track.SWING) == Decimal("5500")   # 7500 - 2000
+    assert row.bucket_available(Track.SWING) == Decimal("5500")  # 7500 - 2000
     assert row.bucket_available(Track.INTRADAY) == Decimal("1500")  # 2500 - 1000
 
 
 # ------------------------------------------------------------------
 # Worked example from Phase 1 design doc
 # ------------------------------------------------------------------
+
 
 def test_worked_example_from_design(mgr: CapitalStateManager) -> None:
     """Numerical example traced directly from Phase 1 design doc.
@@ -181,7 +183,7 @@ def test_worked_example_from_design(mgr: CapitalStateManager) -> None:
     # shares = 12.50 / 10 = 1 (floor)
     # position_value = 500 × 1 = ₹500
     # concentration = 500 / 50000 = 1% < 5% cap ✓
-    risk = Decimal("2500") * Decimal("0.005")   # ₹12.50
+    risk = Decimal("2500") * Decimal("0.005")  # ₹12.50
     stop_dist = Decimal("10")
     shares = int(risk / stop_dist)
     assert shares == 1

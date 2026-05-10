@@ -64,7 +64,7 @@ class BacktestSimulation:
         self._mock = MockBroker(initial_cash=config.initial_capital)
         self._trades: list[BacktestTrade] = []
         self._daily_states: list[BacktestDailyState] = []
-        self._open_positions: dict[str, dict] = {}   # position_id → position dict
+        self._open_positions: dict[str, dict] = {}  # position_id → position dict
         self._hwm = config.initial_capital
 
     def run(self) -> BacktestSummary:
@@ -86,9 +86,7 @@ class BacktestSimulation:
             logger.info("Backtest complete run_id=%s sharpe=%.2f", run_id, summary.sharpe_ratio)
             return summary
         except Exception:
-            self._db.execute(
-                "UPDATE backtest_runs SET status='failed' WHERE run_id=?", (run_id,)
-            )
+            self._db.execute("UPDATE backtest_runs SET status='failed' WHERE run_id=?", (run_id,))
             self._db.commit()
             raise
 
@@ -105,10 +103,7 @@ class BacktestSimulation:
 
         # 3. Update position P&L from closing prices
         capital = self._compute_capital(bars)
-        deployed = sum(
-            p["quantity"] * p["current_price"]
-            for p in self._open_positions.values()
-        )
+        deployed = sum(p["quantity"] * p["current_price"] for p in self._open_positions.values())
 
         drawdown = max(0.0, (self._hwm - capital) / self._hwm * 100) if self._hwm > 0 else 0.0
         if capital > self._hwm:
@@ -172,9 +167,7 @@ class BacktestSimulation:
         )
         actual_exit = slip.fill_price
         gross_pnl = (actual_exit - entry_price) * qty
-        costs = self._cost_model.round_trip_cost(
-            entry_price * qty, actual_exit * qty, product
-        )
+        costs = self._cost_model.round_trip_cost(entry_price * qty, actual_exit * qty, product)
         net_pnl = gross_pnl - costs.total
 
         trade = BacktestTrade(
@@ -228,11 +221,15 @@ class BacktestSimulation:
         losers = [t for t in self._trades if t.net_pnl <= 0]
         win_rate = len(winners) / max(1, len(self._trades))
         avg_win = (
-            sum(t.net_pnl for t in winners) / len(winners) / self._config.initial_capital * 100
-        ) if winners else 0.0
+            (sum(t.net_pnl for t in winners) / len(winners) / self._config.initial_capital * 100)
+            if winners
+            else 0.0
+        )
         avg_loss = (
-            sum(abs(t.net_pnl) for t in losers) / len(losers) / self._config.initial_capital * 100
-        ) if losers else 0.0
+            (sum(abs(t.net_pnl) for t in losers) / len(losers) / self._config.initial_capital * 100)
+            if losers
+            else 0.0
+        )
         expectancy = win_rate * avg_win - (1 - win_rate) * avg_loss
 
         tracks = self._config.tracks
@@ -318,10 +315,15 @@ class BacktestSimulation:
             VALUES (?,?,?,?,?,?,0,'running',?,?,?)
             """,
             (
-                run_id, self._config.name, self._code_hash,
-                str(self._config.start_date), str(self._config.end_date),
-                self._config.initial_capital, json.dumps(self._config.tracks),
-                self._config.universe, start_iso,
+                run_id,
+                self._config.name,
+                self._code_hash,
+                str(self._config.start_date),
+                str(self._config.end_date),
+                self._config.initial_capital,
+                json.dumps(self._config.tracks),
+                self._config.universe,
+                start_iso,
             ),
         )
         self._db.commit()
@@ -337,10 +339,18 @@ class BacktestSimulation:
             WHERE run_id=?
             """,
             (
-                summary.final_capital, summary.total_return_pct, summary.annualised_return_pct,
-                summary.sharpe_ratio, summary.max_drawdown_pct, summary.win_rate,
-                summary.avg_win_pct, summary.avg_loss_pct, summary.expectancy,
-                summary.total_trades, now, run_id,
+                summary.final_capital,
+                summary.total_return_pct,
+                summary.annualised_return_pct,
+                summary.sharpe_ratio,
+                summary.max_drawdown_pct,
+                summary.win_rate,
+                summary.avg_win_pct,
+                summary.avg_loss_pct,
+                summary.expectancy,
+                summary.total_trades,
+                now,
+                run_id,
             ),
         )
         for trade in self._trades:
@@ -354,12 +364,24 @@ class BacktestSimulation:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    trade_id, run_id, trade.symbol, trade.track, trade.side,
-                    str(trade.entry_date), str(trade.exit_date) if trade.exit_date else None,
-                    trade.entry_price, trade.exit_price, trade.quantity,
-                    trade.gross_pnl, trade.transaction_costs, trade.slippage_cost,
-                    trade.net_pnl, trade.hold_days, trade.exit_reason,
-                    trade.signal_confidence, trade.strategy_id,
+                    trade_id,
+                    run_id,
+                    trade.symbol,
+                    trade.track,
+                    trade.side,
+                    str(trade.entry_date),
+                    str(trade.exit_date) if trade.exit_date else None,
+                    trade.entry_price,
+                    trade.exit_price,
+                    trade.quantity,
+                    trade.gross_pnl,
+                    trade.transaction_costs,
+                    trade.slippage_cost,
+                    trade.net_pnl,
+                    trade.hold_days,
+                    trade.exit_reason,
+                    trade.signal_confidence,
+                    trade.strategy_id,
                 ),
             )
         self._db.commit()
@@ -374,9 +396,15 @@ class BacktestSimulation:
             VALUES (?,?,?,?,?,?,?,?,?)
             """,
             (
-                state_id, run_id, str(state.date), state.total_capital,
-                state.deployed_capital, state.cash, state.open_positions,
-                state.drawdown_from_hwm, state.regime,
+                state_id,
+                run_id,
+                str(state.date),
+                state.total_capital,
+                state.deployed_capital,
+                state.cash,
+                state.open_positions,
+                state.drawdown_from_hwm,
+                state.regime,
             ),
         )
         self._db.commit()

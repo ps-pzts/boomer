@@ -46,8 +46,12 @@ class TestPaperBrokerTicks:
     def test_tick_fills_resting_limit_order(self):
         pb = PaperBroker(price_source=_make_price_source(), initial_cash=100_000)
         req = OrderRequest(
-            symbol="TATA", exchange="NSE", side=OrderSide.BUY,
-            order_type=OrderType.LIMIT, quantity=10, product=ProductType.CNC,
+            symbol="TATA",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=10,
+            product=ProductType.CNC,
             price=500.0,
         )
         order_id = pb.place_order(req)
@@ -68,8 +72,12 @@ class TestPaperBrokerGTT:
     def test_place_and_cancel_gtt(self):
         pb = PaperBroker(price_source=_make_price_source())
         req = GttRequest(
-            symbol="INFY", exchange="NSE", gtt_type=GttType.SINGLE,
-            quantity=5, trigger_price=1500.0, limit_price=1498.0,
+            symbol="INFY",
+            exchange="NSE",
+            gtt_type=GttType.SINGLE,
+            quantity=5,
+            trigger_price=1500.0,
+            limit_price=1498.0,
         )
         gtt_id = pb.place_gtt(req)
         assert pb.get_gtt(gtt_id)["status"] == GttStatus.GTT_ACTIVE

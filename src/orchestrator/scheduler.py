@@ -3,6 +3,7 @@
 Intentionally minimal — no external cron library needed for 12 tasks.
 Uses croniter if available; falls back to a simple minute-resolution evaluator.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -21,6 +22,7 @@ def cron_matches(expr: str, dt: datetime.datetime) -> bool:
     """Return True if `dt` (UTC) matches the cron expression (interpreted as UTC)."""
     try:
         from croniter import croniter  # type: ignore[import]
+
         cron = croniter(expr, dt - datetime.timedelta(minutes=1))
         return cron.get_next(datetime.datetime) <= dt
     except ImportError:

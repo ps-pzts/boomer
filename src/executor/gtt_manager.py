@@ -19,9 +19,9 @@ from executor.models import (
 logger = logging.getLogger(__name__)
 
 _UNPROTECTED_RETRY_INTERVAL_SECONDS = 60
-_UNPROTECTED_FORCE_CLOSE_SECONDS = 600   # Loophole 3: force-close after 10 min
-_GTT_MODIFY_TRAIL_ATR_MULTIPLIER = 2.0   # price must move 2×ATR before trailing
-_GTT_TRAIL_STEP_ATR = 1.0               # stop moves by 1×ATR
+_UNPROTECTED_FORCE_CLOSE_SECONDS = 600  # Loophole 3: force-close after 10 min
+_GTT_MODIFY_TRAIL_ATR_MULTIPLIER = 2.0  # price must move 2×ATR before trailing
+_GTT_TRAIL_STEP_ATR = 1.0  # stop moves by 1×ATR
 
 
 class GttManager:
@@ -74,14 +74,25 @@ class GttManager:
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                gtt_id, broker_gtt_id, position.broker_id, position.symbol,
-                position.exchange, gtt_type,
-                request.trigger_price, request.limit_price,
-                request.sl_trigger_price, request.sl_limit_price,
-                request.target_trigger_price, request.target_limit_price,
-                request.quantity, GttStatus.GTT_ACTIVE,
-                request.parent_order_id, None,
-                valid_until.isoformat(), now.isoformat(), now.isoformat(),
+                gtt_id,
+                broker_gtt_id,
+                position.broker_id,
+                position.symbol,
+                position.exchange,
+                gtt_type,
+                request.trigger_price,
+                request.limit_price,
+                request.sl_trigger_price,
+                request.sl_limit_price,
+                request.target_trigger_price,
+                request.target_limit_price,
+                request.quantity,
+                GttStatus.GTT_ACTIVE,
+                request.parent_order_id,
+                None,
+                valid_until.isoformat(),
+                now.isoformat(),
+                now.isoformat(),
             ),
         )
         self._db.commit()
@@ -109,7 +120,7 @@ class GttManager:
 
         new_sl = gtt.sl_trigger_price + _GTT_TRAIL_STEP_ATR * atr
         if new_sl <= gtt.sl_trigger_price:
-            return False   # stop only moves forward
+            return False  # stop only moves forward
 
         broker = self._broker_for(gtt.broker_id)
         changes = {
@@ -124,7 +135,9 @@ class GttManager:
         self._db.commit()
         logger.info(
             "Trailing stop updated gtt_id=%s new_sl=%.2f symbol=%s",
-            position.gtt_oco_id, new_sl, position.symbol,
+            position.gtt_oco_id,
+            new_sl,
+            position.symbol,
         )
         return True
 
@@ -196,9 +209,11 @@ class GttManager:
             if elapsed >= _UNPROTECTED_FORCE_CLOSE_SECONDS:
                 logger.error(
                     "Force-closing unprotected position %s %s — 10 min unprotected",
-                    pos.position_id, pos.symbol,
+                    pos.position_id,
+                    pos.symbol,
                 )
                 from executor.models import OrderRequest, OrderSide, OrderType, ProductType
+
                 close_req = OrderRequest(
                     symbol=pos.symbol,
                     exchange=pos.exchange,
@@ -275,8 +290,11 @@ class GttManager:
             VALUES (?,?,?,?,?)
             """,
             (
-                alert_id, broker_id, "gtt_missing",
-                json.dumps({"gtt_id": gtt_id, "note": message}), now,
+                alert_id,
+                broker_id,
+                "gtt_missing",
+                json.dumps({"gtt_id": gtt_id, "note": message}),
+                now,
             ),
         )
         self._db.commit()
@@ -287,6 +305,7 @@ class GttManager:
         status = broker_record.get("status", "")
         if isinstance(status, int):
             from executor.brokers.fyers_broker import _FYERS_GTT_STATUS_MAP
+
             return _FYERS_GTT_STATUS_MAP.get(status, GttStatus.GTT_ACTIVE)
         status_str = str(status).lower()
         if "triggered" in status_str or "complete" in status_str:

@@ -8,6 +8,7 @@ Worked examples:
   bear:          Nifty -1% below DMA, VIX 40th pct, breadth 55%  → bear
   bear:          Nifty +3% above DMA, VIX 40th pct, breadth 25%  → bear (breadth < 30%)
 """
+
 import pytest
 
 from brain.regime import INTRADAY_DOWNGRADE_PCT, RegimeDetector, _classify_raw
@@ -72,8 +73,10 @@ class TestStickiness:
 
     def test_flips_after_3_consecutive_days(self, detector):
         history = [
-            Regime.BULL_CALM, Regime.BULL_VOLATILE,
-            Regime.BULL_VOLATILE, Regime.BULL_VOLATILE,
+            Regime.BULL_CALM,
+            Regime.BULL_VOLATILE,
+            Regime.BULL_VOLATILE,
+            Regime.BULL_VOLATILE,
         ]
         result = detector.detect(6.0, 60.0, 65.0, history)
         assert result == Regime.BULL_VOLATILE

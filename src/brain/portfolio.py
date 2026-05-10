@@ -3,6 +3,7 @@
 Filters trade plan candidates against all portfolio constraints, prioritises
 the survivors, and checks pyramiding eligibility for existing positions.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,9 +26,9 @@ class OpenPositionSummary:
     exchange: str
     track: str
     sector: str
-    current_value: Decimal          # qty × LTP
-    entry_value: Decimal            # qty × entry_price
-    unrealised_pnl_pct: float       # (current - entry) / entry
+    current_value: Decimal  # qty × LTP
+    entry_value: Decimal  # qty × entry_price
+    unrealised_pnl_pct: float  # (current - entry) / entry
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class PendingOrderSummary:
     stock_symbol: str
     exchange: str
     track: str
-    reserved_value: Decimal         # order_qty × limit_price
+    reserved_value: Decimal  # order_qty × limit_price
 
 
 @dataclass(frozen=True)
@@ -105,11 +106,12 @@ class PortfolioConstructor:
                 continue
 
             from capital.models import Track as _Track
+
             risk_pct = risk_config.risk_per_trade_pct(_Track(plan.track))
             stop_dist = max(plan.entry_zone_high - plan.stop_loss_price, Decimal("0.01"))
-            trade_value = plan.entry_zone_high * Decimal(str(
-                int(state.total_capital * risk_pct / stop_dist)
-            ))
+            trade_value = plan.entry_zone_high * Decimal(
+                str(int(state.total_capital * risk_pct / stop_dist))
+            )
 
             key = (plan.stock_symbol, plan.exchange)
             projected_stock = running_stock.get(key, Decimal("0")) + trade_value
@@ -166,9 +168,8 @@ class PortfolioConstructor:
             return (state.intraday_new_today + already_approved) < MAX_INTRADAY_NEW_PER_DAY
         if track == "swing":
             return (
-                (state.swing_new_today + already_approved) < MAX_SWING_NEW_PER_DAY
-                and state.swing_open_total < MAX_SWING_OPEN_TOTAL
-            )
+                state.swing_new_today + already_approved
+            ) < MAX_SWING_NEW_PER_DAY and state.swing_open_total < MAX_SWING_OPEN_TOTAL
         if track == "long_term":
             return (state.long_term_new_this_week + already_approved) < MAX_LONG_TERM_NEW_PER_WEEK
         return True

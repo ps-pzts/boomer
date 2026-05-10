@@ -86,9 +86,7 @@ def _parse_kite_instruments_csv(
         fyers_symbol = f"NSE:{symbol}-EQ"
 
         try:
-            existing = db.execute(
-                "SELECT isin FROM instruments WHERE isin = ?", (isin,)
-            ).fetchone()
+            existing = db.execute("SELECT isin FROM instruments WHERE isin = ?", (isin,)).fetchone()
             if existing:
                 db.execute(
                     """
@@ -111,8 +109,16 @@ def _parse_kite_instruments_csv(
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        isin, symbol, None, name, token, symbol,
-                        fyers_symbol, series, None, refreshed_at,
+                        isin,
+                        symbol,
+                        None,
+                        name,
+                        token,
+                        symbol,
+                        fyers_symbol,
+                        series,
+                        None,
+                        refreshed_at,
                     ),
                 )
                 inserted += 1

@@ -33,8 +33,16 @@ def _insert_pending_raw(db, tmp_path, source: DataSource, body: bytes) -> str:
         "INSERT INTO raw_archive (raw_id, source, fetched_at, request_url, "
         "response_status, content_hash, content_path, parse_status) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (raw_id, source.value, "2024-04-22T10:00:00Z", "https://example.com",
-         200, chash, rel_path, "pending"),
+        (
+            raw_id,
+            source.value,
+            "2024-04-22T10:00:00Z",
+            "https://example.com",
+            200,
+            chash,
+            rel_path,
+            "pending",
+        ),
     )
     db.commit()
     return raw_id

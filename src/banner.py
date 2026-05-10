@@ -9,6 +9,7 @@ Codename mapping:
   BLACK WIDOW — Alerts             (Natasha: silent operative, sends notifications)
   FRIDAY      — Dashboard          (Tony's visual interface)
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,10 +23,10 @@ _BANNER = """
 """
 
 _BOOT_AGENTS: list[tuple[str, str]] = [
-    ("FURY",        "Orchestrator — scheduling engine armed"),
-    ("SHIELD",      "Capital & risk — circuit breakers armed"),
-    ("HAWKEYE",     "Collector grid — watching NSE + BSE data sources"),
-    ("JARVIS",      "Brain framework — signal & recommendation engine ready"),
+    ("FURY", "Orchestrator — scheduling engine armed"),
+    ("SHIELD", "Capital & risk — circuit breakers armed"),
+    ("HAWKEYE", "Collector grid — watching NSE + BSE data sources"),
+    ("JARVIS", "Brain framework — signal & recommendation engine ready"),
     ("WAR MACHINE", "Executor — Kite (intraday) + Fyers (delivery) standing by"),
     ("BLACK WIDOW", "Alert system — Telegram + email channels active"),
 ]

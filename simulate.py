@@ -105,8 +105,13 @@ def insert_bulk_deal(conn, stock_symbol, client_name, qty, price, is_smart_money
         "VALUES (?, '2026-05-09', '2026-05-09T16:00:00Z', 'BSE', ?, "
         "?, 'BUY', ?, ?, ?, ?, 'raw-bd-001', 'v1')",
         (
-            str(uuid.uuid4()), stock_symbol, client_name,
-            qty, float(price), float(qty * price), is_smart_money,
+            str(uuid.uuid4()),
+            stock_symbol,
+            client_name,
+            qty,
+            float(price),
+            float(qty * price),
+            is_smart_money,
         ),
     )
     conn.commit()
@@ -137,11 +142,17 @@ def make_checker(config, ledger, all_clear=True, portfolio_loss_today=Decimal("0
         black_swan_manually_tripped=False,
         config=config,
     )
+
     # Stub concentration: no existing holdings
     class NullConcentration:
-        def sector_deployed(self, sector): return Decimal("0")
-        def stock_deployed(self, symbol): return Decimal("0")
-        def correlation_cluster_deployed(self, symbol, exchange): return Decimal("0")
+        def sector_deployed(self, sector):
+            return Decimal("0")
+
+        def stock_deployed(self, symbol):
+            return Decimal("0")
+
+        def correlation_cluster_deployed(self, symbol, exchange):
+            return Decimal("0")
 
     return PreTradeChecker(
         config=config,
@@ -157,6 +168,7 @@ def make_checker(config, ledger, all_clear=True, portfolio_loss_today=Decimal("0
 
 # ── CASE 1: Bull signal ────────────────────────────────────────────────────────
 
+
 def case1_bull():
     print(f"\n{SEP}")
     print("CASE 1 — BULL: LIC bulk deal + Q4 results → trade APPROVED")
@@ -169,7 +181,9 @@ def case1_bull():
 
     print("\n[Phase 2] BSE filings received at 10:00 AM:")
     insert_filing(
-        conn, "f-001", "RELIANCE",
+        conn,
+        "f-001",
+        "RELIANCE",
         "Q4 FY26 Financial Results — PAT ₹19,407 Cr, up 12% YoY",
         category="quarterly_results",
     )
@@ -177,15 +191,21 @@ def case1_bull():
 
     print("\n[Phase 2] Bulk deals published at 6 PM:")
     insert_bulk_deal(
-        conn, "RELIANCE", "LIC OF INDIA",
-        qty=500_000, price=Decimal("2920"), is_smart_money=1,
+        conn,
+        "RELIANCE",
+        "LIC OF INDIA",
+        qty=500_000,
+        price=Decimal("2920"),
+        is_smart_money=1,
     )
     print("  Bulk deal: LIC OF INDIA bought 5,00,000 shares @ ₹2,920 = ₹146 Cr")
 
     # ── Phase 2: sentiment pipeline ─────────────────────────────────────────
     print("\n[Phase 2] FinBERT sentiment inference:")
     run_sentiment(
-        conn, config, ["f-001"],
+        conn,
+        config,
+        ["f-001"],
         mock_results=[[{"label": "positive", "score": 0.91}]],
     )
     row = conn.execute(
@@ -199,7 +219,7 @@ def case1_bull():
 
     # ── Phase 1: pre-trade check ─────────────────────────────────────────────
     print("\n[Phase 1] Pre-trade check — swing entry on RELIANCE:")
-    total_capital = Decimal("1000000")   # ₹10,00,000
+    total_capital = Decimal("1000000")  # ₹10,00,000
     ledger = make_ledger(total_capital)
     checker = make_checker(config, ledger)
 
@@ -208,8 +228,8 @@ def case1_bull():
         exchange="BSE",
         track=Track.SWING,
         entry_price=Decimal("2920"),
-        stop_loss_price=Decimal("2800"),   # ₹120 risk per share (2× ATR)
-        target_price=Decimal("3100"),      # ₹180 reward → RR = 1.5
+        stop_loss_price=Decimal("2800"),  # ₹120 risk per share (2× ATR)
+        target_price=Decimal("3100"),  # ₹180 reward → RR = 1.5
         signal_confidence=Decimal("0.72"),
         sector="energy",
         current_regime=Regime.BULL_CALM,
@@ -250,6 +270,7 @@ def case1_bull():
 
 # ── CASE 2: Bear / fraud signal ───────────────────────────────────────────────
 
+
 def case2_bear():
     print(f"\n{SEP}")
     print("CASE 2 — BEAR: Fraud filing + swing weekly loss → trade REJECTED")
@@ -262,12 +283,16 @@ def case2_bear():
 
     print("\n[Phase 2] BSE filings received:")
     insert_filing(
-        conn, "f-002", "ZOMATO",
+        conn,
+        "f-002",
+        "ZOMATO",
         "Auditor resignation — statutory auditor cites inability to verify receivables",
         category="auditor_change",
     )
     insert_filing(
-        conn, "f-003", "ZOMATO",
+        conn,
+        "f-003",
+        "ZOMATO",
         "Promoter pledges 8% of total shareholding",
         category="pledging",
     )
@@ -277,7 +302,9 @@ def case2_bear():
     # ── Phase 2: sentiment pipeline ─────────────────────────────────────────
     print("\n[Phase 2] FinBERT sentiment inference:")
     run_sentiment(
-        conn, config, ["f-002", "f-003"],
+        conn,
+        config,
+        ["f-002", "f-003"],
         mock_results=[
             [{"label": "negative", "score": 0.95}],
             [{"label": "negative", "score": 0.88}],

@@ -1,4 +1,5 @@
 """Tests for the alert layer: AlertManager routing, batching, persistence."""
+
 import sqlite3
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from src.alerts.alerter import AlertManager
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
     from src.db.migrations import run_migrations
+
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
 
@@ -40,8 +42,10 @@ def _make_manager(db_path: Path, tg_ok: bool = True, email_ok: bool = True) -> A
 class TestAlertManagerCritical:
     def test_critical_persisted_to_db(self, db_path: Path) -> None:
         mgr = _make_manager(db_path)
-        with patch("src.alerts.alerter.send_telegram", return_value=True), \
-             patch("src.alerts.alerter.send_email", return_value=True):
+        with (
+            patch("src.alerts.alerter.send_telegram", return_value=True),
+            patch("src.alerts.alerter.send_email", return_value=True),
+        ):
             mgr.critical("Test critical", "Something bad happened")
 
         conn = sqlite3.connect(str(db_path))
@@ -53,16 +57,20 @@ class TestAlertManagerCritical:
 
     def test_critical_both_channels_tried(self, db_path: Path) -> None:
         mgr = _make_manager(db_path)
-        with patch("src.alerts.alerter.send_telegram", return_value=True) as tg, \
-             patch("src.alerts.alerter.send_email", return_value=True) as em:
+        with (
+            patch("src.alerts.alerter.send_telegram", return_value=True) as tg,
+            patch("src.alerts.alerter.send_email", return_value=True) as em,
+        ):
             mgr.critical("Title", "Body")
         tg.assert_called_once()
         em.assert_called_once()
 
     def test_both_fail_records_missed_critical(self, db_path: Path) -> None:
         mgr = _make_manager(db_path)
-        with patch("src.alerts.alerter.send_telegram", return_value=False), \
-             patch("src.alerts.alerter.send_email", return_value=False):
+        with (
+            patch("src.alerts.alerter.send_telegram", return_value=False),
+            patch("src.alerts.alerter.send_email", return_value=False),
+        ):
             mgr.critical("Missed critical", "Nobody knows")
 
         conn = sqlite3.connect(str(db_path))
@@ -75,8 +83,10 @@ class TestAlertManagerCritical:
 
     def test_one_channel_ok_no_missed_record(self, db_path: Path) -> None:
         mgr = _make_manager(db_path)
-        with patch("src.alerts.alerter.send_telegram", return_value=True), \
-             patch("src.alerts.alerter.send_email", return_value=False):
+        with (
+            patch("src.alerts.alerter.send_telegram", return_value=True),
+            patch("src.alerts.alerter.send_email", return_value=False),
+        ):
             mgr.critical("Partial success", "TG ok, email failed")
 
         conn = sqlite3.connect(str(db_path))
@@ -149,6 +159,7 @@ class TestAlertManagerDailySummary:
 class TestTelegramFormat:
     def test_format_includes_severity_and_title(self) -> None:
         from src.alerts.telegram import format_alert_text
+
         text = format_alert_text("CRITICAL", "Database down", "Cannot connect")
         assert "CRITICAL" in text
         assert "Database down" in text
@@ -158,5 +169,6 @@ class TestTelegramFormat:
 class TestEmailFormat:
     def test_email_subject_format(self) -> None:
         from src.alerts.email_alert import format_email_subject
+
         subject = format_email_subject("CRITICAL", "Position mismatch")
         assert subject == "[BOOMER CRITICAL] Position mismatch"

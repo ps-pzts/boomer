@@ -1,4 +1,5 @@
 """Tests for Stage 5 RecommendationPackager and RecommendationStore."""
+
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -127,7 +128,10 @@ class TestRecommendationStore:
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         store.save(rec)
         store.record_outcome(
-            rec.recommendation_id, "TCS", "NSE", "swing",
+            rec.recommendation_id,
+            "TCS",
+            "NSE",
+            "swing",
             RecommendationOutcome.APPROVED_POSITION_OPENED,
             recorded_at=_OUTCOME_DATE,
         )
@@ -140,7 +144,10 @@ class TestRecommendationStore:
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=5)
         store.save(rec)
         store.record_outcome(
-            rec.recommendation_id, "TCS", "NSE", "long_term",
+            rec.recommendation_id,
+            "TCS",
+            "NSE",
+            "long_term",
             RecommendationOutcome.REJECTED_BY_OPERATOR,
             recorded_at=_OUTCOME_DATE,
         )
@@ -152,7 +159,10 @@ class TestRecommendationStore:
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         store.save(rec)
         store.record_outcome(
-            rec.recommendation_id, "TCS", "NSE", "swing",
+            rec.recommendation_id,
+            "TCS",
+            "NSE",
+            "swing",
             RecommendationOutcome.APPROVED_POSITION_OPENED,
             recorded_at=_OUTCOME_DATE,
         )
@@ -165,7 +175,10 @@ class TestRecommendationStore:
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         store.save(rec)
         store.record_outcome(
-            rec.recommendation_id, "TCS", "NSE", "swing",
+            rec.recommendation_id,
+            "TCS",
+            "NSE",
+            "swing",
             RecommendationOutcome.APPROVED_POSITION_OPENED,
             recorded_at=_OUTCOME_DATE,
         )

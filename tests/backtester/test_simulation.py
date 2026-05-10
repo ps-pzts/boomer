@@ -89,8 +89,11 @@ class TestBacktestSimulationBasic:
             tracks=["swing"],
         )
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=["RELIANCE"],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=["RELIANCE"],
         )
         summary = sim.run()
         assert summary.final_capital == pytest.approx(100_000.0, rel=0.01)
@@ -100,7 +103,8 @@ class TestBacktestSimulationBasic:
 class TestBacktestSharpe:
     def test_sharpe_with_all_positive_returns(self):
         from backtester.simulation import BacktestSimulation
-        all_up = [0.01] * 100   # 1% daily return consistently
+
+        all_up = [0.01] * 100  # 1% daily return consistently
         sharpe = BacktestSimulation._sharpe(all_up)
         assert sharpe > 1.0
 
@@ -117,12 +121,17 @@ class TestBacktestTradingDays:
     def test_weekdays_only(self):
         db = _make_db()
         config = BacktestConfig(
-            name="x", start_date=date(2024, 1, 1), end_date=date(2024, 1, 7),
+            name="x",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 7),
             initial_capital=100_000.0,
         )
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         days = list(sim._trading_days())
         # Jan 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat(skip), 7=Sun(skip)
@@ -134,17 +143,26 @@ class TestBacktestAcceptance:
     def test_acceptance_fails_on_low_sharpe(self):
         db = _make_db()
         config = BacktestConfig(
-            name="x", start_date=date(2024, 1, 2), end_date=date(2024, 1, 5),
+            name="x",
+            start_date=date(2024, 1, 2),
+            end_date=date(2024, 1, 5),
             initial_capital=100_000.0,
         )
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         failures, passes = sim._check_acceptance(
-            sharpe=0.5, max_dd=5.0,
+            sharpe=0.5,
+            max_dd=5.0,
             trades_by_track={"long_term": 200, "swing": 200, "intraday": 200},
-            expectancy=0.5, win_rate=0.6, avg_win=2.0, avg_loss=1.0,
+            expectancy=0.5,
+            win_rate=0.6,
+            avg_win=2.0,
+            avg_loss=1.0,
         )
         assert not passes
         assert any("Sharpe" in f for f in failures)
@@ -152,17 +170,26 @@ class TestBacktestAcceptance:
     def test_acceptance_passes_all_criteria(self):
         db = _make_db()
         config = BacktestConfig(
-            name="x", start_date=date(2024, 1, 2), end_date=date(2024, 1, 5),
+            name="x",
+            start_date=date(2024, 1, 2),
+            end_date=date(2024, 1, 5),
             initial_capital=100_000.0,
         )
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         failures, passes = sim._check_acceptance(
-            sharpe=1.5, max_dd=10.0,
+            sharpe=1.5,
+            max_dd=10.0,
             trades_by_track={"long_term": 150, "swing": 150, "intraday": 150},
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
+            expectancy=0.5,
+            win_rate=0.6,
+            avg_win=3.0,
+            avg_loss=1.0,
         )
         assert passes
         assert failures == []
@@ -170,17 +197,26 @@ class TestBacktestAcceptance:
     def test_acceptance_fails_on_too_few_trades(self):
         db = _make_db()
         config = BacktestConfig(
-            name="x", start_date=date(2024, 1, 2), end_date=date(2024, 1, 5),
+            name="x",
+            start_date=date(2024, 1, 2),
+            end_date=date(2024, 1, 5),
             initial_capital=100_000.0,
         )
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         failures, passes = sim._check_acceptance(
-            sharpe=1.5, max_dd=10.0,
+            sharpe=1.5,
+            max_dd=10.0,
             trades_by_track={"swing": 50},  # < 100 minimum
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
+            expectancy=0.5,
+            win_rate=0.6,
+            avg_win=3.0,
+            avg_loss=1.0,
         )
         assert not passes
         assert any("trades" in f for f in failures)

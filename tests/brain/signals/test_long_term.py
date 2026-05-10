@@ -32,6 +32,7 @@ Worked example (verifiable by hand):
             = 0.240 + 0.074 + 0.070 + 0.081 + 0.060
             = 0.525
 """
+
 from datetime import UTC, datetime
 
 import pytest
@@ -42,11 +43,11 @@ SYMBOL = "RELIANCE"
 EXCHANGE = "NSE"
 
 _BASE_FEATURES = {
-    "avg_traded_value_20d": 2e10,       # ₹200 cr — above ₹5 cr gate
+    "avg_traded_value_20d": 2e10,  # ₹200 cr — above ₹5 cr gate
     "promoter_holding_pct_change_90d": 1.0,
     "promoter_open_market_buy_count_90d": 3.0,
     "promoter_pledge_pct_current": 0.0,
-    "smart_money_net_buy_value_90d": 50_00_00_000.0,   # ₹50 cr
+    "smart_money_net_buy_value_90d": 50_00_00_000.0,  # ₹50 cr
     "smart_money_buyer_count_90d": 3.0,
     "filing_bullish_count_90d": 5.0,
     "filing_bearish_count_90d": 1.0,
@@ -107,6 +108,7 @@ def test_red_flag_penalty_applied(gen):
 
 def test_weights_sum_to_one_per_regime(gen):
     from brain.signals.long_term import _WEIGHTS
+
     for regime, weights in _WEIGHTS.items():
         total = sum(weights.values())
         assert total == pytest.approx(1.0, abs=1e-9), f"weights for {regime} sum to {total}"
@@ -114,6 +116,7 @@ def test_weights_sum_to_one_per_regime(gen):
 
 def test_bear_regime_weights_promoter_heaviest(gen):
     from brain.signals.long_term import _WEIGHTS
+
     bear = _WEIGHTS["bear"]
     assert bear["promoter"] == max(bear.values())
 

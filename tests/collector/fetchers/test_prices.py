@@ -43,15 +43,26 @@ def _make_raw_row(db, body: bytes, tmp_path: Path) -> RawArchiveRow:
         "INSERT INTO raw_archive (raw_id, source, fetched_at, request_url, "
         "response_status, content_hash, content_path, parse_status) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (raw_id, "prices", "2024-04-22T18:00:00.000000Z", "https://nsearchives.nseindia.com/x",
-         200, chash, rel_path, "pending"),
+        (
+            raw_id,
+            "prices",
+            "2024-04-22T18:00:00.000000Z",
+            "https://nsearchives.nseindia.com/x",
+            200,
+            chash,
+            rel_path,
+            "pending",
+        ),
     )
     db.commit()
     return RawArchiveRow(
-        raw_id=raw_id, source=DataSource.PRICES,
+        raw_id=raw_id,
+        source=DataSource.PRICES,
         fetched_at=datetime(2024, 4, 22, 18, 0, 0),
         request_url="https://nsearchives.nseindia.com/x",
-        response_status=200, content_hash=chash, content_path=rel_path,
+        response_status=200,
+        content_hash=chash,
+        content_path=rel_path,
     )
 
 
@@ -98,9 +109,7 @@ def test_parse_skips_non_eq_series(tmp_path):
     raw_row = _make_raw_row(db, NSE_BHAVCOPY_CSV, tmp_path)
     _parse_nse_bhavcopy_csv(NSE_BHAVCOPY_CSV, raw_row, db, "v1")
     # SM series IS included per our filter; only series outside EQ/BE/SM/ST are skipped.
-    sm_row = db.execute(
-        "SELECT COUNT(*) FROM prices WHERE stock_symbol='SOMENOTE'"
-    ).fetchone()[0]
+    sm_row = db.execute("SELECT COUNT(*) FROM prices WHERE stock_symbol='SOMENOTE'").fetchone()[0]
     assert sm_row == 1  # SM is allowed
 
 
@@ -113,6 +122,7 @@ def test_parse_date_various_formats():
 
 def test_prune_old_prices(tmp_path):
     from datetime import timedelta
+
     db = _make_db()
 
     # Insert rows: one old, one recent.
@@ -137,9 +147,13 @@ def test_validate_raises_on_404(tmp_path):
     db = _make_db()
     fetcher = NsePricesFetcher(db, tmp_path / "raw")
     from collector.models import FetchResult
+
     bad = FetchResult(
-        source=DataSource.PRICES, url="x", status_code=404,
-        body=b"Not Found", content_hash="z",
+        source=DataSource.PRICES,
+        url="x",
+        status_code=404,
+        body=b"Not Found",
+        content_hash="z",
         fetched_at=datetime(2024, 4, 22),
     )
     with pytest.raises(Exception, match="404"):

@@ -11,6 +11,7 @@ Runs as a long-lived process managed by systemd. On startup:
 Restart safety: systemd restarts within seconds if this process dies.
 The 3 AM restart guard (ops/restart_guard.sh) checks task_runs before killing this process.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -115,9 +116,7 @@ class Orchestrator:
                 t.start()
 
             # Clean up finished threads
-            self._running_tasks = {
-                k: v for k, v in self._running_tasks.items() if v.is_alive()
-            }
+            self._running_tasks = {k: v for k, v in self._running_tasks.items() if v.is_alive()}
 
             self._stop_event.wait(timeout=self._poll_interval)
 
@@ -125,6 +124,7 @@ class Orchestrator:
 
     def _run_task(self, task_def: object, run_date: str) -> None:
         from .tasks import TaskDefinition  # local to avoid circular
+
         td: TaskDefinition = task_def  # type: ignore[assignment]
         success = execute_with_retry(
             task_id=td.task_id,
@@ -142,6 +142,7 @@ class Orchestrator:
     def _emit_task_failure_alert(self, task_id: str, run_date: str) -> None:
         try:
             from src.alerts.alerter import get_alerter
+
             alerter = get_alerter()
             alerter.critical(
                 title=f"Task FAILED_FINAL: {task_id}",

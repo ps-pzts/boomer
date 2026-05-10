@@ -16,14 +16,14 @@ class HarvestResult:
     dev_credit: Decimal
     post_harvest_capital: Decimal
     post_harvest_hwm: Decimal
-    reason: str    # why it fired or didn't
+    reason: str  # why it fired or didn't
 
 
 # Harvest parameters (design-specified, recalibratable later — see Loophole 1 in Phase 1)
-HARVEST_TRIGGER_PCT = Decimal("0.03")     # excess must be >= 3% of HWM
-HARVEST_RATE = Decimal("0.50")            # take 50% of excess
-OPS_SHARE = Decimal("0.60")              # of harvest: 60% → ops_fund
-DEV_SHARE = Decimal("0.40")              # of harvest: 40% → dev_fund
+HARVEST_TRIGGER_PCT = Decimal("0.03")  # excess must be >= 3% of HWM
+HARVEST_RATE = Decimal("0.50")  # take 50% of excess
+OPS_SHARE = Decimal("0.60")  # of harvest: 60% → ops_fund
+DEV_SHARE = Decimal("0.40")  # of harvest: 40% → dev_fund
 
 
 def evaluate_harvest(

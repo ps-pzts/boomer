@@ -45,8 +45,19 @@ def _make_raw_row(db, content: bytes, tmp_path: Path) -> RawArchiveRow:
              response_status, content_hash, content_path, parser_version, parsed_at, parse_status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (raw_id, "bse_filings", "2024-04-22T10:00:00.000000Z",
-         "https://api.bseindia.com/x", None, 200, chash, rel_path, None, None, "pending"),
+        (
+            raw_id,
+            "bse_filings",
+            "2024-04-22T10:00:00.000000Z",
+            "https://api.bseindia.com/x",
+            None,
+            200,
+            chash,
+            rel_path,
+            None,
+            None,
+            "pending",
+        ),
     )
     db.commit()
     return RawArchiveRow(
@@ -61,6 +72,7 @@ def _make_raw_row(db, content: bytes, tmp_path: Path) -> RawArchiveRow:
 
 
 # ── category classification ────────────────────────────────────────────────────
+
 
 def test_classify_quarterly_results():
     result = _classify_bse_category("Financial Results", "Quarterly Results for Q4")
@@ -104,6 +116,7 @@ def test_classify_other():
 
 # ── datetime parsing ──────────────────────────────────────────────────────────
 
+
 def test_parse_bse_datetime_ddmmmyyyy_format():
     date_str, time_str = _parse_bse_datetime("22 Apr 2024 03:30 PM")
     assert date_str == "2024-04-22"
@@ -121,6 +134,7 @@ def test_parse_bse_datetime_empty():
 
 
 # ── parse() integration ───────────────────────────────────────────────────────
+
 
 def test_parse_inserts_filings(tmp_path):
     db = _make_db()
@@ -199,6 +213,7 @@ def test_validate_raises_on_non_200(tmp_path):
     db = _make_db()
     fetcher = BseFilingsFetcher(db, tmp_path / "raw")
     from collector.models import FetchResult
+
     bad_result = FetchResult(
         source=DataSource.BSE_FILINGS,
         url="https://example.com",
@@ -215,6 +230,7 @@ def test_validate_raises_on_missing_table_key(tmp_path):
     db = _make_db()
     fetcher = BseFilingsFetcher(db, tmp_path / "raw")
     from collector.models import FetchResult
+
     bad_result = FetchResult(
         source=DataSource.BSE_FILINGS,
         url="https://example.com",

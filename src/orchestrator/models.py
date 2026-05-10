@@ -19,9 +19,7 @@ class TaskStatus(StrEnum):
     SKIPPED = "SKIPPED"
 
 
-TERMINAL_STATUSES = frozenset(
-    {TaskStatus.SUCCESS, TaskStatus.FAILED_FINAL, TaskStatus.SKIPPED}
-)
+TERMINAL_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED_FINAL, TaskStatus.SKIPPED})
 
 
 class BotMode(StrEnum):
@@ -49,12 +47,12 @@ class RetryPolicy:
 class TaskDefinition:
     task_id: str
     fn: Callable[..., None]
-    schedule: str                        # cron expression or event name
+    schedule: str  # cron expression or event name
     dependencies: list[str]
     timeout_seconds: int
     retry_policy: RetryPolicy
-    run_on_holiday: bool = False         # backup-type tasks run even on holidays
-    trailing_stop_task: bool = False     # runs in paused mode (trailing stops)
+    run_on_holiday: bool = False  # backup-type tasks run even on holidays
+    trailing_stop_task: bool = False  # runs in paused mode (trailing stops)
 
     def description(self) -> str:
         return f"{self.task_id} [{self.schedule}]"
@@ -64,7 +62,7 @@ class TaskDefinition:
 class TaskRun:
     id: int | None
     task_id: str
-    run_date: str       # YYYY-MM-DD UTC
+    run_date: str  # YYYY-MM-DD UTC
     status: TaskStatus
     started_at: str | None = None
     ended_at: str | None = None
@@ -75,6 +73,7 @@ class TaskRun:
 
 
 # ─── Bot mode ─────────────────────────────────────────────────────────────────
+
 
 class BotModeStore:
     def __init__(self, db_path: str | Path) -> None:
@@ -98,6 +97,7 @@ class BotModeStore:
         self, new_mode: BotMode, changed_by: str = "system", reason: str | None = None
     ) -> None:
         import datetime
+
         now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
         with self._conn() as conn:
             old = conn.execute("SELECT mode FROM bot_mode WHERE id = 1").fetchone()
@@ -116,6 +116,7 @@ class BotModeStore:
 
 # ─── Task run store ───────────────────────────────────────────────────────────
 
+
 class TaskRunStore:
     def __init__(self, db_path: str | Path) -> None:
         self._db = str(db_path)
@@ -131,6 +132,7 @@ class TaskRunStore:
         self, task_id: str, run_date: str, attempt: int = 1, manual_override: bool = False
     ) -> int:
         import datetime
+
         now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
         with self._conn() as conn:
             cur = conn.execute(
@@ -142,9 +144,15 @@ class TaskRunStore:
             conn.commit()
             return cur.lastrowid  # type: ignore[return-value]
 
-    def update(self, run_id: int, status: TaskStatus, error_message: str | None = None,
-               error_traceback: str | None = None) -> None:
+    def update(
+        self,
+        run_id: int,
+        status: TaskStatus,
+        error_message: str | None = None,
+        error_traceback: str | None = None,
+    ) -> None:
         import datetime
+
         now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
         with self._conn() as conn:
             conn.execute(
@@ -186,6 +194,7 @@ class TaskRunStore:
 
     def recent(self, hours: int = 24) -> list[TaskRun]:
         import datetime as _dt
+
         cutoff = _dt.datetime.utcnow() - _dt.timedelta(hours=hours)
         cutoff_str = cutoff.isoformat(timespec="seconds") + "Z"
         with self._conn() as conn:
@@ -195,11 +204,16 @@ class TaskRunStore:
             ).fetchall()
         return [
             TaskRun(
-                id=r["id"], task_id=r["task_id"], run_date=r["run_date"],
-                status=TaskStatus(r["status"]), started_at=r["started_at"],
-                ended_at=r["ended_at"], attempt=r["attempt"],
+                id=r["id"],
+                task_id=r["task_id"],
+                run_date=r["run_date"],
+                status=TaskStatus(r["status"]),
+                started_at=r["started_at"],
+                ended_at=r["ended_at"],
+                attempt=r["attempt"],
                 manual_override=bool(r["manual_override"]),
-                error_message=r["error_message"], error_traceback=r["error_traceback"],
+                error_message=r["error_message"],
+                error_traceback=r["error_traceback"],
             )
             for r in rows
         ]
@@ -207,9 +221,11 @@ class TaskRunStore:
 
 # ─── Trading calendar ─────────────────────────────────────────────────────────
 
+
 def is_trading_day(db_path: str | Path, date_str: str) -> bool:
     """Return True if date_str (YYYY-MM-DD IST) is a trading day."""
     import datetime
+
     parsed = datetime.date.fromisoformat(date_str)
     if parsed.weekday() >= 5:  # Saturday=5, Sunday=6
         return False

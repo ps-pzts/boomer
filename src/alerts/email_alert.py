@@ -4,6 +4,7 @@ Uses stdlib smtplib with STARTTLS. Configured via environment variables or
 the secrets.env file at startup. Intended as the mandatory fallback channel
 for critical alerts when Telegram is unavailable.
 """
+
 from __future__ import annotations
 
 import logging

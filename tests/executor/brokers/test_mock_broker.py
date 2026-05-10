@@ -19,24 +19,37 @@ from executor.models import (
 
 def make_bar(symbol: str, close: float, low: float = 0.0, high: float = 0.0) -> PriceBar:
     return PriceBar(
-        symbol=symbol, date="2024-01-02",
-        open=close, high=high or close * 1.01,
-        low=low or close * 0.99, close=close, volume=100_000,
+        symbol=symbol,
+        date="2024-01-02",
+        open=close,
+        high=high or close * 1.01,
+        low=low or close * 0.99,
+        close=close,
+        volume=100_000,
     )
 
 
 def limit_buy_request(symbol: str, price: float, qty: int = 10) -> OrderRequest:
     return OrderRequest(
-        symbol=symbol, exchange="NSE", side=OrderSide.BUY,
-        order_type=OrderType.LIMIT, quantity=qty, product=ProductType.MIS,
-        price=price, validity=OrderValidity.DAY,
+        symbol=symbol,
+        exchange="NSE",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=qty,
+        product=ProductType.MIS,
+        price=price,
+        validity=OrderValidity.DAY,
     )
 
 
 def market_sell_request(symbol: str, qty: int = 10) -> OrderRequest:
     return OrderRequest(
-        symbol=symbol, exchange="NSE", side=OrderSide.SELL,
-        order_type=OrderType.MARKET, quantity=qty, product=ProductType.CNC,
+        symbol=symbol,
+        exchange="NSE",
+        side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        quantity=qty,
+        product=ProductType.CNC,
     )
 
 
@@ -49,8 +62,12 @@ class TestMockBrokerMarketOrder:
     def test_market_buy_fills_immediately_at_bar_open(self):
         broker = MockBroker(initial_cash=100_000)
         req = OrderRequest(
-            symbol="TCS", exchange="NSE", side=OrderSide.BUY,
-            order_type=OrderType.MARKET, quantity=5, product=ProductType.MIS,
+            symbol="TCS",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=5,
+            product=ProductType.MIS,
         )
         bar = make_bar("TCS", close=3000.0)
         broker.set_price_bar(bar)
@@ -67,8 +84,12 @@ class TestMockBrokerMarketOrder:
         bar = make_bar("INFY", close=1500.0)
         broker.set_price_bar(bar)
         req = OrderRequest(
-            symbol="INFY", exchange="NSE", side=OrderSide.BUY,
-            order_type=OrderType.MARKET, quantity=10, product=ProductType.MIS,
+            symbol="INFY",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            product=ProductType.MIS,
         )
         broker.place_order(req)
         funds = broker.get_funds()
@@ -104,8 +125,13 @@ class TestMockBrokerLimitOrder:
     def test_limit_sell_fills_when_bar_high_crosses(self):
         broker = MockBroker(initial_cash=100_000)
         req = OrderRequest(
-            symbol="WIPRO", exchange="NSE", side=OrderSide.SELL,
-            order_type=OrderType.LIMIT, quantity=20, product=ProductType.CNC, price=450.0,
+            symbol="WIPRO",
+            exchange="NSE",
+            side=OrderSide.SELL,
+            order_type=OrderType.LIMIT,
+            quantity=20,
+            product=ProductType.CNC,
+            price=450.0,
         )
         bid = broker.place_order(req)
         bar = PriceBar(
@@ -128,8 +154,12 @@ class TestMockBrokerCancelOrder:
         bar = make_bar("HDFC", close=1600.0)
         broker.set_price_bar(bar)
         req = OrderRequest(
-            symbol="HDFC", exchange="NSE", side=OrderSide.BUY,
-            order_type=OrderType.MARKET, quantity=1, product=ProductType.MIS,
+            symbol="HDFC",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            product=ProductType.MIS,
         )
         bid = broker.place_order(req)
         broker.cancel_order(bid)
@@ -140,8 +170,12 @@ class TestMockBrokerGTT:
     def test_place_single_gtt(self):
         broker = MockBroker()
         req = GttRequest(
-            symbol="TATA", exchange="NSE", gtt_type=GttType.SINGLE,
-            quantity=10, trigger_price=500.0, limit_price=498.0,
+            symbol="TATA",
+            exchange="NSE",
+            gtt_type=GttType.SINGLE,
+            quantity=10,
+            trigger_price=500.0,
+            limit_price=498.0,
         )
         gtt_id = broker.place_gtt(req)
         gtt = broker.get_gtt(gtt_id)
@@ -151,8 +185,12 @@ class TestMockBrokerGTT:
     def test_single_gtt_triggers_when_price_hits(self):
         broker = MockBroker()
         req = GttRequest(
-            symbol="SAIL", exchange="NSE", gtt_type=GttType.SINGLE,
-            quantity=100, trigger_price=90.0, limit_price=89.0,
+            symbol="SAIL",
+            exchange="NSE",
+            gtt_type=GttType.SINGLE,
+            quantity=100,
+            trigger_price=90.0,
+            limit_price=89.0,
         )
         gtt_id = broker.place_gtt(req)
         # Bar where low hits the trigger
@@ -163,9 +201,14 @@ class TestMockBrokerGTT:
     def test_oco_gtt_triggers_sl_leg(self):
         broker = MockBroker()
         req = GttRequest(
-            symbol="ONGC", exchange="NSE", gtt_type=GttType.OCO, quantity=50,
-            sl_trigger_price=150.0, sl_limit_price=148.0,
-            target_trigger_price=200.0, target_limit_price=202.0,
+            symbol="ONGC",
+            exchange="NSE",
+            gtt_type=GttType.OCO,
+            quantity=50,
+            sl_trigger_price=150.0,
+            sl_limit_price=148.0,
+            target_trigger_price=200.0,
+            target_limit_price=202.0,
         )
         gtt_id = broker.place_gtt(req)
         bar = PriceBar(
@@ -179,9 +222,14 @@ class TestMockBrokerGTT:
     def test_oco_gtt_triggers_target_leg(self):
         broker = MockBroker()
         req = GttRequest(
-            symbol="ONGC", exchange="NSE", gtt_type=GttType.OCO, quantity=50,
-            sl_trigger_price=150.0, sl_limit_price=148.0,
-            target_trigger_price=200.0, target_limit_price=202.0,
+            symbol="ONGC",
+            exchange="NSE",
+            gtt_type=GttType.OCO,
+            quantity=50,
+            sl_trigger_price=150.0,
+            sl_limit_price=148.0,
+            target_trigger_price=200.0,
+            target_limit_price=202.0,
         )
         gtt_id = broker.place_gtt(req)
         bar = PriceBar(
@@ -195,8 +243,12 @@ class TestMockBrokerGTT:
     def test_cancel_gtt(self):
         broker = MockBroker()
         req = GttRequest(
-            symbol="SBI", exchange="NSE", gtt_type=GttType.SINGLE,
-            quantity=100, trigger_price=500.0, limit_price=498.0,
+            symbol="SBI",
+            exchange="NSE",
+            gtt_type=GttType.SINGLE,
+            quantity=100,
+            trigger_price=500.0,
+            limit_price=498.0,
         )
         gtt_id = broker.place_gtt(req)
         broker.cancel_gtt(gtt_id)
@@ -205,10 +257,16 @@ class TestMockBrokerGTT:
     def test_list_gtts(self):
         broker = MockBroker()
         for price in [100.0, 200.0, 300.0]:
-            broker.place_gtt(GttRequest(
-                symbol="X", exchange="NSE", gtt_type=GttType.SINGLE,
-                quantity=10, trigger_price=price, limit_price=price - 1,
-            ))
+            broker.place_gtt(
+                GttRequest(
+                    symbol="X",
+                    exchange="NSE",
+                    gtt_type=GttType.SINGLE,
+                    quantity=10,
+                    trigger_price=price,
+                    limit_price=price - 1,
+                )
+            )
         assert len(broker.list_gtts()) == 3
 
 
@@ -221,8 +279,12 @@ class TestMockBrokerCallbacks:
         bar = make_bar("NTPC", close=200.0)
         broker.set_price_bar(bar)
         req = OrderRequest(
-            symbol="NTPC", exchange="NSE", side=OrderSide.BUY,
-            order_type=OrderType.MARKET, quantity=5, product=ProductType.MIS,
+            symbol="NTPC",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=5,
+            product=ProductType.MIS,
         )
         broker.place_order(req)
         assert len(updates) == 1

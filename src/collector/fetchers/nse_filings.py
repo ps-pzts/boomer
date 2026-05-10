@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)
 
 _NSE_HOMEPAGE = "https://www.nseindia.com"
 _NSE_ANNOUNCEMENTS_URL = (
-    "https://www.nseindia.com/api/corporate-announcements"
-    "?index=equities&category=-1&limit=100"
+    "https://www.nseindia.com/api/corporate-announcements?index=equities&category=-1&limit=100"
 )
 
 
@@ -61,6 +60,7 @@ class NseFilingsFetcher(BaseFetcher):
         resp.raise_for_status()
         body = resp.content
         import hashlib
+
         return FetchResult(
             source=self.source,
             url=resp.url,

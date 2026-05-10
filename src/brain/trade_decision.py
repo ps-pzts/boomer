@@ -42,8 +42,12 @@ class TradePlanGenerator:
 
         if signal.direction != Direction.LONG:
             return self._skip(
-                plan_id, signal, current_price, generated_at,
-                SkipReason.DATA_UNAVAILABLE, "non-long direction not supported in v1",
+                plan_id,
+                signal,
+                current_price,
+                generated_at,
+                SkipReason.DATA_UNAVAILABLE,
+                "non-long direction not supported in v1",
             )
 
         # Step 1: entry zone (±0.5% of current price; refined by Stage 3.5)
@@ -60,8 +64,12 @@ class TradePlanGenerator:
         stop_distance = entry_mid - stop_price
         if stop_distance <= 0:
             return self._skip(
-                plan_id, signal, current_price, generated_at,
-                SkipReason.DATA_UNAVAILABLE, "stop_distance non-positive",
+                plan_id,
+                signal,
+                current_price,
+                generated_at,
+                SkipReason.DATA_UNAVAILABLE,
+                "stop_distance non-positive",
             )
 
         target_price = (entry_mid + rr_min * stop_distance).quantize(Decimal("0.05"))
@@ -73,8 +81,12 @@ class TradePlanGenerator:
 
         if rr_actual < rr_min:
             return self._skip(
-                plan_id, signal, current_price, generated_at, SkipReason.RR_TOO_LOW,
-                f"RR {rr_actual:.2f} < minimum {rr_min}"
+                plan_id,
+                signal,
+                current_price,
+                generated_at,
+                SkipReason.RR_TOO_LOW,
+                f"RR {rr_actual:.2f} < minimum {rr_min}",
             )
 
         # Step 5: EV gate with haircut
@@ -102,8 +114,12 @@ class TradePlanGenerator:
 
         if shares < 1:
             return self._skip(
-                plan_id, signal, current_price, generated_at, SkipReason.POSITION_TOO_SMALL,
-                f"shares={shares} from risk_rupees={risk_rupees:.0f} / risk={risk:.2f}"
+                plan_id,
+                signal,
+                current_price,
+                generated_at,
+                SkipReason.POSITION_TOO_SMALL,
+                f"shares={shares} from risk_rupees={risk_rupees:.0f} / risk={risk:.2f}",
             )
 
         # Step 7: target-too-close check (must be at least 0.5 × ATR from entry)

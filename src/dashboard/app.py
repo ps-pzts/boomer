@@ -14,6 +14,7 @@ Views:
 
 Auth: HTTP Basic (via BASIC_AUTH_USER / BASIC_AUTH_PASSWORD env vars or reverse-proxy).
 """
+
 from __future__ import annotations
 
 import datetime
@@ -65,6 +66,7 @@ DB_PATH: str = os.environ.get("BOOMER_DB_PATH", "/var/lib/boomer/boomer.db")
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
+
 def _verify_credentials(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     expected_user = os.environ.get("BASIC_AUTH_USER", "boomer")
     expected_pass = os.environ.get("BASIC_AUTH_PASSWORD", "changeme")
@@ -84,14 +86,17 @@ AuthDep = Annotated[str, Depends(_verify_credentials)]
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
+
 @app.on_event("startup")
 async def startup() -> None:
     import asyncio
+
     asyncio.create_task(live_pusher(DB_PATH))
     log_dashboard_online()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _run_date() -> str:
     return datetime.datetime.now(IST).date().isoformat()
@@ -107,6 +112,7 @@ def _write_conn() -> sqlite3.Connection:
 
 # ─── View 1: Today ─────────────────────────────────────────────────────────────
 
+
 @app.get("/boomer")
 async def boomer_redirect(_: AuthDep) -> RedirectResponse:
     return RedirectResponse("/", status_code=301)
@@ -119,6 +125,7 @@ async def today(request: Request, _: AuthDep) -> HTMLResponse:
 
 
 # ─── View 2: Approvals ─────────────────────────────────────────────────────────
+
 
 @app.get("/approvals", response_class=HTMLResponse)
 async def approvals(request: Request, _: AuthDep) -> HTMLResponse:
@@ -185,6 +192,7 @@ async def validate_modification(rec_id: str, request: Request, _: AuthDep) -> di
 
 # ─── View 3: Positions ─────────────────────────────────────────────────────────
 
+
 @app.get("/positions", response_class=HTMLResponse)
 async def positions(request: Request, _: AuthDep, page: int = 1) -> HTMLResponse:
     PAGE_SIZE = 25
@@ -192,16 +200,21 @@ async def positions(request: Request, _: AuthDep, page: int = 1) -> HTMLResponse
     total = len(all_pos)
     start = (page - 1) * PAGE_SIZE
     page_pos = all_pos[start : start + PAGE_SIZE]
-    return templates.TemplateResponse(request, "positions.html", {
-        "positions": page_pos,
-        "total": total,
-        "page": page,
-        "page_size": PAGE_SIZE,
-        "has_next": (start + PAGE_SIZE) < total,
-    })
+    return templates.TemplateResponse(
+        request,
+        "positions.html",
+        {
+            "positions": page_pos,
+            "total": total,
+            "page": page,
+            "page_size": PAGE_SIZE,
+            "has_next": (start + PAGE_SIZE) < total,
+        },
+    )
 
 
 # ─── View 4: Capital & Risk ────────────────────────────────────────────────────
+
 
 @app.get("/capital", response_class=HTMLResponse)
 async def capital_risk(request: Request, _: AuthDep) -> HTMLResponse:
@@ -211,17 +224,23 @@ async def capital_risk(request: Request, _: AuthDep) -> HTMLResponse:
 
 # ─── View 5: System Health ────────────────────────────────────────────────────
 
+
 @app.get("/system", response_class=HTMLResponse)
 async def system_health(request: Request, _: AuthDep) -> HTMLResponse:
     runs = get_recent_task_runs(DB_PATH, hours=24)
     errors = get_recent_errors(DB_PATH, limit=50)
-    return templates.TemplateResponse(request, "system_health.html", {
-        "task_runs": runs,
-        "errors": errors,
-    })
+    return templates.TemplateResponse(
+        request,
+        "system_health.html",
+        {
+            "task_runs": runs,
+            "errors": errors,
+        },
+    )
 
 
 # ─── Bot mode toggle ──────────────────────────────────────────────────────────
+
 
 @app.post("/mode")
 async def set_mode(mode: Annotated[str, Form()], _: AuthDep) -> RedirectResponse:
@@ -250,6 +269,7 @@ async def set_mode(mode: Annotated[str, Form()], _: AuthDep) -> RedirectResponse
 
 # ─── Acknowledge missed critical ──────────────────────────────────────────────
 
+
 @app.post("/alerts/{alert_id}/acknowledge")
 async def ack_missed_alert(alert_id: int, _: AuthDep) -> dict:
     now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -267,6 +287,7 @@ async def ack_missed_alert(alert_id: int, _: AuthDep) -> dict:
 
 
 # ─── WebSocket ────────────────────────────────────────────────────────────────
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:

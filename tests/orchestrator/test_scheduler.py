@@ -1,4 +1,5 @@
 """Tests for the Scheduler: should_run logic, dependency checking, intraday disable."""
+
 import datetime
 from pathlib import Path
 
@@ -21,12 +22,18 @@ from src.orchestrator.scheduler import Scheduler, cron_matches, dependency_met
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
     from src.db.migrations import run_migrations
+
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
 
 
-def _make_task(task_id: str, schedule: str, deps: list[str] | None = None,
-               run_on_holiday: bool = False, trailing: bool = False) -> TaskDefinition:
+def _make_task(
+    task_id: str,
+    schedule: str,
+    deps: list[str] | None = None,
+    run_on_holiday: bool = False,
+    trailing: bool = False,
+) -> TaskDefinition:
     return TaskDefinition(
         task_id=task_id,
         fn=lambda **kw: None,
@@ -40,6 +47,7 @@ def _make_task(task_id: str, schedule: str, deps: list[str] | None = None,
 
 
 # ─── cron_matches ─────────────────────────────────────────────────────────────
+
 
 class TestCronMatches:
     def test_every_minute_matches(self) -> None:
@@ -76,6 +84,7 @@ class TestCronMatches:
 
 
 # ─── Scheduler.should_run ─────────────────────────────────────────────────────
+
 
 class TestSchedulerShouldRun:
     def _make_scheduler(self, db_path: Path) -> Scheduler:
@@ -156,6 +165,7 @@ class TestSchedulerShouldRun:
 
 
 # ─── dependency_met ───────────────────────────────────────────────────────────
+
 
 class TestDependencyMet:
     def test_no_deps_always_passes(self, db_path: Path) -> None:

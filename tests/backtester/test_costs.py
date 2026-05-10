@@ -114,6 +114,7 @@ class TestCostModelFyersSaving:
     Fyers ₹0 delivery brokerage saves ₹40 per round trip vs Kite ₹20/order.
     At ₹5,000 position: 0.8% savings per trade.
     """
+
     def test_delivery_cheaper_than_intraday_at_same_value(self):
         cm = CostModel()
         delivery = cm.round_trip_cost(5_000, 5_000, ProductType.CNC)

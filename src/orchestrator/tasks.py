@@ -4,6 +4,7 @@ Each task function signature: fn(run_date: str, run_id: int, **kwargs) -> None
 Tasks call into the appropriate subsystem modules. External I/O (brokers, HTTP)
 is performed by subsystem code — tasks are thin dispatch wrappers.
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 # ─── Task implementations ──────────────────────────────────────────────────────
+
 
 def _nightly_eod_collector(
     run_date: str, run_id: int, db_path: str, archive_dir: str, **_: object
@@ -62,11 +64,15 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
 
     feature_store = FeatureStore(db_path)
     import sqlite3
+
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
-    symbols = [r[0] for r in conn.execute(
-        "SELECT DISTINCT symbol FROM instruments WHERE series IN ('EQ','BE') ORDER BY symbol"
-    ).fetchall()]
+    symbols = [
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT symbol FROM instruments WHERE series IN ('EQ','BE') ORDER BY symbol"
+        ).fetchall()
+    ]
     conn.close()
 
     for sym in symbols:
@@ -114,6 +120,7 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
     packager = RecommendationPackager(portfolio=portfolio, rec_store=rec_store)
 
     import sqlite3
+
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     pending_signals = conn.execute(
@@ -159,6 +166,7 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     reviewer = PositionReviewer(db_path=db_path, feature_store=feature_store)
 
     import sqlite3
+
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     open_positions = conn.execute(
@@ -214,7 +222,10 @@ def _weekly_harvest_check(run_date: str, run_id: int, db_path: str, **_: object)
         harvest_store.record(result, run_date)
         logger.info(
             "harvest_triggered amount=%.2f ops=%.2f dev=%.2f run_date=%s",
-            result.harvest_amount, result.ops_fund, result.dev_fund, run_date,
+            result.harvest_amount,
+            result.ops_fund,
+            result.dev_fund,
+            run_date,
         )
     else:
         logger.info("harvest_check: threshold not met run_date=%s", run_date)
@@ -232,6 +243,7 @@ def _nightly_backup(run_date: str, run_id: int, db_path: str, backup_dir: str, *
 
 # ─── Task registry ─────────────────────────────────────────────────────────────
 
+
 def build_task_registry(
     db_path: str,
     archive_dir: str,
@@ -246,9 +258,11 @@ def build_task_registry(
 
     def _wrap(fn: object, extra: dict) -> object:
         import functools
+
         @functools.wraps(fn)  # type: ignore[arg-type]
         def wrapped(**kwargs: object) -> None:
             fn(**{**common, **extra, **kwargs})  # type: ignore[call-arg]
+
         return wrapped
 
     return {

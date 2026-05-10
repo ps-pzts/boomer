@@ -28,7 +28,7 @@ _TRACK_BROKER: dict[str, BrokerName] = {
 }
 
 _DUPLICATE_WINDOW_SECONDS = 30
-_PRICE_SANITY_PCT = 0.05   # order must be within 5% of LTP
+_PRICE_SANITY_PCT = 0.05  # order must be within 5% of LTP
 
 
 class OrderManager:
@@ -49,7 +49,7 @@ class OrderManager:
     ) -> None:
         self._db = db
         self._brokers = brokers
-        self._ltp = ltp_cache   # shared in-memory LTP dict updated by KiteBroker.on_tick
+        self._ltp = ltp_cache  # shared in-memory LTP dict updated by KiteBroker.on_tick
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -218,12 +218,27 @@ class OrderManager:
             )
             """,
             (
-                order_id, "", broker_id, request.symbol, request.exchange,
-                request.side, request.order_type, request.quantity,
-                request.product, request.price, request.trigger_price,
-                status, request.validity, request.idempotency_key, request.tag,
-                "", request.parent_order_id, request.trade_plan_id,
-                request.recommendation_id, now, now,
+                order_id,
+                "",
+                broker_id,
+                request.symbol,
+                request.exchange,
+                request.side,
+                request.order_type,
+                request.quantity,
+                request.product,
+                request.price,
+                request.trigger_price,
+                status,
+                request.validity,
+                request.idempotency_key,
+                request.tag,
+                "",
+                request.parent_order_id,
+                request.trade_plan_id,
+                request.recommendation_id,
+                now,
+                now,
             ),
         )
         self._db.commit()
@@ -236,9 +251,7 @@ class OrderManager:
         self._db.commit()
 
     def _load_order(self, order_id: str) -> OrderRecord:
-        row = self._db.execute(
-            "SELECT * FROM orders WHERE order_id=?", (order_id,)
-        ).fetchone()
+        row = self._db.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
         if not row:
             raise ValueError(f"Order not found: {order_id}")
         return self._row_to_record(row)

@@ -1,4 +1,5 @@
 """Tests for PreTradeChecker — the 8-step pre-trade gate."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -116,9 +117,12 @@ def test_emergency_stop_rejects(config: RiskConfig, ledger: CapitalLedgerRow) ->
 
 def test_max_drawdown_rejects(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
     from capital.circuit_breakers import BreakerStatus
+
     breakers = CircuitBreakerState(
-        **{**CircuitBreakerState.all_clear().__dict__,
-           "portfolio_max_drawdown": BreakerStatus.TRIPPED}
+        **{
+            **CircuitBreakerState.all_clear().__dict__,
+            "portfolio_max_drawdown": BreakerStatus.TRIPPED,
+        }
     )
     checker = _make_checker(config, ledger, breakers=breakers)
     perm = checker.check(_make_request())
@@ -130,9 +134,9 @@ def test_intraday_circuit_breaker_blocks_intraday_only(
     config: RiskConfig, ledger: CapitalLedgerRow
 ) -> None:
     from capital.circuit_breakers import BreakerStatus
+
     breakers = CircuitBreakerState(
-        **{**CircuitBreakerState.all_clear().__dict__,
-           "intraday_daily_loss": BreakerStatus.TRIPPED}
+        **{**CircuitBreakerState.all_clear().__dict__, "intraday_daily_loss": BreakerStatus.TRIPPED}
     )
     checker = _make_checker(config, ledger, breakers=breakers)
     assert not checker.check(_make_request(track=Track.INTRADAY)).approved
@@ -172,13 +176,13 @@ def test_position_size_uses_risk_pct(config: RiskConfig, ledger: CapitalLedgerRo
     req = _make_request(
         track=Track.SWING,
         entry=Decimal("500"),
-        stop=Decimal("480"),   # stop dist = 20
-        target=Decimal("560"), # RR = 60/20 = 3.0 ✓
+        stop=Decimal("480"),  # stop dist = 20
+        target=Decimal("560"),  # RR = 60/20 = 3.0 ✓
         confidence=Decimal("0.65"),
     )
     perm = checker.check(req)
     assert perm.approved
-    assert perm.position_size_shares == 3   # floor(75/20) = 3
+    assert perm.position_size_shares == 3  # floor(75/20) = 3
 
 
 def test_regime_reduces_position_size(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
@@ -189,8 +193,8 @@ def test_regime_reduces_position_size(config: RiskConfig, ledger: CapitalLedgerR
     """
     req = _make_request(
         entry=Decimal("500"),
-        stop=Decimal("480"),   # stop dist = 20, typical 2×ATR for swing
-        target=Decimal("560"), # RR = 60/20 = 3.0 ✓
+        stop=Decimal("480"),  # stop dist = 20, typical 2×ATR for swing
+        target=Decimal("560"),  # RR = 60/20 = 3.0 ✓
     )
     checker = _make_checker(config, ledger)
     perm_calm = checker.check(dataclasses.replace(req, current_regime=Regime.BULL_CALM))
@@ -228,9 +232,9 @@ def test_single_stock_concentration_breach_rejected(
 def test_intraday_late_entry_blocked(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
     """intraday_late_entry breaker fires at track_cooldown check (check 2)."""
     from capital.circuit_breakers import BreakerStatus
+
     breakers = CircuitBreakerState(
-        **{**CircuitBreakerState.all_clear().__dict__,
-           "intraday_late_entry": BreakerStatus.TRIPPED}
+        **{**CircuitBreakerState.all_clear().__dict__, "intraday_late_entry": BreakerStatus.TRIPPED}
     )
     checker = _make_checker(config, ledger, breakers=breakers)
     perm = checker.check(_make_request(track=Track.INTRADAY))

@@ -52,6 +52,7 @@ def _insert_filing(db, filing_id: str, headline: str, body: str = ""):
 
 # ── _build_inference_text ──────────────────────────────────────────────────────
 
+
 def test_build_inference_text_combines_headline_and_body():
     text = _build_inference_text("Strong Q4 results", "Revenue grew 20% YoY")
     assert "Strong Q4 results" in text
@@ -71,6 +72,7 @@ def test_build_inference_text_empty_body():
 
 # ── _map_label ────────────────────────────────────────────────────────────────
 
+
 def test_map_label_positive():
     assert _map_label("positive") == SentimentLabel.POSITIVE
 
@@ -88,6 +90,7 @@ def test_map_label_unknown_becomes_unclassified():
 
 
 # ── SentimentPipeline.infer (mocked) ──────────────────────────────────────────
+
 
 def test_infer_returns_correct_labels():
     pipeline = SentimentPipeline()
@@ -121,6 +124,7 @@ def test_infer_handles_batch_failure():
 
 # ── apply_sentiment_to_filings ────────────────────────────────────────────────
 
+
 def test_apply_sentiment_updates_null_rows():
     db = _make_db()
     _insert_filing(db, "f1", "Strong quarterly profit beat", "EBITDA margin expanded by 300bps")
@@ -128,10 +132,12 @@ def test_apply_sentiment_updates_null_rows():
 
     pipeline = SentimentPipeline()
     # Both filings are in one batch call; HuggingFace returns one list per input.
-    pipeline._pipeline = MagicMock(return_value=[
-        [{"label": "positive", "score": 0.91}],
-        [{"label": "negative", "score": 0.88}],
-    ])
+    pipeline._pipeline = MagicMock(
+        return_value=[
+            [{"label": "positive", "score": 0.91}],
+            [{"label": "negative", "score": 0.88}],
+        ]
+    )
 
     updated = apply_sentiment_to_filings(db, pipeline, confidence_threshold=0.60)
     assert updated == 2
@@ -142,9 +148,7 @@ def test_apply_sentiment_updates_null_rows():
     assert f1[0] == "positive"
     assert f1[1] == pytest.approx(0.91)
 
-    f2 = db.execute(
-        "SELECT sentiment_label FROM filings WHERE filing_id='f2'"
-    ).fetchone()
+    f2 = db.execute("SELECT sentiment_label FROM filings WHERE filing_id='f2'").fetchone()
     assert f2[0] == "negative"
 
 
