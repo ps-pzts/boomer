@@ -6,7 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "boomer"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "kiteconnect>=5.0",
+    "fyers-apiv3>=3.1",
+]
 
 [project.optional-dependencies]
 dev = [
