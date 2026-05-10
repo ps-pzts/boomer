@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boomer — {% block title %}Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+
+<header>
+  <nav>
+    <a href="/" class="nav-brand">Boomer</a>
+    <a href="/" {% if active == 'today' %}class="active"{% endif %}>Today</a>
+    <a href="/approvals" {% if active == 'approvals' %}class="active"{% endif %}>Approvals</a>
+    <a href="/positions" {% if active == 'positions' %}class="active"{% endif %}>Positions</a>
+    <a href="/capital" {% if active == 'capital' %}class="active"{% endif %}>Capital</a>
+    <a href="/system" {% if active == 'system' %}class="active"{% endif %}>System</a>
+    <span id="ws-indicator" class="ws-dot ws-connecting" title="Live feed status"></span>
+  </nav>
+</header>
+
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+<script>
+(function() {
+  const indicator = document.getElementById('ws-indicator');
+  let ws, retryDelay = 1000;
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(proto + '://' + location.host + '/ws');
+
+    ws.onopen = () => {
+      indicator.className = 'ws-dot ws-live';
+      retryDelay = 1000;
+    };
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'snapshot') {
+        // Update bot mode badge if element exists
+        const modeBadge = document.getElementById('bot-mode-badge');
+        if (modeBadge) {
+          modeBadge.textContent = data.bot_mode.toUpperCase().replace('_', ' ');
+          modeBadge.className = 'mode-badge mode-' + data.bot_mode;
+        }
+        const pnlEl = document.getElementById('live-pnl');
+        if (pnlEl) pnlEl.textContent = '₹' + data.total_pnl.toLocaleString('en-IN', {maximumFractionDigits: 0});
+        const missedEl = document.getElementById('missed-critical-count');
+        if (missedEl && data.missed_critical_alerts > 0) {
+          missedEl.textContent = data.missed_critical_alerts;
+          missedEl.style.display = 'inline';
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      indicator.className = 'ws-dot ws-reconnecting';
+      setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 30000);
+    };
+
+    ws.onerror = () => {
+      indicator.className = 'ws-dot ws-reconnecting';
+    };
+  }
+
+  connect();
+})();
+</script>
+
+</body>
+</html>

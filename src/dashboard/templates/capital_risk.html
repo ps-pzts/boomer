@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Capital & Risk{% endblock %}
+{% block content %}
+
+<h1>Capital &amp; Risk</h1>
+
+<!-- Top: capital state -->
+<section class="capital-section">
+  <div class="capital-grid">
+    <div class="capital-card">
+      <div class="capital-label">Total capital</div>
+      <div class="capital-value">₹{{ '{:,.0f}'.format(capital.total_capital) }}</div>
+    </div>
+    <div class="capital-card">
+      <div class="capital-label">HWM</div>
+      <div class="capital-value">₹{{ '{:,.0f}'.format(capital.hwm) }}</div>
+    </div>
+    <div class="capital-card">
+      <div class="capital-label">Drawdown from HWM</div>
+      <div class="capital-value {% if capital.drawdown_pct > 5 %}neg{% endif %}">
+        {{ '{:.1f}'.format(capital.drawdown_pct) }}%
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Middle: bucket allocations -->
+<section class="buckets-section">
+  <h2>Bucket allocation</h2>
+  <table class="bucket-table">
+    <thead>
+      <tr><th>Track</th><th>Allocated</th><th>Deployed</th><th>Available</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Long-term</td>
+        <td>₹{{ '{:,.0f}'.format(capital.lt_allocated) }}</td>
+        <td>₹{{ '{:,.0f}'.format(capital.lt_deployed) }}</td>
+        <td>₹{{ '{:,.0f}'.format(capital.lt_allocated - capital.lt_deployed) }}</td>
+      </tr>
+      <tr>
+        <td>Swing</td>
+        <td>₹{{ '{:,.0f}'.format(capital.swing_allocated) }}</td>
+        <td>₹{{ '{:,.0f}'.format(capital.swing_deployed) }}</td>
+        <td>₹{{ '{:,.0f}'.format(capital.swing_allocated - capital.swing_deployed) }}</td>
+      </tr>
+      <tr>
+        <td>Intraday</td>
+        <td>₹{{ '{:,.0f}'.format(capital.intraday_allocated) }}</td>
+        <td>₹{{ '{:,.0f}'.format(capital.intraday_deployed) }}</td>
+        <td>₹{{ '{:,.0f}'.format(capital.intraday_allocated - capital.intraday_deployed) }}</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<p class="hint">Circuit breaker details and sector concentration in the
+   <a href="/system">System Health</a> view.</p>
+
+{% endblock %}

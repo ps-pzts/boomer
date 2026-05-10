@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Positions{% endblock %}
+{% block content %}
+
+<h1>Open Positions <span class="badge">{{ total }}</span></h1>
+
+{% if not positions %}
+  <p class="empty-state">No open positions.</p>
+{% else %}
+<table class="positions-table">
+  <thead>
+    <tr>
+      <th>Symbol</th><th>Track</th><th>Entry date</th><th>Days</th>
+      <th>Entry ₹</th><th>Current ₹</th><th>P&amp;L</th><th>P&amp;L %</th>
+      <th>Stop</th><th>Target</th><th>Health</th><th>Note</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for pos in positions %}
+  <tr class="health-{{ 'poor' if pos.health_score < 40 else ('ok' if pos.health_score < 70 else 'good') }}">
+    <td><strong>{{ pos.symbol }}</strong></td>
+    <td><span class="badge-track-{{ pos.track }}">{{ pos.track }}</span></td>
+    <td>{{ pos.entry_date }}</td>
+    <td>{{ pos.days_held }}</td>
+    <td>₹{{ '{:,.1f}'.format(pos.entry_price) }}</td>
+    <td>₹{{ '{:,.1f}'.format(pos.current_price) }}</td>
+    <td class="{% if pos.pnl >= 0 %}pos{% else %}neg{% endif %}">
+      ₹{{ '{:,.0f}'.format(pos.pnl) }}
+    </td>
+    <td class="{% if pos.pnl_pct >= 0 %}pos{% else %}neg{% endif %}">
+      {{ '{:.1f}'.format(pos.pnl_pct) }}%
+    </td>
+    <td>₹{{ '{:,.1f}'.format(pos.stop_loss) }}</td>
+    <td>₹{{ '{:,.1f}'.format(pos.target) }}</td>
+    <td>
+      <span class="health-badge"
+            style="--health:{{ pos.health_score }}">
+        {{ '{:.0f}'.format(pos.health_score) }}
+      </span>
+    </td>
+    <td>
+      {% if pos.exit_recommendation %}
+        <span class="exit-flag">Exit rec</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if has_next or page > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+    <a href="/positions?page={{ page - 1 }}" class="btn btn-outline">← Prev</a>
+  {% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}
+    <a href="/positions?page={{ page + 1 }}" class="btn btn-outline">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+{% endblock %}

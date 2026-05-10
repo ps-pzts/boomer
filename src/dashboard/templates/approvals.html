@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Approvals{% endblock %}
+{% block content %}
+
+<h1>Pending Recommendations
+  {% if recs|length > 0 %}<span class="badge">{{ recs|length }}</span>{% endif %}
+</h1>
+
+{% if not recs %}
+  <p class="empty-state">No pending recommendations. Check back after the next morning batch.</p>
+{% else %}
+
+{% for rec in recs %}
+<div class="rec-card">
+  <div class="rec-header">
+    <span class="rec-symbol">{{ rec.symbol }}</span>
+    <span class="rec-exchange badge-grey">{{ rec.exchange }}</span>
+    <span class="rec-track badge-track-{{ rec.track }}">{{ rec.track }}</span>
+    <span class="rec-price">CMP ₹{{ '{:,.1f}'.format(rec.current_price) }}</span>
+    <span class="rec-valid {% if rec.valid_until < '' %}expired{% endif %}">
+      Valid until: {{ rec.valid_until[:16] }} UTC
+    </span>
+  </div>
+
+  <div class="rec-plan-grid">
+    <div>
+      <label>Entry zone</label>
+      <span>₹{{ '{:,.1f}'.format(rec.entry_low) }} – ₹{{ '{:,.1f}'.format(rec.entry_high) }}</span>
+    </div>
+    <div>
+      <label>Stop-loss</label>
+      <span>₹{{ '{:,.1f}'.format(rec.stop_loss) }}</span>
+    </div>
+    <div>
+      <label>Target</label>
+      <span>₹{{ '{:,.1f}'.format(rec.target) }}</span>
+    </div>
+    <div>
+      <label>Size</label>
+      <span>{{ rec.position_size_shares }} shares (₹{{ '{:,.0f}'.format(rec.position_size_rupees) }})</span>
+    </div>
+    <div>
+      <label>Signal score</label>
+      <span>{{ '{:.2f}'.format(rec.signal_score) }} (conf {{ '{:.0%}'.format(rec.confidence) }})</span>
+    </div>
+    <div>
+      <label>EV / RR</label>
+      <span>{{ '{:.2f}'.format(rec.ev) }} / {{ '{:.1f}'.format(rec.rr) }}×</span>
+    </div>
+    <div>
+      <label>Sector</label>
+      <span>{{ rec.sector }}</span>
+    </div>
+  </div>
+
+  <!-- Approve / Reject -->
+  <div class="rec-actions">
+    <form method="post" action="/approvals/{{ rec.rec_id }}/approve" style="display:inline">
+      <button class="btn btn-green">Approve</button>
+    </form>
+
+    <details class="reject-details">
+      <summary class="btn btn-red">Reject</summary>
+      <form method="post" action="/approvals/{{ rec.rec_id }}/reject" style="margin-top:0.5rem">
+        <select name="reason" required>
+          <option value="">-- reason --</option>
+          <option value="bad_timing">Bad timing</option>
+          <option value="disagree_signal">Disagree with signal</option>
+          <option value="portfolio_constraint">Portfolio constraint</option>
+          <option value="other">Other</option>
+        </select>
+        <button class="btn btn-red" type="submit">Confirm reject</button>
+      </form>
+    </details>
+
+    <!-- Modify with live re-validation via HTMX -->
+    <details class="modify-details">
+      <summary class="btn btn-yellow">Modify</summary>
+      <form id="modify-form-{{ rec.rec_id }}"
+            hx-post="/approvals/{{ rec.rec_id }}/validate"
+            hx-trigger="input delay:400ms"
+            hx-target="#gates-{{ rec.rec_id }}"
+            hx-swap="innerHTML"
+            style="margin-top:0.5rem">
+        <div class="modify-grid">
+          <label>Entry low <input type="number" name="entry_low" step="0.05" value="{{ rec.entry_low }}"></label>
+          <label>Entry high <input type="number" name="entry_high" step="0.05" value="{{ rec.entry_high }}"></label>
+          <label>Stop-loss <input type="number" name="stop_loss" step="0.05" value="{{ rec.stop_loss }}"></label>
+          <label>Target <input type="number" name="target" step="0.05" value="{{ rec.target }}"></label>
+          <label>Size (₹) <input type="number" name="position_size_rupees" step="1000" value="{{ rec.position_size_rupees }}"></label>
+        </div>
+        <div id="gates-{{ rec.rec_id }}" class="gate-results"></div>
+      </form>
+    </details>
+  </div>
+</div>
+{% endfor %}
+
+{% if recs|length > 3 %}
+<p class="bulk-safeguard">
+  ℹ More than 3 recommendations pending — each requires individual action. No bulk-approve available.
+</p>
+{% endif %}
+{% endif %}
+
+{% endblock %}

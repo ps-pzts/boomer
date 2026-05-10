@@ -6,9 +6,9 @@
 
 ---
 
-## Status: Phase 4 complete
+## Status: All phases complete — ready for deployment
 
-**Current phase:** Phase 4 (Executor & Backtesting) implemented and tested. Ready to begin Phase 5 (Orchestrator & Ops).
+**Current phase:** Phase 5 (Orchestrator, Dashboard, Operations) implemented and tested. All 5 phases implemented. 391 tests, lint clean.
 
 **Last updated:** 2026-05-10
 
@@ -31,13 +31,15 @@
 
 ## What's in progress
 
-_Nothing — Phase 4 complete, Phase 5 not started._
+_Nothing — all 5 phases complete._
 
 ---
 
-## What's next (implementation order)
+## What's next
 
-1. **Phase 5: Orchestrator** — scheduler, dashboard, alert layer
+1. **End-to-end integration testing** — wire all phases with a shared SQLite DB, simulate a full trading day
+2. **Live paper trading** — run with real market data, paper broker, monitoring dashboard
+3. **SEBI registration** (B4 blocker) — required before any real-money orders
 
 ---
 
@@ -61,6 +63,12 @@ Key ones resolved in Phase 3 implementation:
 - Q3-1: bull_volatile now covers all above-DMA states with elevated VIX; ATR stops scaled 1.5× in Volatile Uptrend
 - Q3-2: Option B — red-flag filings (fraud, auditor change, pledging) trigger immediate Stage 4b exit re-evaluation; entries still morning-batch only
 
+Key ones resolved in Phase 5 implementation:
+- Q5-1: WebSocket in-process within boomer-executor.service (not a separate service)
+- Q5-2: Rollback checklist added to ops/runbook.md
+- Q5-3: Fyers token refresh is a manual pre-market step with CRITICAL alert on failure
+- Q5-4: Fyers credentials (`FYERS_APP_ID`, `FYERS_SECRET`, `FYERS_ACCESS_TOKEN`) in secrets.env alongside Kite
+
 Key ones resolved in Phase 4 implementation:
 - Q4-1: Kite WebSocket tick feed is authoritative LTP; 5-minute staleness threshold falls back to REST quote
 - Q4-3: FyersBroker confirmed (user has API access); GTC/OCO pending paper-trading verification before first live delivery trade
@@ -70,6 +78,29 @@ Key ones resolved in Phase 4 implementation:
 ---
 
 ## Change log
+
+### 2026-05-10 — Phase 5: Orchestrator, Dashboard, Operations
+
+- `migrations/0005_orchestrator_schema.sql`: 5 tables — `bot_mode` (singleton, auto/paused/emergency_stop), `bot_mode_log` (audit), `task_runs` (9 status states), `trading_calendar` (2026 NSE holidays pre-seeded), `alert_log`, `critical_notification_failures`
+- `src/orchestrator/models.py`: `TaskStatus`/`BotMode` StrEnums, `RetryPolicy` with exponential backoff, `TaskDefinition` dataclass, `BotModeStore`/`TaskRunStore` with full SQLite persistence, `is_trading_day()` checks weekday + trading_calendar
+- `src/orchestrator/task_runner.py`: `run_task()` contextmanager (SIGALRM timeout enforcement, RUNNING→SUCCESS/FAILED/TIMEOUT), `execute_with_retry()` with configurable backoff
+- `src/orchestrator/tasks.py`: 12 task definitions with IST-anchored cron schedules (stored as UTC); all tasks wired with db_path + optional runtime deps (intraday_runner, reconciler)
+- `src/orchestrator/scheduler.py`: `cron_matches()` (croniter or stdlib fallback), `dependency_met()`, `Scheduler.should_run()` (8 checks including holiday, already-succeeded, 3-consecutive-intraday-fail gate)
+- `src/orchestrator/orchestrator.py`: `Orchestrator` class — crash recovery (`RUNNING→INTERRUPTED`), 30s poll loop, daemon threads per task, CRITICAL alert on FAILED_FINAL
+- `src/alerts/models.py`, `telegram.py`, `email_alert.py`: stdlib-only send functions (no third-party HTTP client)
+- `src/alerts/alerter.py`: `AlertManager` — INFO (persist only), WARN (6h batch flush), CRITICAL (both channels + `critical_notification_failures` on double-failure); `get_alerter()` singleton; `from_env()` classmethod
+- `src/dashboard/queries.py`: 5 read-only queries via `PRAGMA query_only=ON` WAL connection; all column names verified against actual schema
+- `src/dashboard/app.py`: FastAPI + HTTP Basic auth; 5 views (Today, Approvals, Positions, Capital/Risk, System Health); approve/reject/validate/mode-change/acknowledge-alert POST endpoints; WebSocket live push
+- `src/dashboard/websocket.py`: `ConnectionManager` broadcast; `live_pusher` sends snapshot every 5s
+- `src/dashboard/templates/`: base.html (WebSocket auto-reconnect, live indicator), today.html, approvals.html (HTMX validate at 400ms debounce), positions.html, capital_risk.html, system_health.html
+- `src/dashboard/static/dashboard.css`: dark theme, monospace, CSS custom properties
+- `ops/restart_guard.sh`: blocks 3AM systemd restart if any task_runs row has status=RUNNING
+- `ops/systemd/`: boomer-orchestrator.service, boomer-dashboard.service, boomer-executor.service (executor owns WebSocket per Q5-1)
+- `ops/runbook.md`: first-deploy, daily ops, 5 incident playbooks (broker down, reconciliation failed, DB corruption, emergency stop, rollback)
+- 76 new Phase 5 tests (391 total); 0 failures; lint clean
+- Bug fixed: `recommendations` query used wrong column names (`rec_id`, `symbol`, `entry_low`, `valid_until`, `status='pending'`) — fixed to actual schema (`recommendation_id`, `stock_symbol`, `entry_zone_low`, `generated_at`, `status='awaiting_human'`)
+- Bug fixed: `signals` query used `signal_date` — fixed to `generated_at`
+- Bug fixed: `circuit_breaker_events` query used non-existent `capital_audit_log` table
 
 ### 2026-05-10 — Phase 4: Executor & Backtesting
 
