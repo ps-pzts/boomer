@@ -6,11 +6,11 @@
 
 ---
 
-## Status: Phase 2 complete
+## Status: Phase 3 complete
 
-**Current phase:** Phase 2 (Collector) implemented and tested. Ready to begin Phase 3 (Brain).
+**Current phase:** Phase 3 (Brain) implemented and tested. Ready to begin Phase 4 (Executor).
 
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-10
 
 ---
 
@@ -31,15 +31,14 @@
 
 ## What's in progress
 
-_Nothing — Phase 2 complete, Phase 3 not started._
+_Nothing — Phase 3 complete, Phase 4 not started._
 
 ---
 
 ## What's next (implementation order)
 
-1. **Phase 3: Brain** — feature store, signal generation, APM
-2. **Phase 4: Executor** — broker abstraction, GTT lifecycle, backtesting engine
-3. **Phase 5: Orchestrator** — scheduler, dashboard, alert layer
+1. **Phase 4: Executor** — broker abstraction, GTT lifecycle, backtesting engine
+2. **Phase 5: Orchestrator** — scheduler, dashboard, alert layer
 
 ---
 
@@ -59,14 +58,39 @@ Key ones resolved in Phase 1 implementation:
 - Q1-1: Regime scaling applies to NEW ENTRIES only — existing positions not force-liquidated on regime shift
 - Q3-4: Per-track confidence haircut (`live_backtest_ratio_*`) in `risk_config`, initial value 0.70
 
+Key ones resolved in Phase 3 implementation:
+- Q3-1: bull_volatile now covers all above-DMA states with elevated VIX; ATR stops scaled 1.5× in Volatile Uptrend
+- Q3-2: Option B — red-flag filings (fraud, auditor change, pledging) trigger immediate Stage 4b exit re-evaluation; entries still morning-batch only
+
 Key ones to resolve before first live trade:
-- Q3-1: Regime taxonomy gap (no pure bull_volatile → intraday path)
 - Q4-1: LTP source contract (Kite WebSocket vs REST fallback)
 - Q4-3: Fyers GTC OCO verification (confirm API supports it before coding)
 
 ---
 
 ## Change log
+
+### 2026-05-10 — Phase 3: Brain Framework
+
+- `migrations/0003_brain_schema.sql`: 6 tables — features (point-in-time indexed), sector_classifications, signals, trade_plans, recommendations, recommendation_outcomes
+- `src/brain/models.py`: Direction/RecommendationStatus/RecommendationOutcome/EntryStrategy/SkipReason enums; RED_FLAG_CATEGORIES frozenset; ContributingSignal, SignalRecord, TradePlan, EntryPlan, Recommendation (mutable), PositionHealthScore dataclasses; COOLDOWN_DAYS table + cooldown_days_for()
+- `src/brain/feature_store.py` (Stage 0): FeatureStore with point-in-time `get_features_as_of()` — enforces `valid_from <= as_of AND source_max_observed_at <= as_of`; write_feature() supersedes existing row for same symbol+name+valid_from
+- `src/brain/regime.py` (Stage 1): Exhaustive 4-regime taxonomy (bull_calm/bull_volatile/sideways/bear); RegimeDetector with 3-day stickiness and -1.5% intraday downgrade; Q3-1 resolved — bull_volatile covers VIX 50-80th pct above-DMA gap
+- `src/brain/signals/base.py` (Stage 2): BaseSignalGenerator ABC; LIQUIDITY_GATE by track (LT=5cr, swing=2cr, intraday=10cr); confidence = 0.5×|raw_score| + 0.3×agreement + 0.2×freshness
+- `src/brain/signals/long_term.py`: 5 sub-signals with regime-specific weight tables; returns None when key data unavailable
+- `src/brain/signals/swing.py`: 6 sub-signals
+- `src/brain/signals/intraday.py`: 6 sub-signals; large gap (>2.5%) zeroes out premarket_gap_score
+- `src/brain/features/computers.py`: compute_promoter/smart_money/filing_sentiment/earnings_quality/price_features() — all write to feature store with point-in-time metadata
+- `src/brain/trade_decision.py` (Stage 3): 7-step TradePlanGenerator — EV gate with live_backtest_ratio haircut (p_win = confidence × haircut), ATR-based stops (k=1.5/2.0/3.0), RR gates (1.5/1.5/2.0 by track); ROUND_TRIP_COST_BPS=30
+- `src/brain/entry_timing.py` (Stage 3.5): LT1/LT2/SW1/SW2/SW3/ID1/ID2/ID3 fixed strategy classifiers; check_stacking_gate() (3 conditions: pnl>1%, independence≥50%, concentration cap)
+- `src/brain/portfolio.py` (Stage 4): PortfolioConstructor with 6 constraint checks; check_pyramid() forbids averaging down
+- `src/brain/position_review.py` (Stage 4b): 4-component health score (P&L 40%, signal 30%, time 15%, regime 15%); handle_material_filing() implements Q3-2 Option B — immediate exit rec on RED_FLAG_CATEGORIES, requires_human=False
+- `src/brain/packager.py` (Stage 5): RecommendationPackager (routes LT → human, others → APM); RecommendationStore (SQLite persistence, cooldown tracking, injectable recorded_at for deterministic tests)
+- 98 new brain tests (222 total); 0 failures; lint clean
+- Bug fixed: migration 0003 was self-inserting into schema_version (conflict with runner); removed the duplicate INSERT
+- Bug fixed: regime stickiness used `history[-1]` as "current" instead of counting trailing streak
+- Q3-1 resolved: exhaustive taxonomy; sideways requires near-DMA + low VIX (below 35th pct for below-DMA paths)
+- Q3-2 resolved: Option B — red-flag filing triggers immediate Stage 4b position review only (not new entries)
 
 ### 2026-05-09 — Phase 2: Collector Framework
 

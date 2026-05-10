@@ -138,32 +138,15 @@ A question is removed from this list when a decision is made and recorded in the
 
 ## Phase 3 — Brain
 
-### Q3-1: Complete regime taxonomy — unclassified VIX states
+### ~~Q3-1: Complete regime taxonomy — unclassified VIX states~~ ✓ RESOLVED
 
-**Context:** The four regime conditions leave a gap: if Nifty is above 200 DMA, VIX is between 50th–70th percentile (not "bottom 50%" for bull_calm, not "top 30%" for bull_volatile), and breadth is above 60%, no regime condition matches. The current fallback (compute failure → bear) is incorrectly applied to a normal healthy-market state.
-
-**Question:** What regime should apply when Nifty is above 200 DMA but VIX is in the 50–70th percentile range?
-
-**Recommended fix:** Extend `bull_volatile` definition to cover this gap: `bull_volatile` = Nifty above 200 DMA AND (VIX ≥ 50th percentile OR breadth 40-60%). This makes bull_calm = Nifty above DMA + VIX bottom 50% + breadth ≥ 60%, and everything above-DMA that isn't bull_calm becomes bull_volatile.
-
-**Action needed:** Update Stage 1 regime definitions in Phase 3 with exhaustive coverage (each condition maps to exactly one regime).
+**Decision (2026-05-10):** `bull_volatile` extended to cover the 50–70th percentile VIX gap. The "Volatile Uptrend" regime (Nifty above 200 DMA, VIX 50–70th percentile) is now a named case under `bull_volatile`. Taxonomy is now exhaustive: `bull_calm` = above DMA + VIX bottom 50% + breadth ≥ 60%; `bull_volatile` = above DMA and (VIX ≥ 50th percentile OR breadth 40–60%); `sideways` = Nifty within 5% of 200 DMA; `bear` = below 200 DMA OR breadth < 30% OR VIX > 80th percentile. Most-severe-wins. In Volatile Uptrend, stops use 1.5× ATR (increased from base) and scale-in entry applies. Documented in phase-3-brain.md Stage 1.
 
 ---
 
-### Q3-2: Same-day filing events — morning batch update policy
+### ~~Q3-2: Same-day filing events — morning batch update policy~~ ✓ RESOLVED
 
-**Context:** The morning batch runs at 7:00-7:15 AM using yesterday's features. A material filing arriving at 11 AM (promoter buys large block) would not influence long-term or swing signals until the next morning's batch. The intraday continuous pipeline doesn't run long-term/swing signals.
-
-**Question:** For material intraday filings (promoter activity, auditor change, fraud disclosure), should the system trigger a partial morning batch re-run at midday?
-
-**Options:**
-- A: Accept the lag — filing-based signals update once per day only. Morning batch uses end-of-previous-day features. This is simple and avoids mid-session signal churn.
-- B: Add a "material filing trigger" — if a filing with red-flag categories arrives during market hours, immediately re-evaluate Stage 4b exit recommendations for affected positions (but don't generate new entries mid-session).
-- C: Full mid-session re-run of long-term and swing signals when a material filing arrives.
-
-**Recommended decision:** Option B — mid-session re-evaluation of Stage 4b exits only for red-flag filings (auditor change, fraud, pledging spike, promoter large sell). New entries wait for next morning batch. This balances responsiveness with stability.
-
-**Action needed:** Update Phase 3 Stage 4b and Phase 4 intraday continuous pipeline sections.
+**Decision (2026-05-10):** Option B adopted. Red-flag filings (fraud disclosure, auditor change, pledging spike, promoter large sell) arriving during market hours trigger an immediate Stage 4b exit re-evaluation for affected tickers only. New entry candidates still wait for the next morning batch. Logic: red-flag filings represent asymmetric risk where holding until next morning risks a gap-down. Scope limited to exits to avoid mid-session churn on entry decisions. Implemented in `PositionReviewer.handle_material_filing()` in `src/brain/position_review.py`.
 
 ---
 

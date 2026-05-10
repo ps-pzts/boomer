@@ -65,17 +65,17 @@ By 7 AM next morning, all features are fresh.
 
 ## Stage 1 — Regime detector
 
-### Four regimes
+### Four regimes (exhaustive — every market state maps to exactly one)
 
-**`bull_calm`** — Nifty above 200 DMA, India VIX in bottom 50% of 252-day range, breadth (% of Nifty 500 above 50 DMA) > 60%.
+**`bull_calm`** — Nifty above 200 DMA, India VIX in bottom 50% of 252-day range, breadth (% of Nifty 500 above 50 DMA) ≥ 60%.
 
-**`bull_volatile`** — Nifty above 200 DMA but India VIX in top 30%, OR breadth between 40-60%.
+**`bull_volatile`** — Nifty above 200 DMA AND (VIX ≥ 50th percentile OR breadth 40–60%). This covers the "Volatile Uptrend" state (Q3-1 resolved 2026-05-10). Trade behaviour: stops at 1.5× ATR (vs 1.0× in bull_calm) and scale-in entry applies; 70% exposure cap.
 
-**`sideways`** — Nifty within 5% of 200 DMA in either direction, no clear breadth signal.
+**`sideways`** — Nifty within 5% of 200 DMA in either direction, breadth does not trigger bull or bear.
 
 **`bear`** — Nifty below 200 DMA, OR breadth < 30%, OR India VIX above 80th percentile.
 
-Most severe matching regime wins (bear > volatile > calm).
+Most severe matching regime wins (bear > sideways > bull_volatile > bull_calm). The exhaustive taxonomy means no valid market state can fall through to the failure-mode `bear` fallback — the fallback is only invoked on data unavailability.
 
 ### Why these specific rules
 
@@ -605,6 +605,10 @@ Migration in 18-24 months: train gradient boosted model on `(features, regime) �
 ### Loophole 1: Designed for one direction (long)
 
 **Decision:** v1 is long-only across all three tracks. `direction` can be `neutral` (don't trade) or `long` (buy). `short` is reserved for v2 with F&O.
+
+### Loophole 16: Q3-2 — Material filing mid-session policy
+
+**Decision (2026-05-10):** Option B. Red-flag filings (fraud, auditor change, pledging spike, promoter large sell) arriving during market hours trigger an immediate Stage 4b exit re-evaluation for the affected ticker. New entries still wait for the next morning batch. The filing classifier in `PositionReviewer.handle_material_filing()` checks against the red-flag category set (`RED_FLAG_CATEGORIES`) and, if a position is open, produces an immediate exit recommendation bypassing the daily batch schedule.
 
 ### Loophole 2: Stage 4b half-specified initially
 
