@@ -1,0 +1,168 @@
+name: CD — Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+        default: production
+      confirm:
+        description: "Type 'deploy' to confirm"
+        required: true
+        type: string
+
+jobs:
+  pre-flight:
+    name: Pre-flight checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "deploy" ]; then
+            echo "Confirmation input must be 'deploy'. Got: '${{ github.event.inputs.confirm }}'"
+            exit 1
+          fi
+          echo "Confirmation accepted."
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint — ruff
+        run: ruff check .
+
+      - name: Run tests
+        run: |
+          PYTHONPATH=src pytest tests/ -x --tb=short
+        env:
+          KITE_API_KEY: ""
+          KITE_ACCESS_TOKEN: ""
+          FYERS_CLIENT_ID: ""
+          FYERS_ACCESS_TOKEN: ""
+          TELEGRAM_BOT_TOKEN: ""
+          TELEGRAM_CHAT_ID: ""
+
+  deploy:
+    name: Deploy (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+    needs: pre-flight
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Check no open intraday positions before deploy
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            COUNT=$(sqlite3 /var/lib/boomer/boomer.db \
+              "SELECT COUNT(*) FROM positions WHERE is_open=1 AND track='intraday';")
+            if [ "$COUNT" -gt 0 ]; then
+              echo "ERROR: $COUNT open intraday position(s). Deploy aborted."
+              echo "Close all intraday positions or wait until after market hours."
+              exit 1
+            fi
+            echo "Intraday positions check passed (count=0)."
+          REMOTE
+
+      - name: Pause bot mode before deploy
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            sqlite3 /var/lib/boomer/boomer.db \
+              "UPDATE bot_mode SET mode='paused', changed_at=datetime('now'), changed_by='cd_pipeline' WHERE id=1;"
+            echo "Bot set to paused."
+          REMOTE
+
+      - name: Backup database
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            BACKUP=/var/lib/boomer/backups/pre-deploy-$(date +%Y%m%d-%H%M%S).db
+            cp /var/lib/boomer/boomer.db "$BACKUP"
+            echo "Backup created: $BACKUP"
+          REMOTE
+
+      - name: Pull latest code
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            cd /opt/boomer
+            git fetch origin
+            git checkout main
+            git pull --ff-only origin main
+          REMOTE
+
+      - name: Install dependencies
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            cd /opt/boomer
+            .venv/bin/pip install -e "." --quiet
+          REMOTE
+
+      - name: Run database migrations
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            cd /opt/boomer
+            .venv/bin/python - <<'EOF'
+          from src.db.migrations import run_migrations
+          import os
+          db = os.environ.get("BOOMER_DB_PATH", "/var/lib/boomer/boomer.db")
+          run_migrations(db)
+          print("Migrations complete.")
+          EOF
+          REMOTE
+
+      - name: Restart services
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            systemctl restart boomer-orchestrator boomer-dashboard boomer-executor
+            sleep 5
+            systemctl is-active --quiet boomer-orchestrator && echo "orchestrator: OK" || echo "orchestrator: FAILED"
+            systemctl is-active --quiet boomer-dashboard   && echo "dashboard: OK"    || echo "dashboard: FAILED"
+            systemctl is-active --quiet boomer-executor    && echo "executor: OK"     || echo "executor: FAILED"
+          REMOTE
+
+      - name: Health check — dashboard responds
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "curl -sf -o /dev/null -u ${{ secrets.BASIC_AUTH_USER }}:${{ secrets.BASIC_AUTH_PASSWORD }} http://127.0.0.1:8080/ && echo 'Dashboard OK' || echo 'Dashboard health check FAILED'"
+
+      - name: Resume bot to auto
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
+            sqlite3 /var/lib/boomer/boomer.db \
+              "UPDATE bot_mode SET mode='auto', changed_at=datetime('now'), changed_by='cd_pipeline' WHERE id=1;"
+            echo "Bot resumed to auto."
+          REMOTE
+
+      - name: Post deployment summary
+        if: always()
+        run: |
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** main" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
