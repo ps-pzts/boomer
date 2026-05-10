@@ -13,6 +13,7 @@ def run_migrations(db_path: str | Path, migrations_dir: str | Path) -> None:
     db_path = Path(db_path)
     migrations_dir = Path(migrations_dir)
 
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
