@@ -9,11 +9,11 @@
   <div class="capital-grid">
     <div class="capital-card">
       <div class="capital-label">Total capital</div>
-      <div class="capital-value">₹{{ '{:,.0f}'.format(capital.total_capital) }}</div>
+      <div class="capital-value">₹{{ '{:,.2f}'.format(capital.total_capital) }}</div>
     </div>
     <div class="capital-card">
       <div class="capital-label">HWM</div>
-      <div class="capital-value">₹{{ '{:,.0f}'.format(capital.hwm) }}</div>
+      <div class="capital-value">₹{{ '{:,.2f}'.format(capital.hwm) }}</div>
     </div>
     <div class="capital-card">
       <div class="capital-label">Drawdown from HWM</div>
@@ -34,21 +34,21 @@
     <tbody>
       <tr>
         <td>Long-term</td>
-        <td>₹{{ '{:,.0f}'.format(capital.lt_allocated) }}</td>
-        <td>₹{{ '{:,.0f}'.format(capital.lt_deployed) }}</td>
-        <td>₹{{ '{:,.0f}'.format(capital.lt_allocated - capital.lt_deployed) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.lt_allocated) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.lt_deployed) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.lt_allocated - capital.lt_deployed) }}</td>
       </tr>
       <tr>
         <td>Swing</td>
-        <td>₹{{ '{:,.0f}'.format(capital.swing_allocated) }}</td>
-        <td>₹{{ '{:,.0f}'.format(capital.swing_deployed) }}</td>
-        <td>₹{{ '{:,.0f}'.format(capital.swing_allocated - capital.swing_deployed) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.swing_allocated) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.swing_deployed) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.swing_allocated - capital.swing_deployed) }}</td>
       </tr>
       <tr>
         <td>Intraday</td>
-        <td>₹{{ '{:,.0f}'.format(capital.intraday_allocated) }}</td>
-        <td>₹{{ '{:,.0f}'.format(capital.intraday_deployed) }}</td>
-        <td>₹{{ '{:,.0f}'.format(capital.intraday_allocated - capital.intraday_deployed) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.intraday_allocated) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.intraday_deployed) }}</td>
+        <td>₹{{ '{:,.2f}'.format(capital.intraday_allocated - capital.intraday_deployed) }}</td>
       </tr>
     </tbody>
   </table>

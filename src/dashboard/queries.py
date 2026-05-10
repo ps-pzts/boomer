@@ -331,15 +331,16 @@ def get_recent_task_runs(db_path: str, hours: int = 24) -> list[TaskRunRow]:
     ]
 
 
-def get_recent_errors(db_path: str, limit: int = 50) -> list[dict]:
+def get_recent_errors(db_path: str, limit: int = 50, hours: int = 48) -> list[dict]:
     conn = _conn(db_path)
     try:
         rows = conn.execute(
             """SELECT task_id, run_date, started_at, error_message, error_traceback
                FROM task_runs
                WHERE error_message IS NOT NULL
+                 AND started_at >= datetime('now', ?)
                ORDER BY started_at DESC LIMIT ?""",
-            (limit,),
+            (f"-{hours} hours", limit),
         ).fetchall()
     finally:
         conn.close()
