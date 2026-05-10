@@ -12,7 +12,6 @@ import tempfile
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from capital.circuit_breakers import evaluate_circuit_breakers
@@ -26,7 +25,6 @@ from capital.models import (
 )
 from capital.pre_trade import PreTradeChecker
 from capital.risk_config import RiskConfigStore
-from collector.models import SentimentLabel
 from collector.sentiment import SentimentPipeline, apply_sentiment_to_filings
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -38,7 +36,8 @@ def make_db() -> tuple[sqlite3.Connection, str]:
     tmp = tempfile.mktemp(suffix=".db")
     conn = sqlite3.connect(tmp)
     for f in ["migrations/0001_initial_schema.sql", "migrations/0002_collector_schema.sql"]:
-        conn.executescript(open(f).read())
+        with open(f) as fh:
+            conn.executescript(fh.read())
     return conn, tmp
 
 
@@ -177,19 +176,25 @@ def case1_bull():
     print("  Filing: RELIANCE — Q4 results announcement")
 
     print("\n[Phase 2] Bulk deals published at 6 PM:")
-    insert_bulk_deal(conn, "RELIANCE", "LIC OF INDIA", qty=500_000, price=Decimal("2920"), is_smart_money=1)
+    insert_bulk_deal(
+        conn, "RELIANCE", "LIC OF INDIA",
+        qty=500_000, price=Decimal("2920"), is_smart_money=1,
+    )
     print("  Bulk deal: LIC OF INDIA bought 5,00,000 shares @ ₹2,920 = ₹146 Cr")
 
     # ── Phase 2: sentiment pipeline ─────────────────────────────────────────
     print("\n[Phase 2] FinBERT sentiment inference:")
-    count = run_sentiment(
+    run_sentiment(
         conn, config, ["f-001"],
         mock_results=[[{"label": "positive", "score": 0.91}]],
     )
     row = conn.execute(
         "SELECT sentiment_label, sentiment_confidence FROM filings WHERE filing_id='f-001'"
     ).fetchone()
-    print(f"  '{conn.execute('SELECT headline FROM filings WHERE filing_id=?', ('f-001',)).fetchone()[0]}'")
+    headline = conn.execute(
+        "SELECT headline FROM filings WHERE filing_id=?", ("f-001",)
+    ).fetchone()[0]
+    print(f"  '{headline}'")
     print(f"  → Sentiment: {row[0].upper()}  (confidence {row[1]:.0%})")
 
     # ── Phase 1: pre-trade check ─────────────────────────────────────────────
@@ -220,14 +225,21 @@ def case1_bull():
     print(f"  Swing bucket (15%): ₹{swing_bucket:,.0f}")
     print(f"  Risk budget (1%):   ₹{risk_budget:,.0f}")
     print(f"  Entry: ₹{req.entry_price}  Stop: ₹{req.stop_loss_price}  Target: ₹{req.target_price}")
-    print(f"  Risk per share: ₹{risk_per_share}  →  Qty = ₹{risk_budget:.0f} / ₹{risk_per_share} = {expected_qty} shares")
+    print(
+        f"  Risk per share: ₹{risk_per_share}  →  "
+        f"Qty = ₹{risk_budget:.0f} / ₹{risk_per_share} = {expected_qty} shares"
+    )
     print(f"  Regime: {req.current_regime}  (scale 100%)")
 
     perm = checker.check(req)
     status = "✓ APPROVED" if perm.approved else "✗ REJECTED"
     print(f"\n  Result: {status}")
     if perm.approved:
-        print(f"  Position: {perm.position_size_shares} shares × ₹{req.entry_price} = ₹{perm.position_size_shares * req.entry_price:,.0f}")
+        pos_value = perm.position_size_shares * req.entry_price
+        print(
+            f"  Position: {perm.position_size_shares} shares × ₹{req.entry_price}"
+            f" = ₹{pos_value:,.0f}"
+        )
         print(f"  Max loss on trade: ₹{perm.risk_per_trade_rupees:,.0f}")
     else:
         print(f"  Failed check: {perm.failed_check}")
@@ -264,7 +276,7 @@ def case2_bear():
 
     # ── Phase 2: sentiment pipeline ─────────────────────────────────────────
     print("\n[Phase 2] FinBERT sentiment inference:")
-    count = run_sentiment(
+    run_sentiment(
         conn, config, ["f-002", "f-003"],
         mock_results=[
             [{"label": "negative", "score": 0.95}],
