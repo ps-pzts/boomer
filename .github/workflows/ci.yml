@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    name: Lint & Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint — ruff
+        run: ruff check .
+
+      - name: Lint — ruff format check
+        run: ruff format --check .
+
+      - name: Syntax check — all Python files
+        run: |
+          find src tests -name "*.py" | xargs python -m py_compile
+
+      - name: Run migrations on test DB
+        run: |
+          mkdir -p /tmp/boomer_test
+          PYTHONPATH=src python - <<'EOF'
+          from src.db.migrations import run_migrations
+          run_migrations("/tmp/boomer_test/boomer.db")
+          print("Migrations OK")
+          EOF
+
+      - name: Run tests
+        run: |
+          BOOMER_DB_PATH=/tmp/boomer_test/boomer.db \
+          PYTHONPATH=src \
+          pytest tests/ -x --tb=short --cov=src --cov-report=term-missing
+        env:
+          # Broker and alert env vars are empty in CI — tests mock all external calls
+          KITE_API_KEY: ""
+          KITE_ACCESS_TOKEN: ""
+          FYERS_CLIENT_ID: ""
+          FYERS_ACCESS_TOKEN: ""
+          TELEGRAM_BOT_TOKEN: ""
+          TELEGRAM_CHAT_ID: ""
+
+      - name: Check no file exceeds 600 lines
+        run: |
+          python - <<'EOF'
+          import pathlib, sys
+          violations = []
+          for p in pathlib.Path("src").rglob("*.py"):
+              lines = p.read_text().splitlines()
+              if len(lines) > 600:
+                  # Allow if file starts with the permitted-exception comment
+                  first_line = lines[0] if lines else ""
+                  if "auto-generated" not in first_line.lower() and "cannot be split" not in first_line.lower():
+                      violations.append((str(p), len(lines)))
+          if violations:
+              for path, n in violations:
+                  print(f"FAIL: {path} has {n} lines (limit 600)")
+              sys.exit(1)
+          print("All files within 600-line limit.")
+          EOF
