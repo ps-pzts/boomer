@@ -6,9 +6,9 @@
 
 ---
 
-## Status: All phases complete — ready for deployment
+## Status: All phases complete — CI/CD pipeline in place
 
-**Current phase:** Phase 5 (Orchestrator, Dashboard, Operations) implemented and tested. All 5 phases implemented. 391 tests, lint clean.
+**Current phase:** Phase 5 complete. GitHub Actions CI (lint + test on every PR) and manual CD (SSH deploy with pre-flight checks) added. 391 tests, lint clean.
 
 **Last updated:** 2026-05-10
 
@@ -78,6 +78,14 @@ Key ones resolved in Phase 4 implementation:
 ---
 
 ## Change log
+
+### 2026-05-10 — CI/CD and repository hygiene
+
+- `.github/workflows/ci.yml`: CI pipeline — triggers on PR open/sync/reopen and `workflow_dispatch`; runs on Python 3.11 and 3.12 in parallel; gates: ruff check, ruff format check, py_compile syntax check, migrations dry-run, pytest with coverage, 600-line file limit enforcement (CLAUDE.md Rule 4)
+- `.github/workflows/cd.yml`: CD pipeline — manual trigger only (`workflow_dispatch`); requires typing `deploy` to confirm; pre-flight: lint + tests + checks for open intraday positions; deploy steps: pause bot → backup DB → git pull → pip install → run migrations → restart systemd services → dashboard health check → resume bot to auto; posts summary to GitHub step summary
+- `.gitignore`: added `.env`, `data/`, `secrets.env`, `guide.md` — prevents secrets and local data from being committed accidentally
+- `guide.md` (local only, gitignored): end-to-end local setup guide covering virtualenv, migrations, seed data, dashboard startup, orchestrator startup, daily broker token refresh (Kite + Fyers), lint/test commands, Docker usage, common troubleshooting
+- Required GitHub secrets for CD: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, and `BASIC_AUTH_USER`/`BASIC_AUTH_PASSWORD` — set under repo Settings → Environments → `production`
 
 ### 2026-05-10 — Phase 5: Orchestrator, Dashboard, Operations
 
