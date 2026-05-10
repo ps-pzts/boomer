@@ -7,6 +7,7 @@ Design decisions:
 - Re-running a completed task for the same run_date is safe (idempotent design
   is each task's responsibility, but the runner doesn't block it).
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,10 @@ def run_task(
     run_id = store.create(task_id, run_date, attempt=attempt, manual_override=manual_override)
     logger.info(
         "task_start task_id=%s run_date=%s attempt=%d run_id=%d",
-        task_id, run_date, attempt, run_id,
+        task_id,
+        run_date,
+        attempt,
+        run_id,
     )
     old_handler = None
     try:
@@ -57,7 +61,9 @@ def run_task(
         signal.alarm(0)
         logger.error(
             "task_timeout task_id=%s run_id=%d timeout_seconds=%d",
-            task_id, run_id, timeout_seconds,
+            task_id,
+            run_id,
+            timeout_seconds,
         )
         store.update(run_id, TaskStatus.TIMEOUT, error_message=f"Exceeded {timeout_seconds}s")
         raise
@@ -104,9 +110,12 @@ def execute_with_retry(
                 # Final failure — mark FAILED_FINAL on the last run row
                 latest = store.latest_for_date(task_id, run_date)
                 if latest and latest.id is not None:
-                    store.update(latest.id, TaskStatus.FAILED_FINAL,
-                                 error_message=latest.error_message,
-                                 error_traceback=latest.error_traceback)
+                    store.update(
+                        latest.id,
+                        TaskStatus.FAILED_FINAL,
+                        error_message=latest.error_message,
+                        error_traceback=latest.error_traceback,
+                    )
                 logger.critical("task_failed_final task_id=%s run_date=%s", task_id, run_date)
                 return False
     return False

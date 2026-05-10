@@ -14,11 +14,11 @@ class BacktestConfig:
     universe: str = "nifty500_current"
 
     # Acceptance thresholds (per Phase 4 design doc)
-    min_sharpe: float = 1.3        # raised from 1.0 for survivorship bias adjustment
+    min_sharpe: float = 1.3  # raised from 1.0 for survivorship bias adjustment
     max_drawdown_pct: float = 15.0
     min_trades_per_track: int = 100
     min_expectancy_ratio: float = 1.5  # avg_win × win_rate ≥ 1.5 × avg_loss × loss_rate
-    min_oos_pct_of_is: float = 0.5     # OOS performance ≥ 50% of in-sample
+    min_oos_pct_of_is: float = 0.5  # OOS performance ≥ 50% of in-sample
 
 
 @dataclass
@@ -36,7 +36,7 @@ class BacktestTrade:
     slippage_cost: float
     net_pnl: float
     hold_days: int
-    exit_reason: str   # stop_hit | target_hit | thesis_broken | forced | time_based
+    exit_reason: str  # stop_hit | target_hit | thesis_broken | forced | time_based
     signal_confidence: float
     strategy_id: str
 

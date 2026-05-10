@@ -27,6 +27,7 @@ Worked example (verifiable by hand):
   Target-too-close: reward=300 ≥ 0.5×50=25 → pass
   Decision: proceed
 """
+
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -41,6 +42,7 @@ GENERATED_AT = datetime(2024, 4, 1, 7, 0, tzinfo=UTC)
 
 def _make_risk_config() -> RiskConfig:
     from datetime import date
+
     return RiskConfig(
         config_id="test",
         version=1,
@@ -70,6 +72,7 @@ def _make_signal(track="long_term", confidence=0.70):
     import uuid
 
     from brain.models import ContributingSignal, SignalRecord
+
     return SignalRecord(
         signal_id=str(uuid.uuid4()),
         stock_symbol="RELIANCE",

@@ -80,12 +80,16 @@ class ParseWorker:
                 stats[source.value] = stats.get(source.value, 0) + n
                 logger.debug(
                     "ParseWorker: parsed raw_id=%s source=%s rows=%d",
-                    raw_row.raw_id, source, n,
+                    raw_row.raw_id,
+                    source,
+                    n,
                 )
             except Exception as exc:
                 logger.error(
                     "ParseWorker: parse failed raw_id=%s source=%s: %s",
-                    raw_row.raw_id, source, exc,
+                    raw_row.raw_id,
+                    source,
+                    exc,
                 )
                 self._db.execute(
                     "UPDATE raw_archive SET parse_status=? WHERE raw_id=?",

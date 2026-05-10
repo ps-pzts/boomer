@@ -59,19 +59,19 @@ class CostModel:
     """
 
     # Rate constants
-    BROKERAGE_MAX_PER_ORDER = 20.0       # ₹20 cap per intraday order
-    BROKERAGE_INTRADAY_PCT = 0.0003      # 0.03%
+    BROKERAGE_MAX_PER_ORDER = 20.0  # ₹20 cap per intraday order
+    BROKERAGE_INTRADAY_PCT = 0.0003  # 0.03%
 
-    STT_INTRADAY_SELL_PCT = 0.00025      # 0.025% on sell only
-    STT_DELIVERY_PCT = 0.001             # 0.1% on both buy and sell
+    STT_INTRADAY_SELL_PCT = 0.00025  # 0.025% on sell only
+    STT_DELIVERY_PCT = 0.001  # 0.1% on both buy and sell
 
-    EXCHANGE_PCT = 0.0000322             # 0.00322% on both legs
+    EXCHANGE_PCT = 0.0000322  # 0.00322% on both legs
 
-    GST_PCT = 0.18                       # 18% on (brokerage + exchange charges)
+    GST_PCT = 0.18  # 18% on (brokerage + exchange charges)
 
-    SEBI_PCT = 0.000001                  # 0.0001% on both legs
+    SEBI_PCT = 0.000001  # 0.0001% on both legs
 
-    STAMP_DUTY_BUY_PCT = 0.00003         # 0.003% on buy only
+    STAMP_DUTY_BUY_PCT = 0.00003  # 0.003% on buy only
 
     def round_trip_cost(
         self,

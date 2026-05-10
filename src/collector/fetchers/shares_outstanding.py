@@ -137,8 +137,13 @@ def _parse_mktcap_csv(
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    isin, symbol, "NSE", trade_date, total_shares,
-                    _fmt_dt(raw_row.fetched_at), raw_row.raw_id,
+                    isin,
+                    symbol,
+                    "NSE",
+                    trade_date,
+                    total_shares,
+                    _fmt_dt(raw_row.fetched_at),
+                    raw_row.raw_id,
                 ),
             )
             if db.execute("SELECT changes()").fetchone()[0]:

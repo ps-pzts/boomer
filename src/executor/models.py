@@ -24,11 +24,17 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.SUBMITTING: frozenset(
         {OrderStatus.PENDING, OrderStatus.REJECTED, OrderStatus.ERROR}
     ),
-    OrderStatus.PENDING: frozenset({
-        OrderStatus.TRIGGERED, OrderStatus.PARTIAL, OrderStatus.FILLED,
-        OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED,
-        OrderStatus.ERROR,
-    }),
+    OrderStatus.PENDING: frozenset(
+        {
+            OrderStatus.TRIGGERED,
+            OrderStatus.PARTIAL,
+            OrderStatus.FILLED,
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+            OrderStatus.EXPIRED,
+            OrderStatus.ERROR,
+        }
+    ),
     OrderStatus.TRIGGERED: frozenset(
         {OrderStatus.PARTIAL, OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.ERROR}
     ),
@@ -40,13 +46,15 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.ERROR: frozenset(),
 }
 
-TERMINAL_STATUSES: frozenset[OrderStatus] = frozenset({
-    OrderStatus.FILLED,
-    OrderStatus.CANCELLED,
-    OrderStatus.REJECTED,
-    OrderStatus.EXPIRED,
-    OrderStatus.ERROR,
-})
+TERMINAL_STATUSES: frozenset[OrderStatus] = frozenset(
+    {
+        OrderStatus.FILLED,
+        OrderStatus.CANCELLED,
+        OrderStatus.REJECTED,
+        OrderStatus.EXPIRED,
+        OrderStatus.ERROR,
+    }
+)
 
 
 class GttStatus(StrEnum):
@@ -65,7 +73,7 @@ class OrderSide(StrEnum):
 class OrderType(StrEnum):
     MARKET = "market"
     LIMIT = "limit"
-    SL = "sl"           # stop-loss market
+    SL = "sl"  # stop-loss market
     SL_LIMIT = "sl_limit"
 
 
@@ -75,8 +83,8 @@ class OrderValidity(StrEnum):
 
 
 class ProductType(StrEnum):
-    MIS = "mis"   # intraday (Kite)
-    CNC = "cnc"   # delivery (Fyers)
+    MIS = "mis"  # intraday (Kite)
+    CNC = "cnc"  # delivery (Fyers)
 
 
 class GttType(StrEnum):
@@ -193,7 +201,7 @@ class PositionRecord:
     position_id: str
     symbol: str
     exchange: str
-    track: str            # intraday | swing | long_term
+    track: str  # intraday | swing | long_term
     bucket_id: str
     broker_id: BrokerName
     quantity: int
@@ -253,8 +261,8 @@ class ReconciliationAlert:
     alert_type: ReconciliationAlertType
     symbol: str | None
     exchange: str | None
-    bot_value: str | None    # JSON
-    broker_value: str | None # JSON
+    bot_value: str | None  # JSON
+    broker_value: str | None  # JSON
     resolved: bool
     resolved_at: datetime | None
     resolution_note: str | None
@@ -264,6 +272,7 @@ class ReconciliationAlert:
 @dataclass
 class BrokerPosition:
     """Normalised position as returned by list_positions() / list_holdings()."""
+
     symbol: str
     exchange: str
     quantity: int
@@ -283,8 +292,9 @@ class BrokerFunds:
 @dataclass
 class PriceBar:
     """Single OHLCV bar for backtesting and slippage simulation."""
+
     symbol: str
-    date: str       # ISO date
+    date: str  # ISO date
     open: float
     high: float
     low: float

@@ -3,6 +3,7 @@
 All queries run on a separate WAL-mode read connection so they
 never contend with the writer connections in other modules.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -101,8 +102,7 @@ def get_today_snapshot(db_path: str, run_date: str) -> TodaySnapshot:
         bot_mode = mode_row["mode"] if mode_row else "auto"
 
         pnl_row = conn.execute(
-            "SELECT COALESCE(SUM(realised_pnl),0) as pnl FROM positions"
-            " WHERE DATE(entry_at)=?",
+            "SELECT COALESCE(SUM(realised_pnl),0) as pnl FROM positions WHERE DATE(entry_at)=?",
             (run_date,),
         ).fetchone()
 
@@ -131,8 +131,7 @@ def get_today_snapshot(db_path: str, run_date: str) -> TodaySnapshot:
         ).fetchone()
 
         approvals_row = conn.execute(
-            "SELECT COUNT(*) as n FROM recommendations"
-            " WHERE status='awaiting_human'"
+            "SELECT COUNT(*) as n FROM recommendations WHERE status='awaiting_human'"
         ).fetchone()
 
         missed_row = conn.execute(
@@ -204,15 +203,24 @@ def get_pending_recommendations(db_path: str, limit: int = 50) -> list[Recommend
 
     return [
         RecommendationRow(
-            rec_id=r["rec_id"], symbol=r["symbol"], exchange=r["exchange"],
-            track=r["track"], current_price=float(r["current_price"]),
-            entry_low=r["entry_low"], entry_high=r["entry_high"],
-            stop_loss=r["stop_loss"], target=r["target"],
+            rec_id=r["rec_id"],
+            symbol=r["symbol"],
+            exchange=r["exchange"],
+            track=r["track"],
+            current_price=float(r["current_price"]),
+            entry_low=r["entry_low"],
+            entry_high=r["entry_high"],
+            stop_loss=r["stop_loss"],
+            target=r["target"],
             position_size_shares=r["position_size_shares"],
             position_size_rupees=float(r["position_size_shares"]) * float(r["current_price"]),
-            signal_score=r["signal_score"], confidence=r["confidence"],
-            ev=r["ev"], rr=r["rr"], sector=r["sector"],
-            valid_until=r["valid_until"], status=r["status"],
+            signal_score=r["signal_score"],
+            confidence=r["confidence"],
+            ev=r["ev"],
+            rr=r["rr"],
+            sector=r["sector"],
+            valid_until=r["valid_until"],
+            status=r["status"],
         )
         for r in rows
     ]
@@ -248,17 +256,23 @@ def get_open_positions(db_path: str) -> list[PositionRow]:
         qty = r["quantity"] or 0
         pnl = (cur - entry) * qty
         pnl_pct = ((cur - entry) / entry * 100) if entry else 0.0
-        result.append(PositionRow(
-            position_id=r["position_id"], symbol=r["symbol"], track=r["track"],
-            entry_date=r["entry_at"][:10] if r["entry_at"] else "",
-            days_held=int(r["days_held"] or 0),
-            entry_price=entry, current_price=cur,
-            pnl=pnl, pnl_pct=pnl_pct,
-            stop_loss=float(r["stop_loss_price"] or 0),
-            target=float(r["target_price"] or 0),
-            health_score=float(r["health_score"]),
-            exit_recommendation=None,
-        ))
+        result.append(
+            PositionRow(
+                position_id=r["position_id"],
+                symbol=r["symbol"],
+                track=r["track"],
+                entry_date=r["entry_at"][:10] if r["entry_at"] else "",
+                days_held=int(r["days_held"] or 0),
+                entry_price=entry,
+                current_price=cur,
+                pnl=pnl,
+                pnl_pct=pnl_pct,
+                stop_loss=float(r["stop_loss_price"] or 0),
+                target=float(r["target_price"] or 0),
+                health_score=float(r["health_score"]),
+                exit_recommendation=None,
+            )
+        )
     return result
 
 
@@ -280,7 +294,9 @@ def get_capital_view(db_path: str) -> CapitalView:
     sw_alloc = total * float(row["swing_allocated_pct"] or 0) / 100
     id_alloc = total * float(row["intraday_allocated_pct"] or 0) / 100
     return CapitalView(
-        total_capital=total, hwm=hwm, drawdown_pct=dd,
+        total_capital=total,
+        hwm=hwm,
+        drawdown_pct=dd,
         lt_allocated=lt_alloc,
         lt_deployed=float(row["long_term_deployed"] or 0),
         swing_allocated=sw_alloc,
@@ -304,8 +320,11 @@ def get_recent_task_runs(db_path: str, hours: int = 24) -> list[TaskRunRow]:
         conn.close()
     return [
         TaskRunRow(
-            task_id=r["task_id"], run_date=r["run_date"], status=r["status"],
-            started_at=r["started_at"], ended_at=r["ended_at"],
+            task_id=r["task_id"],
+            run_date=r["run_date"],
+            status=r["status"],
+            started_at=r["started_at"],
+            ended_at=r["ended_at"],
             error_message=r["error_message"],
         )
         for r in rows

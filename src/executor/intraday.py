@@ -14,13 +14,13 @@ from executor.models import (
 logger = logging.getLogger(__name__)
 
 # IST = UTC+5:30
-_MARKET_OPEN_UTC = (3, 45)   # 09:15 IST
-_LAST_ENTRY_UTC = (9, 0)     # 14:30 IST — no new intraday entries after this
-_SQUAREOFF_UTC = (9, 44)     # 15:14 IST — orchestrator calls square_off at this time
+_MARKET_OPEN_UTC = (3, 45)  # 09:15 IST
+_LAST_ENTRY_UTC = (9, 0)  # 14:30 IST — no new intraday entries after this
+_SQUAREOFF_UTC = (9, 44)  # 15:14 IST — orchestrator calls square_off at this time
 _MARKET_CLOSE_UTC = (10, 0)  # 15:30 IST
 
 _SIGNAL_VALIDITY_MINUTES = 30
-_STOCK_COOLDOWN_MINUTES = 60   # per-stock intraday cooldown (Loophole 2)
+_STOCK_COOLDOWN_MINUTES = 60  # per-stock intraday cooldown (Loophole 2)
 
 
 class IntradayPipeline:
@@ -104,7 +104,7 @@ class IntradayPipeline:
 
         now = datetime.now(UTC)
         squareoff_window_start = now.replace(hour=9, minute=30)  # 15:00 IST
-        squareoff_window_end = now.replace(hour=9, minute=50)    # 15:20 IST
+        squareoff_window_end = now.replace(hour=9, minute=50)  # 15:20 IST
         if not (squareoff_window_start <= now <= squareoff_window_end):
             logger.warning("square_off_all_intraday called outside valid window — ignoring")
             return []
@@ -166,6 +166,7 @@ class IntradayPipeline:
 
     def _monitor_positions(self) -> None:
         from executor.position_manager import PositionManager
+
         pm: PositionManager = self._pm  # type: ignore[assignment]
         open_pos = pm.load_open(track="intraday")
         logger.debug("Monitoring %d open intraday positions", len(open_pos))

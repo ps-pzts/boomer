@@ -1,4 +1,5 @@
 """Tests for orchestrator models: BotModeStore, TaskRunStore, RetryPolicy, is_trading_day."""
+
 import sqlite3
 from pathlib import Path
 
@@ -17,15 +18,18 @@ from src.orchestrator.models import (
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
     from src.db.migrations import run_migrations
+
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
 
 
 # ─── BotModeStore ─────────────────────────────────────────────────────────────
+
 
 class TestBotModeStore:
     def test_default_mode_is_auto(self, db_path: Path) -> None:
@@ -64,6 +68,7 @@ class TestBotModeStore:
 
 
 # ─── TaskRunStore ─────────────────────────────────────────────────────────────
+
 
 class TestTaskRunStore:
     def test_create_returns_id(self, db_path: Path) -> None:
@@ -133,6 +138,7 @@ class TestTaskRunStore:
 
 # ─── RetryPolicy ──────────────────────────────────────────────────────────────
 
+
 class TestRetryPolicy:
     def test_first_attempt_zero_delay(self) -> None:
         policy = RetryPolicy(max_attempts=3, backoff_seconds=[60, 120])
@@ -157,6 +163,7 @@ class TestRetryPolicy:
 
 
 # ─── is_trading_day ───────────────────────────────────────────────────────────
+
 
 class TestIsTradingDay:
     def test_weekday_default_is_trading(self, db_path: Path) -> None:

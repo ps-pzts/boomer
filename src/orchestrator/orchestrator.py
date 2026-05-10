@@ -11,6 +11,7 @@ Runs as a long-lived process managed by systemd. On startup:
 Restart safety: systemd restarts within seconds if this process dies.
 The 3 AM restart guard (ops/restart_guard.sh) checks task_runs before killing this process.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -19,6 +20,7 @@ import signal
 import sys
 import threading
 
+from ..banner import log_boot_sequence, log_crash_recovery, log_shutdown
 from .models import BotModeStore, TaskRunStore
 from .scheduler import Scheduler
 from .task_runner import execute_with_retry
@@ -61,17 +63,17 @@ class Orchestrator:
     # ─── Lifecycle ─────────────────────────────────────────────────────────────
 
     def start(self) -> None:
-        self._recover_interrupted_tasks()
+        interrupted = self._recover_interrupted_tasks()
+        log_crash_recovery(interrupted)
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
-        logger.info("orchestrator_started db_path=%s", self._db_path)
         self._loop()
 
     def _handle_signal(self, signum: int, frame: object) -> None:
-        logger.info("orchestrator_shutdown signal=%d", signum)
+        log_shutdown(signum)
         self._stop_event.set()
 
-    def _recover_interrupted_tasks(self) -> None:
+    def _recover_interrupted_tasks(self) -> int:
         """On startup, mark any RUNNING tasks from previous run as INTERRUPTED."""
         import datetime as dt
         import sqlite3
@@ -79,14 +81,14 @@ class Orchestrator:
         now = dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
         conn = sqlite3.connect(self._db_path, timeout=5)
         try:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE task_runs SET status='INTERRUPTED', ended_at=? WHERE status='RUNNING'",
                 (now,),
             )
             conn.commit()
+            return cur.rowcount
         finally:
             conn.close()
-        logger.info("orchestrator_recovery: marked stale RUNNING tasks as INTERRUPTED")
 
     # ─── Main loop ─────────────────────────────────────────────────────────────
 
@@ -114,16 +116,15 @@ class Orchestrator:
                 t.start()
 
             # Clean up finished threads
-            self._running_tasks = {
-                k: v for k, v in self._running_tasks.items() if v.is_alive()
-            }
+            self._running_tasks = {k: v for k, v in self._running_tasks.items() if v.is_alive()}
 
             self._stop_event.wait(timeout=self._poll_interval)
 
-        logger.info("orchestrator_stopped")
+        logger.info("[FURY] Orchestrator loop exited")
 
     def _run_task(self, task_def: object, run_date: str) -> None:
         from .tasks import TaskDefinition  # local to avoid circular
+
         td: TaskDefinition = task_def  # type: ignore[assignment]
         success = execute_with_retry(
             task_id=td.task_id,
@@ -141,6 +142,7 @@ class Orchestrator:
     def _emit_task_failure_alert(self, task_id: str, run_date: str) -> None:
         try:
             from src.alerts.alerter import get_alerter
+
             alerter = get_alerter()
             alerter.critical(
                 title=f"Task FAILED_FINAL: {task_id}",
@@ -156,6 +158,10 @@ class Orchestrator:
 
 def main() -> None:
     import os
+    import pathlib
+
+    from src.banner import print_banner
+    from src.db.migrations import run_migrations
 
     logging.basicConfig(
         level=logging.INFO,
@@ -165,18 +171,23 @@ def main() -> None:
         ],
     )
 
+    print_banner()
+
     db_path = os.environ.get("BOOMER_DB_PATH", "/var/lib/boomer/boomer.db")
     archive_dir = os.environ.get("BOOMER_ARCHIVE_DIR", "/var/lib/boomer/archive")
     backup_dir = os.environ.get("BOOMER_BACKUP_DIR", "/var/lib/boomer/backups")
+    poll_interval = int(os.environ.get("BOOMER_POLL_INTERVAL", "30"))
 
-    # Run migrations before starting
-    import pathlib
-
-    from src.db.migrations import run_migrations
     migrations_dir = pathlib.Path(__file__).parents[3] / "migrations"
     run_migrations(db_path, migrations_dir)
 
-    orc = Orchestrator(db_path=db_path, archive_dir=archive_dir, backup_dir=backup_dir)
+    orc = Orchestrator(
+        db_path=db_path,
+        archive_dir=archive_dir,
+        backup_dir=backup_dir,
+        poll_interval=poll_interval,
+    )
+    log_boot_sequence(db_path, poll_interval)
     orc.start()
 
 

@@ -5,6 +5,7 @@ to the FeatureStore. All features must be backfillable from raw_archive alone.
 
 Naming convention: feature names match the keys expected by signal generators.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -297,7 +298,6 @@ def compute_price_features(
     """
     as_of_str = as_of_date.isoformat()
     cutoff_20 = (as_of_date - timedelta(days=30)).isoformat()
-
 
     with _conn(db_path) as conn:
         rows_20 = conn.execute(

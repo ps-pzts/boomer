@@ -3,6 +3,7 @@
 Evaluates existing positions for exit signals and computes health scores.
 Also implements Q3-2 Option B: immediate re-evaluation for red-flag filings.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -46,8 +47,8 @@ class PositionRecord:
     entry_date: datetime
     expected_target: Decimal
     original_stop: Decimal
-    signal_id: str                       # source signal
-    original_signal_confidence: float    # at entry
+    signal_id: str  # source signal
+    original_signal_confidence: float  # at entry
     # For long-term: days since primary signal was last refreshed above 0.5
     thesis_signal_last_refreshed_days: int = 0
     # For swing: days since entry
@@ -192,7 +193,8 @@ class PositionReviewer:
             return []
 
         affected = [
-            p for p in open_positions
+            p
+            for p in open_positions
             if p.stock_symbol == filing_symbol and p.exchange == filing_exchange
         ]
         if not affected:
@@ -206,7 +208,7 @@ class PositionReviewer:
 
             rec = Recommendation(
                 recommendation_id=str(uuid.uuid4()),
-                plan_id="",            # no new plan; this is an exit recommendation
+                plan_id="",  # no new plan; this is an exit recommendation
                 signal_id=pos.signal_id,
                 stock_symbol=pos.stock_symbol,
                 exchange=pos.exchange,
@@ -218,7 +220,7 @@ class PositionReviewer:
                 target_price=Decimal("0"),
                 position_size_shares=0,
                 entry_strategy_id=None,
-                requires_human=False,          # risk-mgmt exits bypass human approval
+                requires_human=False,  # risk-mgmt exits bypass human approval
                 status=RecommendationStatus.GENERATED,
                 decision_reason=f"red_flag_filing:{filing_category}",
                 operator_modified=False,

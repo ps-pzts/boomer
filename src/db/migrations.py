@@ -3,8 +3,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+_DEFAULT_MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
-def run_migrations(db_path: str | Path, migrations_dir: str | Path) -> None:
+
+def run_migrations(
+    db_path: str | Path,
+    migrations_dir: str | Path = _DEFAULT_MIGRATIONS_DIR,
+) -> None:
     """Apply any unapplied SQL migrations in numeric order.
 
     Called at application startup before any other database access.
@@ -13,6 +18,14 @@ def run_migrations(db_path: str | Path, migrations_dir: str | Path) -> None:
     db_path = Path(db_path)
     migrations_dir = Path(migrations_dir)
 
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        raise PermissionError(
+            f"Cannot create database directory '{db_path.parent}'. "
+            "Set BOOMER_DB_PATH to a writable local path, e.g.: "
+            "BOOMER_DB_PATH=data/boomer.db"
+        ) from None
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")

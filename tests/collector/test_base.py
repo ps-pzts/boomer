@@ -16,6 +16,7 @@ from collector.models import DataSource, FetchResult, ParseStatus, RawArchiveRow
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
+
 def _make_db() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.execute("PRAGMA foreign_keys = ON")
@@ -47,6 +48,7 @@ def fetcher(tmp_path):
 
 
 # ── archive tests ─────────────────────────────────────────────────────────────
+
 
 def test_archive_writes_gzipped_file(fetcher, tmp_path):
     body = b"Hello World"
@@ -142,10 +144,13 @@ def test_load_raw_body_roundtrip(fetcher, tmp_path):
 
 # ── backoff / run tests ───────────────────────────────────────────────────────
 
+
 def test_run_returns_none_after_exhausted_retries(fetcher):
     """When transport raises every time, run() exhausts retries and returns None."""
-    with patch.object(_StubFetcher, "transport", side_effect=ConnectionError("no network")), \
-            patch("collector.base.time.sleep"):  # don't actually sleep in tests
+    with (
+        patch.object(_StubFetcher, "transport", side_effect=ConnectionError("no network")),
+        patch("collector.base.time.sleep"),
+    ):  # don't actually sleep in tests
         result = fetcher.run()
     assert result is None
 
@@ -184,8 +189,10 @@ def test_run_retries_on_first_failure_then_succeeds(fetcher):
             raise ConnectionError("first attempt fails")
         return success_result
 
-    with patch.object(_StubFetcher, "transport", side_effect=flaky_transport), \
-            patch("collector.base.time.sleep"):
+    with (
+        patch.object(_StubFetcher, "transport", side_effect=flaky_transport),
+        patch("collector.base.time.sleep"),
+    ):
         row = fetcher.run()
 
     assert row is not None

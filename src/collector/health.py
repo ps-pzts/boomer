@@ -112,6 +112,7 @@ class CollectionRunStore:
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+
 def _now_utc() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 

@@ -1,4 +1,5 @@
 """Tests for brain.models — enums, cooldown table, and RED_FLAG_CATEGORIES."""
+
 from brain.models import (
     RED_FLAG_CATEGORIES,
     RecommendationOutcome,

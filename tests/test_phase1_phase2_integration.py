@@ -55,15 +55,16 @@ def _insert_filing(conn: sqlite3.Connection, filing_id: str, headline: str) -> N
 
 # ── migration compatibility ────────────────────────────────────────────────────
 
+
 def test_both_migrations_apply_to_same_db(tmp_path):
     """Migrations 0001 (capital) and 0002 (collector) must coexist without conflict."""
     db_path = str(tmp_path / "boomer.db")
     _apply_migrations(db_path)
 
     conn = sqlite3.connect(db_path)
-    tables = {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()}
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
 
     # Phase 1 tables
     assert "capital_ledger" in tables
@@ -79,6 +80,7 @@ def test_both_migrations_apply_to_same_db(tmp_path):
 
 
 # ── risk_config → sentiment threshold ────────────────────────────────────────
+
 
 def test_risk_config_seeds_sentiment_threshold(tmp_path):
     """Phase 1 seed_defaults writes sentiment_confidence_threshold=0.60 to risk_config."""
@@ -142,9 +144,7 @@ def test_high_confidence_filing_gets_label(tmp_path):
 
     apply_sentiment_to_filings(conn, pipeline, confidence_threshold=threshold)
 
-    row = conn.execute(
-        "SELECT sentiment_label FROM filings WHERE filing_id='f-002'"
-    ).fetchone()
+    row = conn.execute("SELECT sentiment_label FROM filings WHERE filing_id='f-002'").fetchone()
     assert row[0] == SentimentLabel.NEGATIVE
     conn.close()
 

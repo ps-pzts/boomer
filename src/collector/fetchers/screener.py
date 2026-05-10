@@ -86,6 +86,7 @@ class ScreenerFetcher(BaseFetcher):
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+
 def _extract_symbol_from_url(url: str) -> str:
     parts = [p for p in url.split("/") if p]
     try:
@@ -133,6 +134,7 @@ def _find_cash_flow_table(tables):
 
 def _insert_quarterly_rows(qr_table, cf_table, symbol, raw_row, results_date, db, version) -> int:
     import pandas as pd  # noqa: F401
+
     inserted = 0
 
     # Screener.in quarterly table: rows = metrics, cols = periods.
@@ -159,6 +161,7 @@ def _insert_quarterly_rows(qr_table, cf_table, symbol, raw_row, results_date, db
         cfo = None
         if cf_table is not None:
             import contextlib
+
             with contextlib.suppress(Exception):
                 cfo = _extract_cfo_for_period(cf_table, str(period_label))
 
@@ -166,6 +169,7 @@ def _insert_quarterly_rows(qr_table, cf_table, symbol, raw_row, results_date, db
         # If no announcement date found, fall back to scraping time.
         if results_date:
             from datetime import timedelta
+
             observed_at = results_date + timedelta(hours=2)
         else:
             observed_at = raw_row.fetched_at
@@ -180,8 +184,16 @@ def _insert_quarterly_rows(qr_table, cf_table, symbol, raw_row, results_date, db
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    fin_id, symbol, "NSE", period_end, "Q",
-                    revenue, op_profit, opm_pct, pat, cfo,
+                    fin_id,
+                    symbol,
+                    "NSE",
+                    period_end,
+                    "Q",
+                    revenue,
+                    op_profit,
+                    opm_pct,
+                    pat,
+                    cfo,
                     raw_row.request_url,
                     _fmt_dt(raw_row.fetched_at),
                     _fmt_dt(observed_at),

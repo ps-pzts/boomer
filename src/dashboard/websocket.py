@@ -4,6 +4,7 @@ Single broadcaster instance pushed to by background tasks.
 Clients subscribe on connect and receive JSON messages with
 the current bot mode and today's snapshot every 5 seconds.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -59,14 +60,16 @@ async def live_pusher(db_path: str, interval_seconds: int = 5) -> None:
         try:
             run_date = datetime.datetime.now(IST).date().isoformat()
             snap = get_today_snapshot(db_path, run_date)
-            await manager.broadcast({
-                "type": "snapshot",
-                "bot_mode": snap.bot_mode,
-                "total_pnl": snap.total_pnl,
-                "trades_placed": snap.trades_placed,
-                "approvals_waiting": snap.approvals_waiting,
-                "circuit_breakers_tripped": snap.circuit_breakers_tripped,
-                "missed_critical_alerts": snap.missed_critical_alerts,
-            })
+            await manager.broadcast(
+                {
+                    "type": "snapshot",
+                    "bot_mode": snap.bot_mode,
+                    "total_pnl": snap.total_pnl,
+                    "trades_placed": snap.trades_placed,
+                    "approvals_waiting": snap.approvals_waiting,
+                    "circuit_breakers_tripped": snap.circuit_breakers_tripped,
+                    "missed_critical_alerts": snap.missed_critical_alerts,
+                }
+            )
         except Exception as exc:
             logger.error("live_pusher_error error=%s", exc)

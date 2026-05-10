@@ -51,18 +51,14 @@ class RiskConfigStore:
     def load_current(self) -> RiskConfig:
         """Return the highest-version risk config."""
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM risk_config ORDER BY version DESC LIMIT 1"
-            ).fetchone()
+            row = conn.execute("SELECT * FROM risk_config ORDER BY version DESC LIMIT 1").fetchone()
         if row is None:
             raise RuntimeError("No risk_config rows found — run seed_defaults() first.")
         return _row_to_risk_config(row)
 
     def load_version(self, version: int) -> RiskConfig:
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM risk_config WHERE version = ?", (version,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM risk_config WHERE version = ?", (version,)).fetchone()
         if row is None:
             raise KeyError(f"risk_config version {version} not found.")
         return _row_to_risk_config(row)

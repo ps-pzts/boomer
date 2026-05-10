@@ -1,4 +1,5 @@
 """Tests for dashboard read-only queries against a populated test DB."""
+
 import sqlite3
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from src.dashboard.queries import (
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
     from src.db.migrations import run_migrations
+
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
 

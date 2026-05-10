@@ -214,13 +214,15 @@ class KiteBroker(Broker):
                 "last_price": (
                     self.get_ltp(request.symbol, request.exchange) or request.trigger_price
                 ),
-                "orders": [{
-                    "transaction_type": "SELL",
-                    "quantity": request.quantity,
-                    "product": "CNC",
-                    "order_type": "LIMIT",
-                    "price": request.limit_price,
-                }],
+                "orders": [
+                    {
+                        "transaction_type": "SELL",
+                        "quantity": request.quantity,
+                        "product": "CNC",
+                        "order_type": "LIMIT",
+                        "price": request.limit_price,
+                    }
+                ],
             }
         else:
             params = {
@@ -232,10 +234,20 @@ class KiteBroker(Broker):
                     self.get_ltp(request.symbol, request.exchange) or request.sl_trigger_price
                 ),
                 "orders": [
-                    {"transaction_type": "SELL", "quantity": request.quantity, "product": "CNC",
-                     "order_type": "LIMIT", "price": request.sl_limit_price},
-                    {"transaction_type": "SELL", "quantity": request.quantity, "product": "CNC",
-                     "order_type": "LIMIT", "price": request.target_limit_price},
+                    {
+                        "transaction_type": "SELL",
+                        "quantity": request.quantity,
+                        "product": "CNC",
+                        "order_type": "LIMIT",
+                        "price": request.sl_limit_price,
+                    },
+                    {
+                        "transaction_type": "SELL",
+                        "quantity": request.quantity,
+                        "product": "CNC",
+                        "order_type": "LIMIT",
+                        "price": request.target_limit_price,
+                    },
                 ],
             }
         resp = self._kite.place_gtt(**params)

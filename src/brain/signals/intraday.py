@@ -93,9 +93,7 @@ class IntradaySignalGenerator(BaseSignalGenerator):
         oi_score = self._clip(float(oi_change_pct) / 10.0, -1.0, 1.0)
         # Close to max pain → bearish for momentum continuation
         pain_penalty = (
-            -self._clip(abs(max_pain_proximity) / 2.0, 0.0, 1.0)
-            if max_pain_proximity < 0
-            else 0.0
+            -self._clip(abs(max_pain_proximity) / 2.0, 0.0, 1.0) if max_pain_proximity < 0 else 0.0
         )
         return 0.7 * oi_score + 0.3 * pain_penalty
 

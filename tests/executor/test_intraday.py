@@ -15,6 +15,7 @@ class TestIntradaySignalValidity:
     def test_signal_older_than_30_min_is_invalid(self):
         pipeline = IntradayPipeline(order_manager=MagicMock(), position_manager=MagicMock())
         from datetime import timedelta
+
         generated = datetime.now(UTC) - timedelta(minutes=31)
         assert pipeline.is_signal_still_valid("RELIANCE", generated) is False
 

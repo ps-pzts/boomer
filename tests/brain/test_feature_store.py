@@ -1,4 +1,5 @@
 """Tests for brain.feature_store — point-in-time query correctness is the key property."""
+
 from datetime import date
 from pathlib import Path
 
@@ -41,9 +42,14 @@ def test_point_in_time_past_date_excluded(fs):
 def test_source_max_observed_at_blocks_future_data(fs):
     # Feature valid_from Jan 10, but source was observed Jan 20 (future data)
     # Query on Jan 15 must return None (source_max_observed_at > query date)
-    fs.write_feature("RELIANCE", "NSE", "atr_14d", 30.0,
-                     valid_from=date(2024, 1, 10),
-                     source_max_observed_at=date(2024, 1, 20))
+    fs.write_feature(
+        "RELIANCE",
+        "NSE",
+        "atr_14d",
+        30.0,
+        valid_from=date(2024, 1, 10),
+        source_max_observed_at=date(2024, 1, 20),
+    )
     val = fs.get_feature_as_of("RELIANCE", "NSE", "atr_14d", date(2024, 1, 15))
     assert val is None
 

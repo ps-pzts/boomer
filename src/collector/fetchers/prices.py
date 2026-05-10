@@ -26,13 +26,9 @@ logger = logging.getLogger(__name__)
 # NSE CM bhavcopy — full equity bhavcopy with delivery data.
 # URL pattern verified against NSE archives (nsearchives.nseindia.com).
 # Date format in filename: DDMMMYYYY  e.g. 22APR2024
-_NSE_BHAVCOPY_URL = (
-    "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv"
-)
+_NSE_BHAVCOPY_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv"
 # Fallback URL pattern (older archives use a zip):
-_NSE_BHAVCOPY_ZIP_URL = (
-    "https://nsearchives.nseindia.com/content/historical/EQUITIES/{year}/{month}/cm{date}bhav.csv.zip"
-)
+_NSE_BHAVCOPY_ZIP_URL = "https://nsearchives.nseindia.com/content/historical/EQUITIES/{year}/{month}/cm{date}bhav.csv.zip"
 
 
 class NsePricesFetcher(BaseFetcher):
@@ -67,6 +63,7 @@ class NsePricesFetcher(BaseFetcher):
 
 
 # ── CSV parser ─────────────────────────────────────────────────────────────────
+
 
 def _parse_nse_bhavcopy_csv(
     body: bytes,
@@ -120,10 +117,18 @@ def _parse_nse_bhavcopy_csv(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    symbol, Exchange.NSE.value, trade_date,
-                    open_, high, low, close,
-                    volume, value_traded,
-                    0, 1.0, trade_date,
+                    symbol,
+                    Exchange.NSE.value,
+                    trade_date,
+                    open_,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    value_traded,
+                    0,
+                    1.0,
+                    trade_date,
                     raw_row.raw_id,
                 ),
             )
@@ -146,6 +151,7 @@ def prune_old_prices(db: sqlite3.Connection, keep_days: int = 30) -> int:
     """
     cutoff = date.today()
     from datetime import timedelta
+
     cutoff = (date.today() - timedelta(days=keep_days)).isoformat()
     cursor = db.execute("DELETE FROM prices WHERE trade_date < ?", (cutoff,))
     db.commit()

@@ -27,15 +27,30 @@ def _make_db() -> sqlite3.Connection:
 def _seed_position(db: sqlite3.Connection, **overrides) -> str:
     now = datetime.now(UTC).isoformat()
     defaults = dict(
-        position_id="pos-1", symbol="RELIANCE", exchange="NSE",
-        track="swing", bucket_id="swing_bucket", broker_id="fyers",
-        quantity=10, average_entry_price=2500.0, current_price=2500.0,
-        unrealised_pnl=0.0, realised_pnl=0.0,
-        stop_loss_price=2400.0, target_price=2700.0, atr_at_entry=20.0,
-        entry_order_id="entry-1", gtt_oco_id=None,
-        unprotected_flag=0, unmanaged=0, health_score=80.0,
-        is_open=1, entry_at=now, exit_at=None,
-        trade_plan_id=None, recommendation_id=None,
+        position_id="pos-1",
+        symbol="RELIANCE",
+        exchange="NSE",
+        track="swing",
+        bucket_id="swing_bucket",
+        broker_id="fyers",
+        quantity=10,
+        average_entry_price=2500.0,
+        current_price=2500.0,
+        unrealised_pnl=0.0,
+        realised_pnl=0.0,
+        stop_loss_price=2400.0,
+        target_price=2700.0,
+        atr_at_entry=20.0,
+        entry_order_id="entry-1",
+        gtt_oco_id=None,
+        unprotected_flag=0,
+        unmanaged=0,
+        health_score=80.0,
+        is_open=1,
+        entry_at=now,
+        exit_at=None,
+        trade_plan_id=None,
+        recommendation_id=None,
     )
     defaults.update(overrides)
     db.execute(
@@ -63,15 +78,22 @@ class TestPositionManagerOpen:
         pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
 
         pos_id = pm.open_position(
-            symbol="TCS", exchange="NSE", track="long_term", bucket_id="lt_bucket",
-            broker_id=BrokerName.FYERS, quantity=5, average_entry_price=3000.0,
-            stop_loss_price=2800.0, target_price=3500.0, atr_at_entry=50.0,
+            symbol="TCS",
+            exchange="NSE",
+            track="long_term",
+            bucket_id="lt_bucket",
+            broker_id=BrokerName.FYERS,
+            quantity=5,
+            average_entry_price=3000.0,
+            stop_loss_price=2800.0,
+            target_price=3500.0,
+            atr_at_entry=50.0,
             entry_order_id="order-1",
         )
         row = db.execute("SELECT * FROM positions WHERE position_id=?", (pos_id,)).fetchone()
         assert row["symbol"] == "TCS"
         assert row["is_open"] == 1
-        assert row["unprotected_flag"] == 1   # new position starts unprotected
+        assert row["unprotected_flag"] == 1  # new position starts unprotected
 
     def test_close_position_marks_closed(self):
         db = _make_db()

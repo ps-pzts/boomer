@@ -48,8 +48,16 @@ def _make_raw_row(
         "INSERT INTO raw_archive (raw_id, source, fetched_at, request_url, "
         "response_status, content_hash, content_path, parse_status) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (raw_id, source.value, "2024-04-22T02:00:00.000000Z",
-         "https://nsearchives.nseindia.com/x", 200, chash, rel_path, "pending"),
+        (
+            raw_id,
+            source.value,
+            "2024-04-22T02:00:00.000000Z",
+            "https://nsearchives.nseindia.com/x",
+            200,
+            chash,
+            rel_path,
+            "pending",
+        ),
     )
     db.commit()
     return RawArchiveRow(
@@ -176,6 +184,7 @@ def test_nse_validate_empty_body_raises(tmp_path):
     db = _make_db()
     fetcher = NseBulkDealsFetcher(db, tmp_path / "raw")
     from collector.models import FetchResult
+
     bad = FetchResult(
         source=DataSource.NSE_BULK_DEALS,
         url="x",

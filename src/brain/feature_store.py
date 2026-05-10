@@ -36,8 +36,7 @@ class FeatureStore:
         metadata: dict[str, Any] | None = None,
         computer_version: str = "1.0",
     ) -> str:
-        """Write a feature row. Supersedes any existing current row for same symbol+name+valid_from.
-        """
+        """Write a feature row. Supersedes any existing row for same symbol+name+valid_from."""
         feature_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
         valid_from_str = valid_from.isoformat()

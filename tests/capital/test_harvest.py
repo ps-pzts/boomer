@@ -1,4 +1,5 @@
 """Tests for SelfFundingHarvest and evaluate_harvest."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -21,6 +22,7 @@ MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 # evaluate_harvest (pure function)
 # ------------------------------------------------------------------
 
+
 def test_no_harvest_when_below_hwm() -> None:
     result = evaluate_harvest(Decimal("49000"), Decimal("50000"))
     assert not result.fired
@@ -38,8 +40,8 @@ def test_harvest_fires_at_threshold() -> None:
     result = evaluate_harvest(Decimal("51500"), Decimal("50000"))
     assert result.fired
     assert result.harvest_amount == Decimal("750")  # 50% × 1500
-    assert result.ops_credit == Decimal("450")       # 60% × 750
-    assert result.dev_credit == Decimal("300")       # 40% × 750
+    assert result.ops_credit == Decimal("450")  # 60% × 750
+    assert result.dev_credit == Decimal("300")  # 40% × 750
 
 
 def test_harvest_split_sums_to_harvest_amount() -> None:
@@ -78,6 +80,7 @@ def test_worked_example_day90() -> None:
 # ------------------------------------------------------------------
 # SelfFundingHarvest (persistence)
 # ------------------------------------------------------------------
+
 
 @pytest.fixture()
 def db(tmp_path: Path) -> Path:
@@ -125,6 +128,7 @@ def test_ops_runway_months(db: Path) -> None:
     harvest = SelfFundingHarvest(db)
     # Manually seed ops balance
     import sqlite3
+
     conn = sqlite3.connect(str(db))
     conn.execute("UPDATE funds SET balance = 6000 WHERE fund_type = 'ops'")
     conn.commit()

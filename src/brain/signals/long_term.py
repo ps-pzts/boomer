@@ -8,20 +8,32 @@ from brain.signals.base import BaseSignalGenerator
 # Signal weights by regime (design doc Stage 2)
 _WEIGHTS: dict[str, dict[str, float]] = {
     "bull_calm": {
-        "promoter": 0.30, "smart_money": 0.20, "filing_sentiment": 0.15,
-        "earnings_quality": 0.20, "valuation": 0.15,
+        "promoter": 0.30,
+        "smart_money": 0.20,
+        "filing_sentiment": 0.15,
+        "earnings_quality": 0.20,
+        "valuation": 0.15,
     },
     "bull_volatile": {
-        "promoter": 0.25, "smart_money": 0.20, "filing_sentiment": 0.20,
-        "earnings_quality": 0.20, "valuation": 0.15,
+        "promoter": 0.25,
+        "smart_money": 0.20,
+        "filing_sentiment": 0.20,
+        "earnings_quality": 0.20,
+        "valuation": 0.15,
     },
     "sideways": {
-        "promoter": 0.35, "smart_money": 0.20, "filing_sentiment": 0.15,
-        "earnings_quality": 0.20, "valuation": 0.10,
+        "promoter": 0.35,
+        "smart_money": 0.20,
+        "filing_sentiment": 0.15,
+        "earnings_quality": 0.20,
+        "valuation": 0.10,
     },
     "bear": {
-        "promoter": 0.40, "smart_money": 0.15, "filing_sentiment": 0.20,
-        "earnings_quality": 0.20, "valuation": 0.05,
+        "promoter": 0.40,
+        "smart_money": 0.15,
+        "filing_sentiment": 0.20,
+        "earnings_quality": 0.20,
+        "valuation": 0.05,
     },
 }
 _DEFAULT_WEIGHTS = _WEIGHTS["bear"]

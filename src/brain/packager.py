@@ -4,6 +4,7 @@ Routing rules (design doc):
   - Long-term: requires_human=True → status = awaiting_human
   - Swing/intraday: APM auto-decides via circuit-breaker check tree
 """
+
 from __future__ import annotations
 
 import json
@@ -60,7 +61,8 @@ class RecommendationPackager:
             entry_strategy_id=entry_plan.strategy if entry_plan else plan.entry_strategy_id,
             requires_human=requires_human,
             status=(
-                RecommendationStatus.AWAITING_HUMAN if requires_human
+                RecommendationStatus.AWAITING_HUMAN
+                if requires_human
                 else RecommendationStatus.GENERATED
             ),
             decision_reason=None,
@@ -86,8 +88,7 @@ class RecommendationPackager:
 
         passed, reason = circuit_check_fn(recommendation)
         recommendation.status = (
-            RecommendationStatus.APPROVED_BY_APM if passed
-            else RecommendationStatus.REJECTED_BY_APM
+            RecommendationStatus.APPROVED_BY_APM if passed else RecommendationStatus.REJECTED_BY_APM
         )
         recommendation.decision_reason = reason if not passed else "all_checks_passed"
         recommendation.decided_at = datetime.now(UTC)
@@ -169,14 +170,22 @@ class RecommendationStore:
                 )
                 """,
                 (
-                    rec.recommendation_id, rec.plan_id, rec.signal_id,
-                    rec.stock_symbol, rec.exchange, rec.track, rec.direction,
-                    str(rec.entry_zone_low), str(rec.entry_zone_high),
-                    str(rec.stop_loss_price), str(rec.target_price),
+                    rec.recommendation_id,
+                    rec.plan_id,
+                    rec.signal_id,
+                    rec.stock_symbol,
+                    rec.exchange,
+                    rec.track,
+                    rec.direction,
+                    str(rec.entry_zone_low),
+                    str(rec.entry_zone_high),
+                    str(rec.stop_loss_price),
+                    str(rec.target_price),
                     rec.position_size_shares,
                     rec.entry_strategy_id.value if rec.entry_strategy_id else None,
                     1 if rec.requires_human else 0,
-                    rec.status.value, rec.decision_reason,
+                    rec.status.value,
+                    rec.decision_reason,
                     1 if rec.operator_modified else 0,
                     json.dumps(rec.original_params) if rec.original_params else None,
                     json.dumps(rec.portfolio_impact) if rec.portfolio_impact else None,
@@ -188,7 +197,8 @@ class RecommendationStore:
                     rec.closed_at.isoformat() if rec.closed_at else None,
                     rec.outcome_recorded_at.isoformat() if rec.outcome_recorded_at else None,
                     str(rec.realised_pnl) if rec.realised_pnl is not None else None,
-                    rec.actual_hold_days, rec.intent,
+                    rec.actual_hold_days,
+                    rec.intent,
                 ),
             )
 
@@ -210,8 +220,15 @@ class RecommendationStore:
                      stock_symbol, exchange, track, outcome, recorded_at)
                 VALUES (?,?,?,?,?,?,?)
                 """,
-                (str(uuid.uuid4()), recommendation_id,
-                 stock_symbol, exchange, track, outcome.value, now),
+                (
+                    str(uuid.uuid4()),
+                    recommendation_id,
+                    stock_symbol,
+                    exchange,
+                    track,
+                    outcome.value,
+                    now,
+                ),
             )
 
     def cooldown_days_remaining(

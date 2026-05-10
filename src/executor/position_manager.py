@@ -19,8 +19,8 @@ from executor.models import (
 
 logger = logging.getLogger(__name__)
 
-_GRADUATION_ATR_STOP_MULTIPLIER = 3.0   # long-term stop = 3×ATR (vs swing 2×ATR)
-_GRADUATION_MIN_GAIN_ATR = 1.0          # minimum gain before graduation is considered
+_GRADUATION_ATR_STOP_MULTIPLIER = 3.0  # long-term stop = 3×ATR (vs swing 2×ATR)
+_GRADUATION_MIN_GAIN_ATR = 1.0  # minimum gain before graduation is considered
 
 
 class PositionManager:
@@ -77,10 +77,22 @@ class PositionManager:
             ) VALUES (?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,NULL,1,0,100,1,?,?,?)
             """,
             (
-                position_id, symbol, exchange, track, bucket_id, broker_id,
-                quantity, average_entry_price, average_entry_price,
-                stop_loss_price, target_price, atr_at_entry, entry_order_id,
-                now, trade_plan_id, recommendation_id,
+                position_id,
+                symbol,
+                exchange,
+                track,
+                bucket_id,
+                broker_id,
+                quantity,
+                average_entry_price,
+                average_entry_price,
+                stop_loss_price,
+                target_price,
+                atr_at_entry,
+                entry_order_id,
+                now,
+                trade_plan_id,
+                recommendation_id,
             ),
         )
         self._db.commit()
@@ -209,7 +221,10 @@ class PositionManager:
         self._db.commit()
         logger.info(
             "Position graduated to long-term: %s %s new_stop=%.2f new_target=%.2f",
-            position_id, pos.symbol, new_stop, new_target,
+            position_id,
+            pos.symbol,
+            new_stop,
+            new_target,
         )
         return True
 
@@ -229,6 +244,7 @@ class PositionManager:
         Returns order_id if order submitted, None if deferred to human.
         """
         from executor.order_manager import OrderManager
+
         om: OrderManager = self._om  # type: ignore[assignment]
 
         pos = self._load(position_id)
@@ -255,7 +271,10 @@ class PositionManager:
         order_id = om.submit(close_req, pos.track)
         logger.info(
             "Exit order submitted: %s %s reason=%s order_id=%s",
-            position_id, pos.symbol, reason, order_id,
+            position_id,
+            pos.symbol,
+            reason,
+            order_id,
         )
         return order_id
 
@@ -268,6 +287,7 @@ class PositionManager:
         if not row:
             return None
         from executor.reconciliation import ReconciliationLoop
+
         return ReconciliationLoop._row_to_position(dict(row))
 
     def load_open(self, track: str | None = None) -> list[PositionRecord]:
@@ -278,4 +298,5 @@ class PositionManager:
             params.append(track)
         rows = self._db.execute(query, params).fetchall()
         from executor.reconciliation import ReconciliationLoop
+
         return [ReconciliationLoop._row_to_position(dict(r)) for r in rows]

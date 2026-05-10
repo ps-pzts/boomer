@@ -43,10 +43,14 @@ def _make_om(ltp: dict | None = None) -> tuple[OrderManager, MockBroker]:
 
 def _intraday_req(symbol: str = "RELIANCE", qty: int = 10, price: float = 0.0) -> OrderRequest:
     return OrderRequest(
-        symbol=symbol, exchange="NSE", side=OrderSide.BUY,
+        symbol=symbol,
+        exchange="NSE",
+        side=OrderSide.BUY,
         order_type=OrderType.MARKET if price == 0 else OrderType.LIMIT,
-        quantity=qty, product=ProductType.MIS,
-        price=price, idempotency_key=f"key-{symbol}-{qty}",
+        quantity=qty,
+        product=ProductType.MIS,
+        price=price,
+        idempotency_key=f"key-{symbol}-{qty}",
     )
 
 
@@ -59,6 +63,7 @@ class TestOrderManagerRouting:
         with patch("executor.order_manager.datetime") as mock_dt:
             mock_dt.now.return_value.__class__ = type(mock_dt.now.return_value)
             import datetime as real_dt
+
             now = real_dt.datetime(2024, 1, 2, 4, 0, 0, tzinfo=real_dt.UTC)
             mock_dt.now.return_value = now
             mock_dt.fromisoformat = real_dt.datetime.fromisoformat
@@ -71,14 +76,17 @@ class TestOrderManagerRouting:
 class TestOrderManagerStateMachine:
     def test_valid_transition_created_to_submitting(self):
         from executor.models import ALLOWED_TRANSITIONS, OrderStatus
+
         assert OrderStatus.SUBMITTING in ALLOWED_TRANSITIONS[OrderStatus.CREATED]
 
     def test_filled_to_cancelled_is_invalid(self):
         from executor.models import ALLOWED_TRANSITIONS, OrderStatus
+
         assert OrderStatus.CANCELLED not in ALLOWED_TRANSITIONS[OrderStatus.FILLED]
 
     def test_error_is_terminal(self):
         from executor.models import ALLOWED_TRANSITIONS, OrderStatus
+
         assert len(ALLOWED_TRANSITIONS[OrderStatus.ERROR]) == 0
 
 
@@ -92,8 +100,12 @@ class TestPreTradeChecks:
     def test_empty_symbol_rejected(self):
         om, broker = _make_om()
         req = OrderRequest(
-            symbol="", exchange="NSE", side=OrderSide.BUY,
-            order_type=OrderType.MARKET, quantity=10, product=ProductType.MIS,
+            symbol="",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            product=ProductType.MIS,
         )
         with pytest.raises(PreTradeCheckError, match="Symbol"):
             om._pre_trade_checks(req, broker, ltp=None, track="swing")
@@ -121,6 +133,7 @@ class TestPreTradeChecks:
         om, broker = _make_om()
         db = om._db
         import datetime as real_dt
+
         now = real_dt.datetime.now(real_dt.UTC).isoformat()
         # Manually insert an existing order with same key
         db.execute(
@@ -145,6 +158,7 @@ class TestOrderManagerIdempotency:
         om, _ = _make_om()
         db = om._db
         import datetime as real_dt
+
         now = real_dt.datetime.now(real_dt.UTC).isoformat()
         db.execute(
             """INSERT INTO orders

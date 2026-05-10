@@ -1,4 +1,5 @@
 """Tests for the task_runner context manager and execute_with_retry."""
+
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,7 @@ from src.orchestrator.task_runner import execute_with_retry, run_task
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
     from src.db.migrations import run_migrations
+
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
 
@@ -43,6 +45,7 @@ class TestRunTaskContextManager:
     def test_timeout_writes_timeout_status(self, db_path: Path) -> None:
         store = TaskRunStore(db_path)
         from src.orchestrator.task_runner import TimeoutError as TaskTimeout
+
         with (
             pytest.raises(TaskTimeout),
             run_task("t3", "2026-05-10", store, timeout_seconds=1),
@@ -70,8 +73,12 @@ class TestExecuteWithRetry:
             calls.append(run_date)
 
         result = execute_with_retry(
-            "task_ok", "2026-05-10", fn, store,
-            RetryPolicy(max_attempts=1), timeout_seconds=10,
+            "task_ok",
+            "2026-05-10",
+            fn,
+            store,
+            RetryPolicy(max_attempts=1),
+            timeout_seconds=10,
         )
         assert result is True
         assert len(calls) == 1
@@ -86,8 +93,12 @@ class TestExecuteWithRetry:
 
         with patch("src.orchestrator.task_runner.time.sleep"):  # don't actually sleep
             result = execute_with_retry(
-                "task_fail", "2026-05-10", fn, store,
-                RetryPolicy(max_attempts=3, backoff_seconds=[0, 0]), timeout_seconds=10,
+                "task_fail",
+                "2026-05-10",
+                fn,
+                store,
+                RetryPolicy(max_attempts=3, backoff_seconds=[0, 0]),
+                timeout_seconds=10,
             )
         assert result is False
         assert len(calls) == 3
@@ -103,8 +114,12 @@ class TestExecuteWithRetry:
 
         with patch("src.orchestrator.task_runner.time.sleep"):
             result = execute_with_retry(
-                "task_retry", "2026-05-10", fn, store,
-                RetryPolicy(max_attempts=2, backoff_seconds=[0]), timeout_seconds=10,
+                "task_retry",
+                "2026-05-10",
+                fn,
+                store,
+                RetryPolicy(max_attempts=2, backoff_seconds=[0]),
+                timeout_seconds=10,
             )
         assert result is True
         assert len(attempts) == 2
@@ -117,8 +132,12 @@ class TestExecuteWithRetry:
 
         with patch("src.orchestrator.task_runner.time.sleep"):
             execute_with_retry(
-                "task_ff", "2026-05-10", fn, store,
-                RetryPolicy(max_attempts=2, backoff_seconds=[0]), timeout_seconds=10,
+                "task_ff",
+                "2026-05-10",
+                fn,
+                store,
+                RetryPolicy(max_attempts=2, backoff_seconds=[0]),
+                timeout_seconds=10,
             )
         row = store.latest_for_date("task_ff", "2026-05-10")
         assert row is not None

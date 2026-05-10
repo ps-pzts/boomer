@@ -8,6 +8,7 @@ Routing rules:
 If both channels fail for a CRITICAL alert, the alert is written to
 `critical_notification_failures` so the dashboard can surface it on next load.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -144,7 +145,11 @@ class AlertManager:
 
     def _send_email(self, alert: Alert) -> bool:
         required = [
-            self._smtp_host, self._smtp_user, self._smtp_pass, self._email_from, self._email_to
+            self._smtp_host,
+            self._smtp_user,
+            self._smtp_pass,
+            self._email_from,
+            self._email_to,
         ]
         if not all(required):
             logger.warning("email_not_configured alert=%s", alert.title)
@@ -172,8 +177,12 @@ class AlertManager:
                    (severity, title, body, sent_at, channels_tried, channels_ok, source_task_id)
                    VALUES (?,?,?,?,?,?,?)""",
                 (
-                    alert.severity, alert.title, alert.body, now,
-                    json.dumps(alert.channels_tried), json.dumps(alert.channels_ok),
+                    alert.severity,
+                    alert.title,
+                    alert.body,
+                    now,
+                    json.dumps(alert.channels_tried),
+                    json.dumps(alert.channels_ok),
                     alert.source_task_id,
                 ),
             )

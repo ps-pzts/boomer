@@ -30,6 +30,7 @@ class RecommendationStatus(StrEnum):
 
 class RecommendationOutcome(StrEnum):
     """Outcome category used for cooldown table lookups (Loophole 3)."""
+
     APPROVED_POSITION_OPENED = "approved_position_opened"
     REJECTED_BY_OPERATOR = "rejected_by_operator"
     EXPIRED = "expired"
@@ -37,15 +38,15 @@ class RecommendationOutcome(StrEnum):
 
 
 class EntryStrategy(StrEnum):
-    LT1 = "LT1"   # staged accumulation
-    LT2 = "LT2"   # DMA pullback
-    LT3 = "LT3"   # valuation-anchored
-    SW1 = "SW1"   # breakout with volume
-    SW2 = "SW2"   # pullback to support
-    SW3 = "SW3"   # catalyst event
-    ID1 = "ID1"   # opening range breakout
-    ID2 = "ID2"   # VWAP pullback
-    ID3 = "ID3"   # gap fade/ride
+    LT1 = "LT1"  # staged accumulation
+    LT2 = "LT2"  # DMA pullback
+    LT3 = "LT3"  # valuation-anchored
+    SW1 = "SW1"  # breakout with volume
+    SW2 = "SW2"  # pullback to support
+    SW3 = "SW3"  # catalyst event
+    ID1 = "ID1"  # opening range breakout
+    ID2 = "ID2"  # VWAP pullback
+    ID3 = "ID3"  # gap fade/ride
 
 
 class SkipReason(StrEnum):
@@ -58,14 +59,16 @@ class SkipReason(StrEnum):
 
 
 # Filing categories that trigger immediate Stage 4b re-evaluation (Q3-2 Option B)
-RED_FLAG_CATEGORIES: frozenset[str] = frozenset({
-    "fraud_disclosure",
-    "auditor_change",
-    "pledging_increase",
-    "promoter_large_sell",
-    "regulatory_action",
-    "going_concern",
-})
+RED_FLAG_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "fraud_disclosure",
+        "auditor_change",
+        "pledging_increase",
+        "promoter_large_sell",
+        "regulatory_action",
+        "going_concern",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -73,7 +76,7 @@ class ContributingSignal:
     name: str
     weight: float
     value: float
-    contribution: float   # weight × value
+    contribution: float  # weight × value
 
 
 @dataclass(frozen=True)
@@ -81,13 +84,13 @@ class SignalRecord:
     signal_id: str
     stock_symbol: str
     exchange: str
-    track: str                          # Track enum value
+    track: str  # Track enum value
     direction: Direction
-    raw_score: float                    # -1.0 to +1.0
-    confidence: float                   # 0.0 to 1.0
-    regime_at_signal: str               # Regime enum value
+    raw_score: float  # -1.0 to +1.0
+    confidence: float  # 0.0 to 1.0
+    regime_at_signal: str  # Regime enum value
     contributing_signals: list[ContributingSignal]
-    feature_snapshot: dict[str, Any]   # exact feature values used
+    feature_snapshot: dict[str, Any]  # exact feature values used
     generated_at: datetime
     generator_version: str = "1.0"
 
@@ -108,7 +111,7 @@ class TradePlan:
     expected_risk_per_share: Decimal
     reward_to_risk: Decimal
     expected_value_per_share: Decimal
-    decision: str                        # "proceed" | "skip"
+    decision: str  # "proceed" | "skip"
     skip_reason: SkipReason | None
     entry_strategy_id: EntryStrategy | None
     created_at: datetime
@@ -117,11 +120,12 @@ class TradePlan:
 @dataclass(frozen=True)
 class EntryPlan:
     """Output of Stage 3.5 — refined entry parameters for a single tranche or order."""
+
     strategy: EntryStrategy
-    entry_price: Decimal                 # limit or stop-buy price
+    entry_price: Decimal  # limit or stop-buy price
     validity_days: int
-    tranche_fraction: Decimal            # 1.0 for single entry, <1.0 for staged
-    tranche_index: int = 1               # 1-based
+    tranche_fraction: Decimal  # 1.0 for single entry, <1.0 for staged
+    tranche_index: int = 1  # 1-based
     total_tranches: int = 1
     notes: str = ""
 
@@ -162,14 +166,15 @@ class Recommendation:
 @dataclass(frozen=True)
 class PositionHealthScore:
     """Stage 4b health score, 0–100."""
+
     position_id: str
     stock_symbol: str
     track: str
-    total_score: float                  # 0–100
-    pnl_vs_expected: float              # 40% weight component (0–40)
-    signal_alignment: float             # 30% weight component (0–30)
-    time_thesis_factor: float           # 15% weight component (0–15)
-    regime_favorable: float             # 15% weight component (0–15)
+    total_score: float  # 0–100
+    pnl_vs_expected: float  # 40% weight component (0–40)
+    signal_alignment: float  # 30% weight component (0–30)
+    time_thesis_factor: float  # 15% weight component (0–15)
+    regime_favorable: float  # 15% weight component (0–15)
     exit_recommended: bool
     exit_reason: str | None
     scored_at: datetime

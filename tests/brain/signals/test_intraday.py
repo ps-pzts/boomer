@@ -1,4 +1,5 @@
 """Tests for IntradaySignalGenerator."""
+
 from datetime import UTC, datetime
 
 import pytest
@@ -9,7 +10,7 @@ SYMBOL = "NIFTY_STOCK"
 EXCHANGE = "NSE"
 
 _BASE_FEATURES = {
-    "avg_traded_value_20d": 2e10,    # ₹200 cr — above ₹10 cr gate
+    "avg_traded_value_20d": 2e10,  # ₹200 cr — above ₹10 cr gate
     "premarket_gap_pct": 0.5,
     "overnight_news_sentiment": 0.3,
     "orb_range_vs_20d_avg_ratio": 0.8,
@@ -55,4 +56,5 @@ def test_confidence_between_0_and_1(gen):
 
 def test_weights_sum_to_one():
     from brain.signals.intraday import _WEIGHTS
+
     assert sum(_WEIGHTS.values()) == pytest.approx(1.0)

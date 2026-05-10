@@ -1,4 +1,5 @@
 """Tests for Stage 3.5 entry timing classifiers."""
+
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -17,6 +18,7 @@ _NOW = datetime(2024, 5, 1, 7, 0, tzinfo=UTC)
 
 def _make_plan(track="long_term"):
     import uuid
+
     return TradePlan(
         plan_id=str(uuid.uuid4()),
         signal_id=str(uuid.uuid4()),
@@ -170,7 +172,7 @@ class TestStackingGate:
             swing_position_pnl_pct=3.0,
             intraday_contributing_names={"premarket_gap"},
             swing_contributing_names={"promoter"},
-            total_exposure_pct=6.0,       # > 5% cap
+            total_exposure_pct=6.0,  # > 5% cap
             single_stock_cap_pct=0.05,
         )
         assert ok is False

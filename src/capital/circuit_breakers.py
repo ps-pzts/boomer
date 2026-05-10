@@ -22,17 +22,18 @@ class CircuitBreakerState:
 
     intraday_daily_loss: BreakerStatus
     intraday_consecutive_losses: BreakerStatus
-    intraday_late_entry: BreakerStatus      # time > 14:30 IST
+    intraday_late_entry: BreakerStatus  # time > 14:30 IST
     swing_weekly_loss: BreakerStatus
     swing_30d_loss_count: BreakerStatus
     portfolio_daily_loss: BreakerStatus
     portfolio_weekly_loss: BreakerStatus
-    portfolio_max_drawdown: BreakerStatus   # manual resume required
-    black_swan: BreakerStatus               # manual resume required
+    portfolio_max_drawdown: BreakerStatus  # manual resume required
+    black_swan: BreakerStatus  # manual resume required
 
     def any_tripped(self) -> bool:
         return any(
-            v == BreakerStatus.TRIPPED for v in self.__dataclass_fields__  # type: ignore[attr-defined]
+            v == BreakerStatus.TRIPPED
+            for v in self.__dataclass_fields__  # type: ignore[attr-defined]
         )
 
     def requires_manual_resume(self) -> bool:
@@ -101,6 +102,7 @@ def evaluate_circuit_breakers(
 
     All % comparisons use fractions (e.g., 0.02 = 2%), consistent with risk_config.
     """
+
     def _pct(pnl: Decimal, capital: Decimal) -> Decimal:
         if capital == 0:
             return Decimal("0")

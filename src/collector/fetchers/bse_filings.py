@@ -108,7 +108,7 @@ class BseFilingsFetcher(BaseFetcher):
                         headline[:500],
                         body_text[:500] if body_text else None,
                         attachment_url or None,
-                        None,   # sentiment filled by parser.py after FinBERT
+                        None,  # sentiment filled by parser.py after FinBERT
                         None,
                         None,
                         0,

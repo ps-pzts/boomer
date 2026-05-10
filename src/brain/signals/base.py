@@ -10,9 +10,9 @@ from brain.models import ContributingSignal, Direction, SignalRecord
 
 # Liquidity gates (avg_traded_value_20d in rupees) per track
 LIQUIDITY_GATE: dict[str, float] = {
-    "long_term": 5_00_00_000,   # ₹5 cr
-    "swing": 2_00_00_000,       # ₹2 cr
-    "intraday": 10_00_00_000,   # ₹10 cr
+    "long_term": 5_00_00_000,  # ₹5 cr
+    "swing": 2_00_00_000,  # ₹2 cr
+    "intraday": 10_00_00_000,  # ₹10 cr
 }
 
 
@@ -21,13 +21,11 @@ class BaseSignalGenerator(ABC):
 
     @property
     @abstractmethod
-    def track(self) -> str:
-        ...
+    def track(self) -> str: ...
 
     @property
     @abstractmethod
-    def generator_version(self) -> str:
-        ...
+    def generator_version(self) -> str: ...
 
     def generate(
         self,
@@ -45,8 +43,10 @@ class BaseSignalGenerator(ABC):
         if raw_score is None:
             return None
 
-        direction = Direction.LONG if raw_score > 0 else (
-            Direction.SHORT if raw_score < 0 else Direction.NEUTRAL
+        direction = (
+            Direction.LONG
+            if raw_score > 0
+            else (Direction.SHORT if raw_score < 0 else Direction.NEUTRAL)
         )
         confidence = self._confidence(raw_score, contributors, features)
 
@@ -97,10 +97,9 @@ class BaseSignalGenerator(ABC):
             agreement_component = 0.0
         else:
             aligned = sum(
-                1 for c in contributing_signals if (
-                    (raw_score >= 0 and c.value >= 0) or
-                    (raw_score < 0 and c.value < 0)
-                )
+                1
+                for c in contributing_signals
+                if ((raw_score >= 0 and c.value >= 0) or (raw_score < 0 and c.value < 0))
             )
             agreement_component = 0.3 * (aligned / total)
 

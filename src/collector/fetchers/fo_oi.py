@@ -32,9 +32,7 @@ _NSE_FO_BHAVCOPY_URL = (
     "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{date}_F_0000.csv.zip"
 )
 # Older format (pre-2023):
-_NSE_FO_BHAVCOPY_URL_OLD = (
-    "https://nsearchives.nseindia.com/content/historical/DERIVATIVES/{year}/{month}/fo{date}bhav.csv.zip"
-)
+_NSE_FO_BHAVCOPY_URL_OLD = "https://nsearchives.nseindia.com/content/historical/DERIVATIVES/{year}/{month}/fo{date}bhav.csv.zip"
 
 
 class FoOiFetcher(BaseFetcher):
@@ -69,6 +67,7 @@ class FoOiFetcher(BaseFetcher):
 
 # ── CSV parser ─────────────────────────────────────────────────────────────────
 
+
 def _parse_fo_bhavcopy_csv(
     body: bytes,
     raw_row: RawArchiveRow,
@@ -102,8 +101,8 @@ def _parse_fo_bhavcopy_csv(
                 oi_chg_str = (row.get("ChngInOpnIntrst") or "0").replace(",", "").strip()
                 vol_str = (row.get("TtlTradgVol") or "0").replace(",", "").strip()
                 close_str = (
-                    row.get("ClsPric") or row.get("SttlmPric") or "0"
-                ).replace(",", "").strip()
+                    (row.get("ClsPric") or row.get("SttlmPric") or "0").replace(",", "").strip()
+                )
                 trade_date_str = (row.get("SnpshtDt") or "").strip()
             else:
                 # Old format
@@ -117,8 +116,8 @@ def _parse_fo_bhavcopy_csv(
                 oi_chg_str = (row.get("CHG_IN_OI") or "0").replace(",", "").strip()
                 vol_str = (row.get("CONTRACTS") or "0").replace(",", "").strip()
                 close_str = (
-                    row.get("SETTLE_PR") or row.get("CLOSE") or "0"
-                ).replace(",", "").strip()
+                    (row.get("SETTLE_PR") or row.get("CLOSE") or "0").replace(",", "").strip()
+                )
                 trade_date_str = (row.get("TIMESTAMP") or "").strip()
 
             if not symbol:
@@ -151,13 +150,23 @@ def _parse_fo_bhavcopy_csv(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    record_id, raw_row.raw_id, version,
-                    symbol, "NSE",
-                    instr_type.value, expiry_date, strike,
-                    trade_date, _fmt_dt(raw_row.fetched_at),
-                    oi, oi_chg, vol, close,
+                    record_id,
+                    raw_row.raw_id,
+                    version,
+                    symbol,
+                    "NSE",
+                    instr_type.value,
+                    expiry_date,
+                    strike,
+                    trade_date,
+                    _fmt_dt(raw_row.fetched_at),
+                    oi,
+                    oi_chg,
+                    vol,
+                    close,
                     None,  # IV computed at feature time
-                    0, None,
+                    0,
+                    None,
                 ),
             )
             if db.execute("SELECT changes()").fetchone()[0]:

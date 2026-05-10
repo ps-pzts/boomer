@@ -110,7 +110,8 @@ class MockBroker(Broker):
                 average_price=p["average_price"],
                 last_price=(
                     self._current_bars[p["symbol"]].close
-                    if p["symbol"] in self._current_bars else p["average_price"]
+                    if p["symbol"] in self._current_bars
+                    else p["average_price"]
                 ),
                 product=ProductType.MIS,
                 broker_id=BrokerName.MOCK,
@@ -128,7 +129,8 @@ class MockBroker(Broker):
                 average_price=h["average_price"],
                 last_price=(
                     self._current_bars[h["symbol"]].close
-                    if h["symbol"] in self._current_bars else h["average_price"]
+                    if h["symbol"] in self._current_bars
+                    else h["average_price"]
                 ),
                 product=ProductType.CNC,
                 broker_id=BrokerName.MOCK,
