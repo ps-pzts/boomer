@@ -62,4 +62,5 @@ def log_shutdown(signum: int) -> None:
 
 
 def log_dashboard_online() -> None:
-    _log.info("[FRIDAY] Dashboard live — WebSocket feed active")
+    sys.stdout.write("  [FRIDAY] Dashboard live — WebSocket feed active\n")
+    sys.stdout.flush()
