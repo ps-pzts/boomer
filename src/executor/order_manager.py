@@ -21,10 +21,12 @@ from executor.models import (
 logger = logging.getLogger(__name__)
 
 # Routing table: track → broker_id
+# All tracks routed to Kite until Fyers trading is validated.
+# Fyers is connected for historical/live data only.
 _TRACK_BROKER: dict[str, BrokerName] = {
     "intraday": BrokerName.KITE,
-    "swing": BrokerName.FYERS,
-    "long_term": BrokerName.FYERS,
+    "swing": BrokerName.KITE,
+    "long_term": BrokerName.KITE,
 }
 
 _DUPLICATE_WINDOW_SECONDS = 30
@@ -46,10 +48,12 @@ class OrderManager:
         db: sqlite3.Connection,
         brokers: dict[BrokerName, Broker],
         ltp_cache: dict[str, float],
+        alerter: object | None = None,
     ) -> None:
         self._db = db
         self._brokers = brokers
         self._ltp = ltp_cache  # shared in-memory LTP dict updated by KiteBroker.on_tick
+        self._alerter = alerter
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -78,6 +82,13 @@ class OrderManager:
         self._update_broker_order_id(order_id, broker_order_id)
         self._transition(order_id, OrderStatus.PENDING)
         logger.info("order submitted order_id=%s broker_order_id=%s", order_id, broker_order_id)
+        if self._alerter:
+            side = request.side.value if hasattr(request.side, "value") else str(request.side)
+            self._alerter.info(
+                f"Trade placed — {request.symbol}",
+                f"Side: {side}  Qty: {request.quantity}  Track: {track}\n"
+                f"Type: {request.order_type}  Broker order: {broker_order_id}",
+            )
         return order_id
 
     def cancel(self, order_id: str) -> None:
@@ -102,6 +113,14 @@ class OrderManager:
             self._transition(order_id, new_status)
             if raw.get("filled_quantity", 0) > record.filled_quantity:
                 self._record_execution(record, raw)
+                if self._alerter and new_status == OrderStatus.FILLED:
+                    avg = raw.get("average_fill_price", 0)
+                    qty = raw.get("filled_quantity", 0)
+                    self._alerter.info(
+                        f"Trade filled — {record.symbol}",
+                        f"Qty filled: {qty}  Avg price: ₹{avg:.2f}\n"
+                        f"Order ID: {order_id[:8]}…  Broker: {record.broker_id}",
+                    )
         return self._load_order(order_id)
 
     def handle_broker_update(self, broker_update: dict) -> None:
