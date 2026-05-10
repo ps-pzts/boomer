@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Today{% endblock %}
+{% block content %}
+
+<!-- Bot mode indicator — most critical control, top of page -->
+<section class="mode-section">
+  <div id="bot-mode-badge" class="mode-badge mode-{{ snap.bot_mode }}">
+    {{ snap.bot_mode.upper().replace('_', ' ') }}
+  </div>
+  <form method="post" action="/mode" style="display:inline-flex;gap:0.5rem;margin-left:1rem;">
+    {% if snap.bot_mode != 'auto' %}
+      <button name="mode" value="auto" class="btn btn-green">Resume AUTO</button>
+    {% endif %}
+    {% if snap.bot_mode != 'paused' %}
+      <button name="mode" value="paused" class="btn btn-yellow">PAUSE</button>
+    {% endif %}
+    {% if snap.bot_mode != 'emergency_stop' %}
+      <button name="mode" value="emergency_stop" class="btn btn-red"
+              onclick="return confirm('Flip to EMERGENCY STOP? All scheduled tasks will halt immediately.')">
+        EMERGENCY STOP
+      </button>
+    {% endif %}
+  </form>
+</section>
+
+<!-- Missed critical alerts banner -->
+{% if snap.missed_critical_alerts > 0 %}
+<div class="alert-banner alert-critical">
+  <strong>⚠ {{ snap.missed_critical_alerts }} unacknowledged CRITICAL alert(s).</strong>
+  Check the <a href="/system">System Health</a> view.
+  <span id="missed-critical-count" style="display:none">{{ snap.missed_critical_alerts }}</span>
+</div>
+{% else %}
+  <span id="missed-critical-count" style="display:none">0</span>
+{% endif %}
+
+<!-- Circuit breakers tripped -->
+{% if snap.circuit_breakers_tripped %}
+<div class="alert-banner alert-warn">
+  <strong>Circuit breakers tripped:</strong> {{ snap.circuit_breakers_tripped | join(', ') }}
+</div>
+{% endif %}
+
+<!-- Today's snapshot: 4 key numbers -->
+<section class="snapshot-grid">
+  <div class="snapshot-card">
+    <div class="snapshot-label">Today P&amp;L</div>
+    <div id="live-pnl" class="snapshot-value {% if snap.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
+      ₹{{ '{:,.0f}'.format(snap.total_pnl) }}
+    </div>
+  </div>
+  <div class="snapshot-card">
+    <div class="snapshot-label">Signals</div>
+    <div class="snapshot-value">{{ snap.signals_generated }}</div>
+  </div>
+  <div class="snapshot-card">
+    <div class="snapshot-label">Trades</div>
+    <div class="snapshot-value">{{ snap.trades_placed }}</div>
+  </div>
+  <div class="snapshot-card">
+    <div class="snapshot-label">Positions opened</div>
+    <div class="snapshot-value">{{ snap.positions_opened }}</div>
+  </div>
+</section>
+
+<!-- Per-track quick view -->
+<section class="track-grid">
+  <div class="track-card">
+    <h3>Long-Term</h3>
+    <div class="track-stat">{{ snap.lt_open }} open</div>
+  </div>
+  <div class="track-card">
+    <h3>Swing</h3>
+    <div class="track-stat">{{ snap.swing_open }} open</div>
+  </div>
+  <div class="track-card">
+    <h3>Intraday</h3>
+    <div class="track-stat">{{ snap.intraday_open }} open</div>
+  </div>
+</section>
+
+<!-- Approvals waiting -->
+{% if snap.approvals_waiting > 0 %}
+<div class="approvals-nudge">
+  <strong>{{ snap.approvals_waiting }}</strong> recommendation(s) waiting for approval.
+  <a href="/approvals" class="btn btn-outline">Review now →</a>
+</div>
+{% endif %}
+
+{% endblock %}

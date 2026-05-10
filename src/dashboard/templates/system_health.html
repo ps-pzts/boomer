@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}System Health{% endblock %}
+{% block content %}
+
+<h1>System Health</h1>
+
+<!-- Task run timeline (last 24h) -->
+<section>
+  <h2>Task run timeline — last 24h</h2>
+  {% if not task_runs %}
+    <p class="empty-state">No task runs in the last 24 hours.</p>
+  {% else %}
+  <table class="task-table">
+    <thead>
+      <tr><th>Task</th><th>Date</th><th>Status</th><th>Started</th><th>Ended</th><th>Error</th></tr>
+    </thead>
+    <tbody>
+    {% for run in task_runs %}
+    <tr class="status-{{ run.status | lower }}">
+      <td>{{ run.task_id }}</td>
+      <td>{{ run.run_date }}</td>
+      <td>
+        <span class="status-badge status-{{ run.status | lower }}">{{ run.status }}</span>
+      </td>
+      <td>{{ (run.started_at or '')[:16] }}</td>
+      <td>{{ (run.ended_at or '')[:16] }}</td>
+      <td class="error-cell">
+        {% if run.error_message %}
+          <details>
+            <summary class="error-summary">{{ run.error_message[:80] }}{% if run.error_message|length > 80 %}…{% endif %}</summary>
+          </details>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<!-- Recent errors with tracebacks -->
+{% if errors %}
+<section>
+  <h2>Recent errors (last 50)</h2>
+  {% for err in errors %}
+  <div class="error-card">
+    <div class="error-meta">
+      <span>{{ err.task_id }}</span>
+      <span>{{ err.started_at }}</span>
+    </div>
+    <div class="error-msg">{{ err.error_message }}</div>
+    {% if err.error_traceback %}
+    <details>
+      <summary>Traceback</summary>
+      <pre class="traceback">{{ err.error_traceback }}</pre>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% endblock %}

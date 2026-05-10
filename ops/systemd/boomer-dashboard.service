@@ -1,0 +1,19 @@
+[Unit]
+Description=Boomer Dashboard — FastAPI operator interface
+After=network.target
+
+[Service]
+Type=simple
+User=boomer
+Group=boomer
+WorkingDirectory=/opt/boomer
+EnvironmentFile=/etc/boomer/secrets.env
+ExecStart=/opt/boomer/.venv/bin/uvicorn src.dashboard.app:app --host 127.0.0.1 --port 8080 --no-access-log
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/boomer/dashboard.log
+StandardError=append:/var/log/boomer/dashboard.log
+
+# Dashboard is a separate process — its crashes never affect trading operations.
+[Install]
+WantedBy=multi-user.target

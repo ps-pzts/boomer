@@ -256,61 +256,27 @@ CREATE INDEX idx_features_stock_valid
 
 ## Phase 5 — Orchestrator, Dashboard, Operations
 
-### Q5-1: WebSocket service architecture
+### ~~Q5-1: WebSocket service architecture~~ — RESOLVED 2026-05-10
 
-**Context:** Phase 5 lists `boomer-websocket.service` as a systemd service. Its architecture is unspecified. The executor needs live tick data via `on_tick()` callbacks.
-
-**Question:** Is the WebSocket tick client a separate process (service) or in-process within the orchestrator/executor?
-
-**Options:**
-- A: In-process — the executor owns the Kite WebSocket connection. `on_tick()` is a callback that updates the in-memory LTP dictionary directly. No separate service.
-- B: Separate process — a minimal WebSocket client writes ticks to a shared table (e.g., `live_ticks` SQLite table). Executor reads from the table. This provides tick persistence but adds write overhead.
-
-**Recommended decision:** Option A. In-process is simpler. The executor is the right owner — it needs LTPs for circuit breakers and reconciliation. A separate service adds complexity (IPC, process restart coordination) for no benefit at this scale. Rename `boomer-websocket.service` to be the `boomer-executor.service` (the executor process handles its own WebSocket connection). Document this in the deployment shape.
-
-**Action needed:** Update Phase 5 deployment shape.
+**Decision:** Option A — Kite WebSocket runs in-process within `boomer-executor.service`. No separate WebSocket service. The `ops/systemd/` directory contains `boomer-executor.service` (not `boomer-websocket.service`).
 
 ---
 
-### Q5-2: Rollback procedure for database-changing deployments
+### ~~Q5-2: Rollback procedure for database-changing deployments~~ — RESOLVED 2026-05-10
 
-**Context:** The migration pattern is forward-only. Rolling back requires restoring the pre-deployment database backup and reverting the code. The runbook mentions backup verification but not an explicit rollback checklist.
-
-**Question:** What are the exact steps to rollback a bad deployment that included a schema migration?
-
-**Recommended checklist (add to runbook):**
-1. Switch bot_mode to `emergency_stop`
-2. Verify all intraday positions are closed (market hours check)
-3. Copy current database to `/var/lib/boomer/rollback-attempt-YYYYMMDD.db`
-4. Restore pre-deployment backup: `cp backups/YYYY-MM-DD.db boomer.db`
-5. Revert code: `git checkout <previous-commit>`
-6. Restart services
-7. Verify schema_version shows the expected migration level
-8. Run reconciliation manually; verify positions match broker
-
-**Action needed:** Add this checklist to the runbook section in Phase 5.
+**Decision:** Rollback checklist added to `ops/runbook.md` under "Rollback Procedure". Steps: emergency_stop → verify intraday closed → snapshot current db → restore backup → revert code → restart services → verify schema_version → manual reconciliation.
 
 ---
 
-### Q5-3: Fyers token daily refresh
+### ~~Q5-3: Fyers token daily refresh~~ — RESOLVED 2026-05-10
 
-**Context:** Kite Connect tokens expire daily and are refreshed at 9:00 AM IST. Fyers API tokens also expire daily (24-hour OAuth2 tokens).
-
-**Question:** Is the Fyers token refresh automated in the same 9:00 AM `pre_market_executor_setup` task, or does it require a separate flow?
-
-**Note:** Fyers OAuth2 uses a redirect URL for initial authentication (browser-based). Daily refresh may require a different approach — Fyers provides a method to generate a new token from the previous refresh token or via a server-side flow. Clarify whether this can be automated (no browser required) or requires a daily manual step.
-
-**Action needed:** Test Fyers token refresh in isolation. If fully automatable, add to `pre_market_executor_setup`. If not, document the manual step and alert if refresh fails.
+**Decision:** Fyers token refresh documented as a manual daily step in the runbook (pre-market checklist). If refresh fails, `pre_market_executor_setup` emits a CRITICAL alert. Full automation deferred to post-live testing of Fyers refresh token flow.
 
 ---
 
-### Q5-4: Dashboard deployment update — Fyers credentials
+### ~~Q5-4: Dashboard deployment update — Fyers credentials~~ — RESOLVED 2026-05-10
 
-**Context:** The operations security section covers Kite credentials. Fyers now requires a second set of API credentials (app_id, secret_key, access_token).
-
-**Question:** Are Fyers credentials handled the same way as Kite credentials (encrypted env file, decrypted at startup)?
-
-**Recommended decision:** Yes — add `FYERS_APP_ID`, `FYERS_SECRET`, and `FYERS_ACCESS_TOKEN` to `secrets.env` alongside Kite credentials. Same encryption and access model. Update the secrets management section in Phase 5.
+**Decision:** `FYERS_APP_ID`, `FYERS_SECRET`, and `FYERS_ACCESS_TOKEN` added to `secrets.env` alongside Kite credentials. Same encrypted-env-file model. Documented in runbook.
 
 ---
 

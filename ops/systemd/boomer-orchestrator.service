@@ -1,0 +1,18 @@
+[Unit]
+Description=Boomer Orchestrator — task scheduler and supervisor
+After=network.target
+
+[Service]
+Type=simple
+User=boomer
+Group=boomer
+WorkingDirectory=/opt/boomer
+EnvironmentFile=/etc/boomer/secrets.env
+ExecStart=/opt/boomer/.venv/bin/python -m src.orchestrator.orchestrator
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/boomer/orchestrator.log
+StandardError=append:/var/log/boomer/orchestrator.log
+
+[Install]
+WantedBy=multi-user.target
