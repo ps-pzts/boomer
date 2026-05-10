@@ -6,4 +6,13 @@ dist/
 build/
 .pytest_cache/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
+.env
+.claude/
+data/
+secrets.env
+
+# Local dev guide — personal reference, not for the repo
+guide.md
