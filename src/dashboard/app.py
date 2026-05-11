@@ -127,6 +127,35 @@ async def today(request: Request, _: AuthDep) -> HTMLResponse:
 # ─── View 2: Approvals ─────────────────────────────────────────────────────────
 
 
+def _approve_rec(rec_id: str) -> bool:
+    """Write approved_by_apm status. Returns True if a row was actually updated."""
+    conn = _write_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE recommendations SET status='approved_by_apm'"
+            " WHERE recommendation_id=? AND status='awaiting_human'",
+            (rec_id,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def _reject_rec(rec_id: str, reason: str) -> bool:
+    conn = _write_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE recommendations SET status='rejected_by_apm', decision_reason=?"
+            " WHERE recommendation_id=? AND status='awaiting_human'",
+            (reason or "operator_rejected", rec_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 @app.get("/approvals", response_class=HTMLResponse)
 async def approvals(request: Request, _: AuthDep) -> HTMLResponse:
     recs = get_pending_recommendations(DB_PATH)
@@ -135,17 +164,7 @@ async def approvals(request: Request, _: AuthDep) -> HTMLResponse:
 
 @app.post("/approvals/{rec_id}/approve")
 async def approve_recommendation(rec_id: str, _: AuthDep) -> RedirectResponse:
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
-    conn = _write_conn()
-    try:
-        conn.execute(
-            "UPDATE recommendations SET status='approved', updated_at=?"
-            " WHERE rec_id=? AND status='pending'",
-            (now, rec_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    _approve_rec(rec_id)
     return RedirectResponse("/approvals", status_code=303)
 
 
@@ -153,17 +172,7 @@ async def approve_recommendation(rec_id: str, _: AuthDep) -> RedirectResponse:
 async def reject_recommendation(
     rec_id: str, reason: Annotated[str, Form()], _: AuthDep
 ) -> RedirectResponse:
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
-    conn = _write_conn()
-    try:
-        conn.execute(
-            "UPDATE recommendations SET status='rejected', reject_reason=?, updated_at=?"
-            " WHERE rec_id=? AND status='pending'",
-            (reason, now, rec_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    _reject_rec(rec_id, reason)
     return RedirectResponse("/approvals", status_code=303)
 
 
