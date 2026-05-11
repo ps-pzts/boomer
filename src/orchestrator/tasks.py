@@ -39,6 +39,8 @@ def _nightly_eod_collector(
     from src.collector.models import DataSource as _DataSource
     from src.collector.parser import build_fetcher_registry
 
+    from src.collector.models import DataSource as _DataSource
+
     trade_date = _dt.date.fromisoformat(run_date)
     # Bulk deal files are published the next morning — always fetch the previous trading day.
     prev_trading_date = _prev_weekday(trade_date)
@@ -389,6 +391,7 @@ def _pre_market_executor_setup(
             logger.info(
                 "pre_market_executor_setup: tokens refreshed brokers=%s", list(updated.keys())
             )
+            # Re-authenticate live broker objects so they use the new tokens
             for broker in brokers:
                 try:
                     broker.authenticate()
@@ -431,6 +434,8 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     from src.brain.feature_store import FeatureStore
     from src.brain.models import Direction, SignalRecord
     from src.brain.position_review import PositionRecord, PositionReviewer
+    feature_store = FeatureStore(db_path)
+    reviewer = PositionReviewer()
 
     fs = FeatureStore(db_path)
     reviewer = PositionReviewer()
@@ -447,6 +452,7 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
            FROM positions p
            LEFT JOIN trade_plans tp ON tp.plan_id = p.trade_plan_id
            WHERE p.is_open=1"""
+        "SELECT position_id, symbol, track FROM positions WHERE is_open=1"
     ).fetchall()
 
     as_of_date = _dt.date.fromisoformat(run_date)
