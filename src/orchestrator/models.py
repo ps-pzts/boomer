@@ -98,7 +98,7 @@ class BotModeStore:
     ) -> None:
         import datetime
 
-        now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         with self._conn() as conn:
             old = conn.execute("SELECT mode FROM bot_mode WHERE id = 1").fetchone()
             old_mode = old["mode"] if old else BotMode.AUTO
@@ -133,7 +133,7 @@ class TaskRunStore:
     ) -> int:
         import datetime
 
-        now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         with self._conn() as conn:
             cur = conn.execute(
                 """INSERT INTO task_runs
@@ -153,7 +153,7 @@ class TaskRunStore:
     ) -> None:
         import datetime
 
-        now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         with self._conn() as conn:
             conn.execute(
                 """UPDATE task_runs SET status=?, ended_at=?, error_message=?, error_traceback=?
@@ -167,7 +167,7 @@ class TaskRunStore:
             row = conn.execute(
                 """SELECT * FROM task_runs
                    WHERE task_id=? AND run_date=?
-                   ORDER BY attempt DESC LIMIT 1""",
+                   ORDER BY id DESC LIMIT 1""",
                 (task_id, run_date),
             ).fetchone()
         if row is None:
@@ -195,8 +195,8 @@ class TaskRunStore:
     def recent(self, hours: int = 24) -> list[TaskRun]:
         import datetime as _dt
 
-        cutoff = _dt.datetime.utcnow() - _dt.timedelta(hours=hours)
-        cutoff_str = cutoff.isoformat(timespec="seconds") + "Z"
+        cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(hours=hours)
+        cutoff_str = cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM task_runs WHERE started_at >= ? ORDER BY started_at DESC",

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import signal
 import sys
 import threading
@@ -38,6 +39,7 @@ class Orchestrator:
         poll_interval: int = 30,
         intraday_runner: object | None = None,
         reconciler: object | None = None,
+        brokers: list | None = None,
     ) -> None:
         self._db_path = db_path
         self._run_store = TaskRunStore(db_path)
@@ -48,6 +50,7 @@ class Orchestrator:
             backup_dir=backup_dir,
             intraday_runner=intraday_runner,
             reconciler=reconciler,
+            brokers=brokers or [],
         )
         self._scheduler = Scheduler(
             task_registry=self._tasks,
@@ -58,6 +61,7 @@ class Orchestrator:
         )
         self._poll_interval = poll_interval
         self._running_tasks: dict[str, threading.Thread] = {}
+        self._last_dispatched: dict[str, datetime.datetime] = {}
         self._stop_event = threading.Event()
 
     # ─── Lifecycle ─────────────────────────────────────────────────────────────
@@ -78,7 +82,7 @@ class Orchestrator:
         import datetime as dt
         import sqlite3
 
-        now = dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = dt.datetime.now(dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         conn = sqlite3.connect(self._db_path, timeout=5)
         try:
             cur = conn.execute(
@@ -94,18 +98,24 @@ class Orchestrator:
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
-            now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.UTC)
+            now_utc = datetime.datetime.now(datetime.UTC)
             run_date = self._scheduler.current_run_date(now_utc)
 
             for task_id, task_def in self._tasks.items():
                 if task_id in self._running_tasks and self._running_tasks[task_id].is_alive():
                     continue  # already running
 
+                # Prevent double-firing within the same cron minute (poll runs every 30s).
+                last = self._last_dispatched.get(task_id)
+                if last and (now_utc - last).total_seconds() < 60:
+                    continue
+
                 should, reason = self._scheduler.should_run(task_def, now_utc, run_date)
                 if not should:
                     continue
 
                 logger.info("orchestrator_dispatch task_id=%s run_date=%s", task_id, run_date)
+                self._last_dispatched[task_id] = now_utc
                 t = threading.Thread(
                     target=self._run_task,
                     args=(task_def, run_date),
@@ -181,14 +191,60 @@ def main() -> None:
     migrations_dir = pathlib.Path(__file__).parents[3] / "migrations"
     run_migrations(db_path, migrations_dir)
 
+    brokers = _build_brokers()
+
     orc = Orchestrator(
         db_path=db_path,
         archive_dir=archive_dir,
         backup_dir=backup_dir,
         poll_interval=poll_interval,
+        brokers=brokers,
     )
     log_boot_sequence(db_path, poll_interval)
     orc.start()
+
+
+def _build_brokers() -> list:
+    """Instantiate and authenticate any brokers whose tokens are in the environment.
+
+    Failures are logged as warnings — the orchestrator runs without broker
+    connections (data pipeline still works, only EOD capital sync is skipped).
+    """
+    brokers = []
+
+    kite_key = os.environ.get("KITE_API_KEY", "")
+    kite_token = os.environ.get("KITE_ACCESS_TOKEN", "")
+    if kite_key and kite_token:
+        try:
+            from src.executor.brokers.kite_broker import KiteBroker
+            kite = KiteBroker()
+            kite.authenticate()
+            brokers.append(kite)
+            logging.getLogger(__name__).info("broker_connected broker=kite")
+        except Exception as exc:
+            logging.getLogger(__name__).warning("broker_connect_failed broker=kite error=%s", exc)
+    else:
+        logging.getLogger(__name__).warning(
+            "broker_not_configured broker=kite — set KITE_API_KEY + KITE_ACCESS_TOKEN in .env"
+        )
+
+    fyers_id = os.environ.get("FYERS_CLIENT_ID", "")
+    fyers_token = os.environ.get("FYERS_ACCESS_TOKEN", "")
+    if fyers_id and fyers_token:
+        try:
+            from src.executor.brokers.fyers_broker import FyersBroker
+            fyers = FyersBroker()
+            fyers.authenticate()
+            brokers.append(fyers)
+            logging.getLogger(__name__).info("broker_connected broker=fyers")
+        except Exception as exc:
+            logging.getLogger(__name__).warning("broker_connect_failed broker=fyers error=%s", exc)
+    else:
+        logging.getLogger(__name__).warning(
+            "broker_not_configured broker=fyers — set FYERS_CLIENT_ID + FYERS_ACCESS_TOKEN in .env"
+        )
+
+    return brokers
 
 
 if __name__ == "__main__":

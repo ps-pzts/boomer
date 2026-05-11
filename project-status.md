@@ -87,6 +87,19 @@ Key ones resolved in Phase 4 implementation:
 - `guide.md` (local only, gitignored): end-to-end local setup guide covering virtualenv, migrations, seed data, dashboard startup, orchestrator startup, daily broker token refresh (Kite + Fyers), lint/test commands, Docker usage, common troubleshooting
 - Required GitHub secrets for CD: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, and `BASIC_AUTH_USER`/`BASIC_AUTH_PASSWORD` — set under repo Settings → Environments → `production`
 
+### 2026-05-11 — Enhancement: Broker auto-login, Telegram alerts, Kite-only execution
+
+- `src/executor/auto_login.py`: fully automated TOTP login for Kite (`kite_auto_login`) and Fyers (`fyers_auto_login`); `refresh_all_broker_tokens()` refreshes both, updates `os.environ` and `.env` in-place; Fyers blocked (MPIN issue — deferred, manual script as fallback)
+- `src/executor/order_manager.py`: all tracks (`intraday`, `swing`, `long_term`) routed to Kite until Fyers trading validated; optional `alerter` param — sends Telegram on order submit and on fill
+- `src/orchestrator/tasks.py` `pre_market_executor_setup`: calls `refresh_all_broker_tokens()` at 08:30 IST daily; re-authenticates broker objects with fresh tokens
+- Telegram notifications wired: login events, trade placed, trade filled, task FAILED_FINAL alerts
+- `scripts/auto_login.py`: CLI `--broker kite|fyers|all` for manual token refresh
+- `scripts/kite_login.py`, `scripts/fyers_login.py`: interactive fallback login scripts
+- `tests/executor/test_auto_login.py`: 14 tests covering all auto_login paths; 0 failures
+- Bug fixed: `NameError: name 'os'` in `orchestrator.py _build_brokers()` — missing `import os`
+- Bug fixed: `nightly_eod_collector` called `build_fetcher_registry(db_path=...)` — fixed to `(db=conn, raw_dir=Path(...))`; called `CollectionRunStore(db_path)` — fixed to `CollectionRunStore(conn)`; called `run_context(name, run_date=...)` — fixed to `run_context(source)` (takes DataSource enum); called `fetcher.fetch(run_date=...)` — fixed to `fetcher.run(trade_date=date)`
+- Bug fixed: `base.py archive()` used `json.dumps(params)` — crashed with date objects; fixed to `json.dumps(params, default=str)`
+
 ### 2026-05-10 — Phase 5: Orchestrator, Dashboard, Operations
 
 - `migrations/0005_orchestrator_schema.sql`: 5 tables — `bot_mode` (singleton, auto/paused/emergency_stop), `bot_mode_log` (audit), `task_runs` (9 status states), `trading_calendar` (2026 NSE holidays pre-seeded), `alert_log`, `critical_notification_failures`

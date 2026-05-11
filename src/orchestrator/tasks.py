@@ -15,6 +15,15 @@ from .models import RetryPolicy, TaskDefinition
 logger = logging.getLogger(__name__)
 
 
+def _prev_weekday(d: object) -> object:
+    """Return the most recent weekday before d (Mon→Fri, Tue-Fri→day-1, Sat→Fri, Sun→Fri)."""
+    import datetime as _dt
+
+    day: _dt.date = d  # type: ignore[assignment]
+    days_back = {0: 3, 6: 2}.get(day.weekday(), 1)  # Mon=0→3, Sun=6→2, else 1
+    return day - _dt.timedelta(days=days_back)
+
+
 # ─── Task implementations ──────────────────────────────────────────────────────
 
 
@@ -22,14 +31,28 @@ def _nightly_eod_collector(
     run_date: str, run_id: int, db_path: str, archive_dir: str, **_: object
 ) -> None:
     """Fetch EOD data from NSE/BSE: prices, filings, bulk deals, F&O OI."""
+    import datetime as _dt
+    import sqlite3 as _sqlite3
+    from pathlib import Path as _Path
+
     from src.collector.health import CollectionRunStore
     from src.collector.parser import build_fetcher_registry
 
-    store = CollectionRunStore(db_path)
-    registry = build_fetcher_registry(db_path=db_path, archive_dir=archive_dir)
-    for name, fetcher in registry.items():
-        with store.run_context(name, run_date=run_date):
-            fetcher.fetch(run_date=run_date)
+    from src.collector.models import DataSource as _DataSource
+
+    trade_date = _dt.date.fromisoformat(run_date)
+    # Bulk deal files are published the next morning — always fetch the previous trading day.
+    prev_trading_date = _prev_weekday(trade_date)
+    _BULK_DEAL_SOURCES = {_DataSource.NSE_BULK_DEALS, _DataSource.BSE_BULK_DEALS}
+
+    db_conn = _sqlite3.connect(db_path, timeout=10)
+    store = CollectionRunStore(db_conn)
+    registry = build_fetcher_registry(db=db_conn, raw_dir=_Path(archive_dir))
+    for source, fetcher in registry.items():
+        fetch_date = prev_trading_date if source in _BULK_DEAL_SOURCES else trade_date
+        with store.run_context(source):
+            fetcher.run(trade_date=fetch_date)
+    db_conn.close()
     logger.info("nightly_eod_collector completed run_date=%s", run_date)
 
 
@@ -139,11 +162,42 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
     logger.info("morning_batch_recommendations completed run_date=%s", run_date)
 
 
-def _pre_market_executor_setup(run_date: str, run_id: int, db_path: str, **_: object) -> None:
-    """Refresh broker tokens, sync instruments, pre-validate pending recommendations."""
-    # Token refresh is manual for Fyers (see Q5-3); log a reminder if Fyers token is stale.
-    # Kite token refresh is handled by the KiteBroker initialisation path.
-    logger.info("pre_market_executor_setup run_date=%s — verify broker tokens", run_date)
+def _pre_market_executor_setup(
+    run_date: str, run_id: int, db_path: str, brokers: list | None = None, **_: object
+) -> None:
+    """Refresh broker tokens via TOTP auto-login then re-authenticate broker objects."""
+    brokers = brokers or []
+    logger.info("pre_market_executor_setup run_date=%s — refreshing broker tokens", run_date)
+
+    try:
+        from src.executor.auto_login import refresh_all_broker_tokens
+
+        updated = refresh_all_broker_tokens()
+        if updated:
+            logger.info(
+                "pre_market_executor_setup: tokens refreshed brokers=%s", list(updated.keys())
+            )
+            # Re-authenticate live broker objects so they use the new tokens
+            for broker in brokers:
+                try:
+                    broker.authenticate()
+                    logger.info(
+                        "pre_market_executor_setup: broker re-authenticated broker=%s",
+                        broker.broker_id,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "pre_market_executor_setup: re-auth failed broker=%s error=%s",
+                        broker.broker_id,
+                        exc,
+                    )
+        else:
+            logger.info(
+                "pre_market_executor_setup: no TOTP credentials configured — "
+                "update .env with KITE_TOTP_SECRET / FYERS_TOTP_SECRET for automated login"
+            )
+    except Exception as exc:
+        logger.error("pre_market_executor_setup: auto_login error — %s", exc)
 
 
 def _intraday_cycle(
@@ -163,14 +217,14 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     from src.brain.position_review import PositionReviewer
 
     feature_store = FeatureStore(db_path)
-    reviewer = PositionReviewer(db_path=db_path, feature_store=feature_store)
+    reviewer = PositionReviewer()
 
     import sqlite3
 
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     open_positions = conn.execute(
-        "SELECT position_id, symbol, track FROM positions WHERE status='open'"
+        "SELECT position_id, symbol, track FROM positions WHERE is_open=1"
     ).fetchall()
     conn.close()
 
@@ -199,13 +253,23 @@ def _intraday_squareoff(
 
 
 def _eod_reconciliation(
-    run_date: str, run_id: int, db_path: str, reconciler: object = None, **_: object
+    run_date: str,
+    run_id: int,
+    db_path: str,
+    reconciler: object = None,
+    brokers: list | None = None,
+    **_: object,
 ) -> None:
-    """Full EOD reconciliation: bot positions vs broker positions + orders."""
-    if reconciler is None:
-        logger.warning("eod_reconciliation: no reconciler injected, running stub")
+    """Full EOD reconciliation: bot positions vs broker positions + capital sync."""
+    brokers = brokers or []
+    if reconciler is None and not brokers:
+        logger.warning("eod_reconciliation: no reconciler or brokers configured, skipping")
         return
-    reconciler.run_eod(run_date=run_date)  # type: ignore[attr-defined]
+    if reconciler is not None:
+        reconciler.run_eod(run_date=run_date)  # type: ignore[attr-defined]
+    if brokers:
+        from src.orchestrator.capital_sync import sync_eod_capital
+        sync_eod_capital(db_path, brokers, run_date)
     logger.info("eod_reconciliation completed run_date=%s", run_date)
 
 
@@ -250,11 +314,13 @@ def build_task_registry(
     backup_dir: str,
     intraday_runner: object | None = None,
     reconciler: object | None = None,
+    brokers: list | None = None,
 ) -> dict[str, TaskDefinition]:
     """Return all 12 task definitions wired with runtime dependencies."""
     common = {"db_path": db_path, "archive_dir": archive_dir, "backup_dir": backup_dir}
     intraday_deps = {"intraday_runner": intraday_runner}
-    eod_deps = {"reconciler": reconciler}
+    broker_deps = {"brokers": brokers or []}
+    eod_deps = {"reconciler": reconciler, "brokers": brokers or []}
 
     def _wrap(fn: object, extra: dict) -> object:
         import functools
@@ -309,7 +375,7 @@ def build_task_registry(
         ),
         "pre_market_executor_setup": TaskDefinition(
             task_id="pre_market_executor_setup",
-            fn=_wrap(_pre_market_executor_setup, {}),  # type: ignore[arg-type]
+            fn=_wrap(_pre_market_executor_setup, broker_deps),  # type: ignore[arg-type]
             schedule="0 9 * * 1-5",
             dependencies=["morning_batch_recommendations"],
             timeout_seconds=300,

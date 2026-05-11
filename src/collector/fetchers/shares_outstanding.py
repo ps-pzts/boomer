@@ -21,7 +21,7 @@ import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
-from collector.base import BaseFetcher, _fmt_dt
+from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
 from collector.models import DataSource, FetchResult, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ class SharesOutstandingFetcher(BaseFetcher):
 
     def validate(self, result: FetchResult) -> None:
         if result.status_code == 404:
-            raise ValueError("Shares outstanding: 404 — non-trading day or URL pattern wrong")
+            raise PermanentFetchError("Shares outstanding: 404 — non-trading day or URL pattern wrong")
         if result.status_code != 200:
             raise ValueError(f"Shares outstanding: HTTP {result.status_code}")
         # Accept CSV or ZIP; check we have some content.

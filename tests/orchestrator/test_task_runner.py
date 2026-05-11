@@ -1,4 +1,4 @@
-"""Tests for the task_runner context manager and execute_with_retry."""
+"""Tests for execute_with_retry — timeout enforced via thread join, not SIGALRM."""
 
 import time
 from pathlib import Path
@@ -9,7 +9,7 @@ import pytest
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
 from src.orchestrator.models import RetryPolicy, TaskRunStore, TaskStatus
-from src.orchestrator.task_runner import execute_with_retry, run_task
+from src.orchestrator.task_runner import execute_with_retry
 
 
 @pytest.fixture()
@@ -21,44 +21,50 @@ def db_path(tmp_path: Path) -> Path:
     return path
 
 
-class TestRunTaskContextManager:
-    def test_success_path_writes_success(self, db_path: Path) -> None:
+class TestExecuteWithRetryCore:
+    def test_success_writes_success(self, db_path: Path) -> None:
         store = TaskRunStore(db_path)
-        with run_task("t1", "2026-05-10", store, timeout_seconds=10):
+
+        def fn(run_date: str, run_id: int) -> None:
             pass
+
+        execute_with_retry("t1", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10)
         row = store.latest_for_date("t1", "2026-05-10")
         assert row is not None
         assert row.status == TaskStatus.SUCCESS
 
-    def test_exception_writes_failed(self, db_path: Path) -> None:
+    def test_exception_writes_failed_final(self, db_path: Path) -> None:
         store = TaskRunStore(db_path)
-        with (
-            pytest.raises(ValueError, match="deliberate"),
-            run_task("t2", "2026-05-10", store, timeout_seconds=10),
-        ):
+
+        def fn(run_date: str, run_id: int) -> None:
             raise ValueError("deliberate")
+
+        execute_with_retry("t2", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10)
         row = store.latest_for_date("t2", "2026-05-10")
         assert row is not None
-        assert row.status == TaskStatus.FAILED
+        assert row.status == TaskStatus.FAILED_FINAL
         assert "deliberate" in (row.error_message or "")
 
     def test_timeout_writes_timeout_status(self, db_path: Path) -> None:
         store = TaskRunStore(db_path)
-        from src.orchestrator.task_runner import TimeoutError as TaskTimeout
 
-        with (
-            pytest.raises(TaskTimeout),
-            run_task("t3", "2026-05-10", store, timeout_seconds=1),
-        ):
-            time.sleep(5)  # will be interrupted by SIGALRM after 1s
+        def fn(run_date: str, run_id: int) -> None:
+            time.sleep(10)
+
+        execute_with_retry("t3", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=1)
         row = store.latest_for_date("t3", "2026-05-10")
         assert row is not None
         assert row.status == TaskStatus.TIMEOUT
 
     def test_manual_override_flagged_in_row(self, db_path: Path) -> None:
         store = TaskRunStore(db_path)
-        with run_task("t4", "2026-05-10", store, timeout_seconds=10, manual_override=True):
+
+        def fn(run_date: str, run_id: int) -> None:
             pass
+
+        execute_with_retry(
+            "t4", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10, manual_override=True
+        )
         row = store.latest_for_date("t4", "2026-05-10")
         assert row is not None
         assert row.manual_override is True
@@ -91,7 +97,7 @@ class TestExecuteWithRetry:
             calls.append(1)
             raise RuntimeError("always fails")
 
-        with patch("src.orchestrator.task_runner.time.sleep"):  # don't actually sleep
+        with patch("src.orchestrator.task_runner.time.sleep"):
             result = execute_with_retry(
                 "task_fail",
                 "2026-05-10",
