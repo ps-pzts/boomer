@@ -32,6 +32,9 @@ def _row_to_risk_config(row: sqlite3.Row) -> RiskConfig:
         live_backtest_ratio_swing=Decimal(str(row["live_backtest_ratio_swing"])),
         live_backtest_ratio_intraday=Decimal(str(row["live_backtest_ratio_intraday"])),
         sentiment_confidence_threshold=Decimal(str(row["sentiment_confidence_threshold"])),
+        min_stock_price=Decimal(str(row["min_stock_price"])),
+        min_avg_daily_volume=int(row["min_avg_daily_volume"]),
+        min_avg_daily_turnover_cr=Decimal(str(row["min_avg_daily_turnover_cr"])),
     )
 
 
@@ -89,6 +92,7 @@ class RiskConfigStore:
                     live_backtest_ratio_long_term, live_backtest_ratio_swing,
                     live_backtest_ratio_intraday,
                     sentiment_confidence_threshold,
+                    min_stock_price, min_avg_daily_volume, min_avg_daily_turnover_cr,
                     created_at
                 ) VALUES (
                     ?, 1, ?,
@@ -100,6 +104,7 @@ class RiskConfigStore:
                     0.030,
                     0.70, 0.70, 0.70,
                     0.60,
+                    100, 500000, 5.0,
                     ?
                 )
                 """,

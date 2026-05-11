@@ -136,6 +136,7 @@ def build_fetcher_registry(db: sqlite3.Connection, raw_dir: Path) -> dict:
     from collector.fetchers.nse_filings import NseFilingsFetcher
     from collector.fetchers.prices import NsePricesFetcher
     from collector.fetchers.screener import ScreenerFetcher
+    from collector.fetchers.sector import NseSectorFetcher
     from collector.fetchers.shares_outstanding import SharesOutstandingFetcher
 
     return {
@@ -148,4 +149,5 @@ def build_fetcher_registry(db: sqlite3.Connection, raw_dir: Path) -> dict:
         DataSource.SHARES_OUTSTANDING: SharesOutstandingFetcher(db, raw_dir),
         DataSource.QUARTERLY_FINANCIALS: ScreenerFetcher(db, raw_dir),
         DataSource.INSTRUMENTS: InstrumentsFetcher(db, raw_dir),
+        DataSource.SECTOR_CLASSIFICATIONS: NseSectorFetcher(db, raw_dir),
     }

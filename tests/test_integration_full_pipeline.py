@@ -60,8 +60,7 @@ def test_all_migrations_apply_to_single_db(tmp_path):
         conn.executescript(Path(path).read_text())
 
     tables = {
-        r[0]
-        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
     # Spot-check one key table per phase
     for expected in ("risk_config", "raw_archive", "signals", "orders", "task_runs"):
@@ -503,7 +502,7 @@ def test_nightly_eod_collector_completes_with_mocked_fetchers(tmp_path):
     }
 
     with patch("src.collector.parser.build_fetcher_registry", return_value=mock_registry):
-        from src.orchestrator.tasks import _nightly_eod_collector
+        from src.orchestrator.tasks_collector import _nightly_eod_collector
 
         _nightly_eod_collector(
             run_date="2026-05-09",
@@ -565,7 +564,7 @@ def test_nightly_eod_collector_bulk_deals_use_prev_weekday(tmp_path):
     }
 
     with patch("src.collector.parser.build_fetcher_registry", return_value=mock_registry):
-        from src.orchestrator.tasks import _nightly_eod_collector
+        from src.orchestrator.tasks_collector import _nightly_eod_collector
 
         _nightly_eod_collector(
             run_date="2026-05-11",  # Monday
@@ -596,9 +595,7 @@ def test_orchestrator_dispatches_task_and_records_result(tmp_path):
     conn = sqlite3.connect(db_path)
     conn.execute("INSERT OR IGNORE INTO bot_mode (id, mode) VALUES (1, 'auto')")
     # 2026-01-12 is a Monday — seed as trading day (not a holiday)
-    conn.execute(
-        "DELETE FROM trading_calendar WHERE trade_date='2026-01-12'"
-    )
+    conn.execute("DELETE FROM trading_calendar WHERE trade_date='2026-01-12'")
     conn.commit()
     conn.close()
 
@@ -637,5 +634,9 @@ def test_orchestrator_dispatches_task_and_records_result(tmp_path):
     thread.join(timeout=3)
 
     store = TaskRunStore(db_path)
-    row = store.latest_for_date("probe", datetime.date.today().isoformat())
+    # Orchestrator writes run_date in IST; match that to avoid UTC/IST day boundary failures.
+    from zoneinfo import ZoneInfo
+
+    ist_today = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    row = store.latest_for_date("probe", ist_today)
     assert row is not None and row.status.value == "SUCCESS"

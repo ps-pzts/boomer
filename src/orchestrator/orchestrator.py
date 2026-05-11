@@ -217,6 +217,7 @@ def _build_brokers() -> list:
     if kite_key and kite_token:
         try:
             from src.executor.brokers.kite_broker import KiteBroker
+
             kite = KiteBroker()
             kite.authenticate()
             brokers.append(kite)
@@ -233,6 +234,7 @@ def _build_brokers() -> list:
     if fyers_id and fyers_token:
         try:
             from src.executor.brokers.fyers_broker import FyersBroker
+
             fyers = FyersBroker()
             fyers.authenticate()
             brokers.append(fyers)

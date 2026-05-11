@@ -56,6 +56,7 @@ class SkipReason(StrEnum):
     LIQUIDITY_GATE = "liquidity_gate"
     TARGET_TOO_CLOSE = "target_too_close"
     DATA_UNAVAILABLE = "data_unavailable"
+    PRICE_TOO_LOW = "price_too_low"
 
 
 # Filing categories that trigger immediate Stage 4b re-evaluation (Q3-2 Option B)

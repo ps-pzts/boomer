@@ -104,6 +104,10 @@ class RiskConfig:
     live_backtest_ratio_intraday: Decimal
     # FinBERT confidence gate
     sentiment_confidence_threshold: Decimal
+    # Penny stock / micro-cap quality filters
+    min_stock_price: Decimal  # CMP must be >= this (₹)
+    min_avg_daily_volume: int  # 20d avg shares/day must be >= this
+    min_avg_daily_turnover_cr: Decimal  # 20d avg ₹ crore/day (market-cap proxy)
 
     def risk_per_trade_pct(self, track: Track) -> Decimal:
         return {

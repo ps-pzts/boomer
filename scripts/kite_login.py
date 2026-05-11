@@ -18,6 +18,7 @@ from pathlib import Path
 _env_path = Path(__file__).parents[1] / ".env"
 if _env_path.exists():
     from dotenv import load_dotenv
+
     load_dotenv(_env_path, override=False)
 
 

@@ -50,6 +50,39 @@ class TradePlanGenerator:
                 "non-long direction not supported in v1",
             )
 
+        # Quality pre-filters: price, volume, market-cap proxy (turnover)
+        snapshot = signal.feature_snapshot
+        if current_price < risk_config.min_stock_price:
+            return self._skip(
+                plan_id,
+                signal,
+                current_price,
+                generated_at,
+                SkipReason.PRICE_TOO_LOW,
+                f"CMP {current_price} < min {risk_config.min_stock_price}",
+            )
+        avg_vol = Decimal(str(snapshot.get("avg_daily_volume_20d", 0)))
+        if avg_vol > 0 and avg_vol < risk_config.min_avg_daily_volume:
+            return self._skip(
+                plan_id,
+                signal,
+                current_price,
+                generated_at,
+                SkipReason.LIQUIDITY_GATE,
+                f"avg_daily_vol {avg_vol:.0f} < min {risk_config.min_avg_daily_volume}",
+            )
+        avg_value_cr = Decimal(str(snapshot.get("avg_traded_value_20d", 0))) / Decimal("10000000")
+        if avg_value_cr > 0 and avg_value_cr < risk_config.min_avg_daily_turnover_cr:
+            return self._skip(
+                plan_id,
+                signal,
+                current_price,
+                generated_at,
+                SkipReason.LIQUIDITY_GATE,
+                f"avg_daily_turnover {avg_value_cr:.2f}Cr"
+                f" < min {risk_config.min_avg_daily_turnover_cr}Cr",
+            )
+
         # Step 1: entry zone (±0.5% of current price; refined by Stage 3.5)
         entry_low = current_price * Decimal("0.995")
         entry_high = current_price * Decimal("1.005")

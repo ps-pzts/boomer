@@ -1,10 +1,16 @@
 """
-Tests for bulk deals fetcher — CSV parsing, smart money detection, dedup.
+Tests for bulk deals fetcher — parsing, smart money detection, dedup.
 No real HTTP calls.
 
+NSE: static bulk.csv (CSV format, same URL every day).
+BSE: /BulkDeal_Beta/w returns JSON {"Table": [...]}.
+
 Worked numerical example (verified by hand):
-  NSE CSV row: Symbol=RELIANCE, Client=LIC OF INDIA, Buy/Sell=B, Qty=1000000, Price=2900.50
-  Expected: deal inserted with value=2900500000.0, is_smart_money=1, tx_type=BUY
+  NSE row: Symbol=RELIANCE, Client=LIC OF INDIA, Buy/Sell=B, Qty=1000000, Price=2900.50
+  Expected: value=2900500000.0, is_smart_money=1, tx_type=BUY
+
+  BSE row: SCRIP_CODE=500325, Client=GOVERNMENT OF SINGAPORE, B, Qty=200000, Price=2901.00
+  Expected: value=580200000.0, is_smart_money=1, tx_type=BUY
 """
 
 import gzip
@@ -19,7 +25,7 @@ from collector.fetchers.bulk_deals import (
     NseBulkDealsFetcher,
     _is_smart_money,
     _normalize_client_name,
-    _parse_bse_bulk_csv,
+    _parse_bse_bulk_json,
     _parse_date,
     _parse_nse_bulk_csv,
 )
@@ -72,16 +78,23 @@ def _make_raw_row(
 
 
 NSE_CSV = (
-    b"Date,Symbol,Security Name,Client Name,Buy / Sell,Quantity Traded,"
-    b"Trade Price /Wt. Avg. Price,Remarks\n"
-    b'22/04/2024,RELIANCE,RELIANCE INDUSTRIES LTD,LIC OF INDIA,B,"1,000,000","2,900.50",\n'
-    b'22/04/2024,INFY,INFOSYS LTD,JANE SMITH PARTNERS,S,"500,000","1,500.00",\n'
+    b"Date,Symbol,Security Name,Client Name,Buy/Sell,Quantity Traded,"
+    b"Trade Price / Wght. Avg. Price,Remarks\n"
+    b'22/04/2024,RELIANCE,RELIANCE INDUSTRIES LTD,LIC OF INDIA,BUY,"1,000,000","2,900.50",-\n'
+    b'22/04/2024,INFY,INFOSYS LTD,JANE SMITH PARTNERS,SELL,"500,000","1,500.00",-\n'
 )
 
-BSE_CSV = b"""Deal Date,Security Code,Company Name,Client Name,Deal Type,Quantity,Rate
-22/04/2024,500325,RELIANCE INDUSTRIES,GOVERNMENT OF SINGAPORE,B,"200,000","2,901.00"
-22/04/2024,500010,HDFC BANK,UNKNOWN TRADER,S,"50,000","1,700.00"
-"""
+# BSE now returns JSON from /BulkDeal_Beta/w endpoint
+BSE_JSON = b"""{
+  "Table": [
+    {"DEAL_DATE": "22/04/2024", "SCRIP_CODE": 500325, "ScripName": "RELIANCE INDUSTRIES",
+     "CLIENT_NAME": "GOVERNMENT OF SINGAPORE", "TRANSACTION_TYPE": "B",
+     "QUANTITY": 200000.0, "PRICE": 2901.00, "SENDTOWEBSITE": "2024-04-22T00:00:00"},
+    {"DEAL_DATE": "22/04/2024", "SCRIP_CODE": 500010, "ScripName": "HDFC BANK",
+     "CLIENT_NAME": "UNKNOWN TRADER", "TRANSACTION_TYPE": "S",
+     "QUANTITY": 50000.0, "PRICE": 1700.00, "SENDTOWEBSITE": "2024-04-22T00:00:00"}
+  ]
+}"""
 
 
 def test_smart_money_lic(tmp_path):
@@ -149,15 +162,15 @@ def test_nse_bulk_csv_sell_non_smart_money(tmp_path):
     assert infy[1] == "SELL"
 
 
-def test_bse_bulk_csv_numerical_example(tmp_path):
+def test_bse_bulk_json_numerical_example(tmp_path):
     """
-    Worked example:
-      BSE code 500325, GOVERNMENT OF SINGAPORE, BUY, 200_000 @ ₹2901.00
+    Worked example (BSE /BulkDeal_Beta/w JSON format):
+      SCRIP_CODE=500325, GOVERNMENT OF SINGAPORE, BUY, 200_000 @ ₹2901.00
       Expected value = 200_000 × 2_901.00 = ₹580_200_000
     """
     db = _make_db()
-    raw_row = _make_raw_row(db, BSE_CSV, tmp_path, source=DataSource.BSE_BULK_DEALS)
-    count = _parse_bse_bulk_csv(BSE_CSV, raw_row, db, "v1")
+    raw_row = _make_raw_row(db, BSE_JSON, tmp_path, source=DataSource.BSE_BULK_DEALS)
+    count = _parse_bse_bulk_json(BSE_JSON, raw_row, db, "v1")
 
     assert count == 2
     row = db.execute(

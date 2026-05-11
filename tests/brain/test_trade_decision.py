@@ -65,6 +65,9 @@ def _make_risk_config() -> RiskConfig:
         live_backtest_ratio_swing=Decimal("0.70"),
         live_backtest_ratio_intraday=Decimal("0.70"),
         sentiment_confidence_threshold=Decimal("0.60"),
+        min_stock_price=Decimal("100"),
+        min_avg_daily_volume=500_000,
+        min_avg_daily_turnover_cr=Decimal("5"),
     )
 
 
@@ -174,3 +177,104 @@ def test_proceeds_stores_signal_id(gen, rc):
     )
     assert plan.decision == "proceed"
     assert plan.signal_id == signal.signal_id
+
+
+def test_price_too_low_skips(gen, rc):
+    """CMP below min_stock_price (₹100) must be rejected before ATR math."""
+    signal = _make_signal("swing", confidence=0.80)
+    signal = signal.__class__(
+        **{
+            **signal.__dict__,
+            "feature_snapshot": {
+                "price_close": 40,
+                "avg_daily_volume_20d": 2_000_000,
+                "avg_traded_value_20d": 80_000_000,
+            },
+        }
+    )
+    plan = gen.generate(
+        signal,
+        current_price=Decimal("40"),
+        atr_14d=Decimal("1"),
+        bucket_capital=Decimal("200000"),
+        risk_config=rc,
+        generated_at=GENERATED_AT,
+    )
+    assert plan.decision == "skip"
+    assert plan.skip_reason == SkipReason.PRICE_TOO_LOW
+
+
+def test_volume_too_low_skips(gen, rc):
+    """Avg daily volume below 5,00,000 shares triggers liquidity gate."""
+    signal = _make_signal("swing", confidence=0.80)
+    signal = signal.__class__(
+        **{
+            **signal.__dict__,
+            "feature_snapshot": {
+                "price_close": 500,
+                "avg_daily_volume_20d": 100_000,
+                "avg_traded_value_20d": 50_000_000,
+            },
+        }
+    )
+    plan = gen.generate(
+        signal,
+        current_price=Decimal("500"),
+        atr_14d=Decimal("10"),
+        bucket_capital=Decimal("200000"),
+        risk_config=rc,
+        generated_at=GENERATED_AT,
+    )
+    assert plan.decision == "skip"
+    assert plan.skip_reason == SkipReason.LIQUIDITY_GATE
+
+
+def test_turnover_too_low_skips(gen, rc):
+    """Avg daily turnover below ₹5 crore triggers liquidity gate (market-cap proxy)."""
+    signal = _make_signal("swing", confidence=0.80)
+    # avg_traded_value_20d = 3 crore = 30_000_000 (below 5 crore threshold)
+    signal = signal.__class__(
+        **{
+            **signal.__dict__,
+            "feature_snapshot": {
+                "price_close": 500,
+                "avg_daily_volume_20d": 600_000,
+                "avg_traded_value_20d": 30_000_000,
+            },
+        }
+    )
+    plan = gen.generate(
+        signal,
+        current_price=Decimal("500"),
+        atr_14d=Decimal("10"),
+        bucket_capital=Decimal("200000"),
+        risk_config=rc,
+        generated_at=GENERATED_AT,
+    )
+    assert plan.decision == "skip"
+    assert plan.skip_reason == SkipReason.LIQUIDITY_GATE
+
+
+def test_all_filters_pass_proceeds(gen, rc):
+    """Verify a stock clearing all three quality filters reaches the EV gate."""
+    signal = _make_signal("swing", confidence=0.80)
+    # price=500 > 100, avg_vol=1M > 500k, turnover=50Cr > 5Cr
+    signal = signal.__class__(
+        **{
+            **signal.__dict__,
+            "feature_snapshot": {
+                "price_close": 500,
+                "avg_daily_volume_20d": 1_000_000,
+                "avg_traded_value_20d": 500_000_000,
+            },
+        }
+    )
+    plan = gen.generate(
+        signal,
+        current_price=Decimal("500"),
+        atr_14d=Decimal("10"),
+        bucket_capital=Decimal("200000"),
+        risk_config=rc,
+        generated_at=GENERATED_AT,
+    )
+    assert plan.decision == "proceed"

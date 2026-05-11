@@ -79,6 +79,28 @@ Key ones resolved in Phase 4 implementation:
 
 ## Change log
 
+### 2026-05-12 — End-to-end pipeline run: full signal→recommendation→GTT flow verified
+
+- Collected 46 trading days of NSE bhavcopy prices (139,578 rows) using new `BhavCopy_NSE_CM_0_0_0_{YYYYMMDD}_F_0000.csv.zip` format
+- Feature computation: 66,016+ features written for 2026-05-11 (prices for 2,452 stocks, sentiment/smart-money/filing for 9,778)
+- Signal generation: 3,688 signals (668 LONG, 813 SHORT, 2,207 neutral); regime=bull_calm (80.7% breadth)
+- Recommendation packager: 19 swing LONG recommendations produced; APM gate approved all (paper trading, all circuit breakers clear); 19 OCO-GTT orders written to gtt_orders table with valid_until=2027-05-11
+- Bug fixed: `risk_config._allocated_pct(track)` in `_morning_batch_recommendations` — correct call is `ledger._allocated_pct(track)` (method lives on `CapitalLedgerRow`, not `RiskConfig`)
+- Bug fixed: `volume_zscore_5d` not written for stocks with 19 trading days in 30-day window (April holiday months); lowered threshold from >=20 to >=6 rows, use available rows as baseline
+- Bug fixed: `compute_price_features` missing `price_close` write — all 3,688 signals had `direction=neutral` because recommendation packager skipped every signal with price_close=None
+- Bug fixed: feature computer column mismatches (symbol→stock_symbol, observed_date→trade_date, shares_outstanding→total_shares, acquirer_shares_after→shares_held_after, filing_category→category, quarter_end_date→period_end, is_buy→transaction_type in 5 compute functions)
+- Test: updated `test_prices.py` fixture to new BhavCopy_NSE_CM column format (TckrSymb/TradDt/TtlTrfVal in ₹ not lacs)
+- Missing orchestrator gap identified: APM gate (generated→approved_by_apm→queued_for_execution) is not wired as a task; currently requires manual step or dashboard approval for swing recommendations
+
+### 2026-05-12 — Codebase audit: lint, deprecations, file-size enforcement
+
+- Ruff: auto-fixed 11 issues (unsorted imports, unused imports, bare f-strings); manually fixed 11 more (E501 wraps, E402 import order)
+- `src/alerts/alerter.py`: replaced 3× `datetime.utcnow()` (deprecated in Python 3.12+) with `datetime.now(datetime.UTC)`; fixed naive/aware mismatch in `_last_warn_flush` initialization
+- `src/orchestrator/tasks.py` (727 lines, exceeded 600-line limit): split by responsibility into `tasks_collector.py` (61L), `tasks_brain.py` (313L), `tasks_executor.py` (165L), `tasks_maintenance.py` (76L); `tasks.py` now a thin registry (159L)
+- Bug fixed: `_position_review` had dangling implicit string concatenation on SQL query — the old simple SELECT was appended to the full JOIN query, producing invalid SQL
+- Bug fixed: `_position_review` used `pos["entry_price"]` in price fallback — correct column is `pos["average_entry_price"]`
+- 427 tests, 0 warnings, lint clean
+
 ### 2026-05-11 — Bug: task function API contract fixes (upfront audit)
 
 - `morning_batch_features`: arg order was `(sym, run_date, fs, db_path)`; correct `(db_path, fs, sym, exchange, as_of_date)`; run_date not converted to date; instruments `symbol`→`nse_symbol`; missing `exchange="NSE"`

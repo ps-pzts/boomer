@@ -59,8 +59,8 @@ def _seed_position(db_path: Path, track: str, qty: int, entry_price: float) -> N
 class TestSyncEodCapital:
     def test_initialises_ledger_on_first_run(self, db_path: Path) -> None:
         from executor.brokers.mock_broker import MockBroker
-        from src.orchestrator.capital_sync import sync_eod_capital
         from src.capital.state import CapitalStateManager
+        from src.orchestrator.capital_sync import sync_eod_capital
 
         broker = MockBroker(initial_cash=80_000.0)
         sync_eod_capital(str(db_path), [broker], "2026-05-11")
@@ -73,8 +73,8 @@ class TestSyncEodCapital:
 
     def test_sums_cash_across_two_brokers(self, db_path: Path) -> None:
         from executor.brokers.mock_broker import MockBroker
-        from src.orchestrator.capital_sync import sync_eod_capital
         from src.capital.state import CapitalStateManager
+        from src.orchestrator.capital_sync import sync_eod_capital
 
         kite = MockBroker(initial_cash=50_000.0)
         fyers = MockBroker(initial_cash=30_000.0)
@@ -88,8 +88,8 @@ class TestSyncEodCapital:
     def test_deployed_capital_included_in_total(self, db_path: Path) -> None:
         """₹80k cash + 10 shares × ₹200 = ₹82k total capital."""
         from executor.brokers.mock_broker import MockBroker
-        from src.orchestrator.capital_sync import sync_eod_capital
         from src.capital.state import CapitalStateManager
+        from src.orchestrator.capital_sync import sync_eod_capital
 
         _seed_position(db_path, "swing", qty=10, entry_price=200.0)
 
@@ -106,8 +106,8 @@ class TestSyncEodCapital:
 
     def test_updates_existing_ledger(self, db_path: Path) -> None:
         from executor.brokers.mock_broker import MockBroker
-        from src.orchestrator.capital_sync import sync_eod_capital
         from src.capital.state import CapitalStateManager
+        from src.orchestrator.capital_sync import sync_eod_capital
 
         # First run: initialise
         broker = MockBroker(initial_cash=80_000.0)
@@ -126,8 +126,8 @@ class TestSyncEodCapital:
     def test_broker_failure_does_not_crash(self, db_path: Path) -> None:
         """A broker that raises on get_funds() is skipped; other brokers still counted."""
         from executor.brokers.mock_broker import MockBroker
-        from src.orchestrator.capital_sync import sync_eod_capital
         from src.capital.state import CapitalStateManager
+        from src.orchestrator.capital_sync import sync_eod_capital
 
         class FailingBroker(MockBroker):
             def get_funds(self):
@@ -143,8 +143,8 @@ class TestSyncEodCapital:
         assert ledger.total_cash == Decimal("50000.0")
 
     def test_no_brokers_skips_write(self, db_path: Path) -> None:
-        from src.orchestrator.capital_sync import sync_eod_capital
         from src.capital.state import CapitalStateManager
+        from src.orchestrator.capital_sync import sync_eod_capital
 
         sync_eod_capital(str(db_path), [], "2026-05-11")
 

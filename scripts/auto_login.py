@@ -23,6 +23,7 @@ from pathlib import Path
 _env_path = Path(__file__).parents[1] / ".env"
 if _env_path.exists():
     from dotenv import load_dotenv
+
     load_dotenv(_env_path, override=True)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -68,7 +69,10 @@ def main() -> None:
 
     elif args.broker == "kite":
         required = [
-            "KITE_API_KEY", "KITE_API_SECRET", "KITE_USER_ID", "KITE_PASSWORD",
+            "KITE_API_KEY",
+            "KITE_API_SECRET",
+            "KITE_USER_ID",
+            "KITE_PASSWORD",
             "KITE_TOTP_SECRET",
         ]
         missing = [k for k in required if not os.environ.get(k)]
@@ -90,7 +94,10 @@ def main() -> None:
 
     elif args.broker == "fyers":
         required = [
-            "FYERS_CLIENT_ID", "FYERS_SECRET_KEY", "FYERS_USER_ID", "FYERS_PIN",
+            "FYERS_CLIENT_ID",
+            "FYERS_SECRET_KEY",
+            "FYERS_USER_ID",
+            "FYERS_PIN",
             "FYERS_TOTP_SECRET",
         ]
         missing = [k for k in required if not os.environ.get(k)]

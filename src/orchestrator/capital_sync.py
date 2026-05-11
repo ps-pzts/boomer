@@ -45,6 +45,7 @@ def sync_eod_capital(db_path: str, brokers: list, run_date: str) -> None:
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     try:
+
         def _deployed(track: str) -> Decimal:
             row = conn.execute(
                 "SELECT COALESCE(SUM(quantity * average_entry_price), 0) AS v"
@@ -58,8 +59,7 @@ def sync_eod_capital(db_path: str, brokers: list, run_date: str) -> None:
         id_deployed = _deployed("intraday")
 
         pnl_row = conn.execute(
-            "SELECT COALESCE(SUM(realised_pnl), 0) AS pnl"
-            " FROM positions WHERE DATE(exit_at)=?",
+            "SELECT COALESCE(SUM(realised_pnl), 0) AS pnl FROM positions WHERE DATE(exit_at)=?",
             (run_date,),
         ).fetchone()
         today_pnl = Decimal(str(pnl_row["pnl"]))
