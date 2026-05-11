@@ -79,6 +79,14 @@ Key ones resolved in Phase 4 implementation:
 
 ## Change log
 
+### 2026-05-11 — Bug: task function API contract fixes (upfront audit)
+
+- `morning_batch_features`: arg order was `(sym, run_date, fs, db_path)`; correct `(db_path, fs, sym, exchange, as_of_date)`; run_date not converted to date; instruments `symbol`→`nse_symbol`; missing `exchange="NSE"`
+- `morning_batch_signals`: `RegimeDetector(db_path)` takes no args; `detect(run_date)` wrong → needs market inputs; generators take no args; `generate_all()` does not exist → per-symbol `generate()` loop; added `_compute_market_regime()` from prices breadth; added `_save_signal()` to persist to signals table
+- `morning_batch_recommendations`: signals query used non-existent `signal_date`/`status` → `generated_at LIKE date%`; `TradePlanGenerator`/`PortfolioConstructor` constructors take no args; `generate(sym, track, run_date)` → `(signal, price, atr, capital, risk_config, dt)`; `package(plan, run_date)` → `(plan, entry_plan, signal, position_size_shares)`; `per_trade_risk_pct` → `risk_per_trade_pct(track)`
+- `position_review`: `reviewer.review()` does not exist → `health_score()` + `check_thesis_broken()`; positions columns: `entry_price`→`average_entry_price`, `entry_date`→`entry_at`, `expected_target`→`target_price`, `original_stop`→`stop_loss_price`; signal_id fetched via JOIN trade_plans
+- `weekly_harvest_check`: `live_capital_view()` requires broker LTP → replaced with `latest_ledger()`; `harvest_store.record()` → `harvest_store.run()`; `harvest_triggered`→`fired`, `ops_fund`→`ops_credit`, `dev_fund`→`dev_credit`
+
 ### 2026-05-10 — CI/CD and repository hygiene
 
 - `.github/workflows/ci.yml`: CI pipeline — triggers on PR open/sync/reopen and `workflow_dispatch`; runs on Python 3.11 and 3.12 in parallel; gates: ruff check, ruff format check, py_compile syntax check, migrations dry-run, pytest with coverage, 600-line file limit enforcement (CLAUDE.md Rule 4)
