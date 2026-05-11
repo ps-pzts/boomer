@@ -64,7 +64,9 @@ class AlertManager:
         self._email_to = email_to
         self._warn_batch_hours = warn_batch_hours
         self._warn_buffer: list[Alert] = []
-        self._last_warn_flush: datetime.datetime = datetime.datetime(2000, 1, 1)
+        self._last_warn_flush: datetime.datetime = datetime.datetime(
+            2000, 1, 1, tzinfo=datetime.UTC
+        )
         self._lock = threading.Lock()
 
     @classmethod
@@ -93,7 +95,7 @@ class AlertManager:
         alert = Alert(AlertSeverity.WARN, title, body, source_task_id)
         with self._lock:
             self._warn_buffer.append(alert)
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.UTC)
             hours_since = (now - self._last_warn_flush).total_seconds() / 3600
             if hours_since >= self._warn_batch_hours:
                 self._flush_warn_buffer(now)
@@ -168,7 +170,11 @@ class AlertManager:
         )
 
     def _persist(self, alert: Alert) -> None:
-        now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = (
+            datetime.datetime.now(datetime.UTC)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)
             conn.execute("PRAGMA journal_mode=WAL")
@@ -192,7 +198,11 @@ class AlertManager:
             logger.error("alert_persist_failed error=%s", exc)
 
     def _record_missed_critical(self, alert: Alert) -> None:
-        now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = (
+            datetime.datetime.now(datetime.UTC)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)
             conn.execute("PRAGMA journal_mode=WAL")

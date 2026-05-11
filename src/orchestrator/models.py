@@ -98,7 +98,11 @@ class BotModeStore:
     ) -> None:
         import datetime
 
-        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        now = (
+            datetime.datetime.now(datetime.UTC)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
         with self._conn() as conn:
             old = conn.execute("SELECT mode FROM bot_mode WHERE id = 1").fetchone()
             old_mode = old["mode"] if old else BotMode.AUTO
@@ -133,7 +137,11 @@ class TaskRunStore:
     ) -> int:
         import datetime
 
-        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        now = (
+            datetime.datetime.now(datetime.UTC)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
         with self._conn() as conn:
             cur = conn.execute(
                 """INSERT INTO task_runs
@@ -153,7 +161,11 @@ class TaskRunStore:
     ) -> None:
         import datetime
 
-        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        now = (
+            datetime.datetime.now(datetime.UTC)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
+        )
         with self._conn() as conn:
             conn.execute(
                 """UPDATE task_runs SET status=?, ended_at=?, error_message=?, error_traceback=?

@@ -8,6 +8,7 @@ Usage:
 """
 
 import json
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -15,9 +16,8 @@ from pathlib import Path
 _env_path = Path(__file__).parents[1] / ".env"
 if _env_path.exists():
     from dotenv import load_dotenv
-    load_dotenv(_env_path, override=True)
 
-import os
+    load_dotenv(_env_path, override=True)
 
 token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 if not token:
@@ -64,7 +64,7 @@ for chat_id, (chat_type, name) in seen.items():
 
 if len(seen) == 1:
     chat_id = list(seen.keys())[0]
-    print(f"Add this to your .env:")
+    print("Add this to your .env:")
     print(f"  TELEGRAM_CHAT_ID={chat_id}")
 else:
     print("Multiple chats found — pick the one you want and add to .env:")

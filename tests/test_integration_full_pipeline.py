@@ -503,7 +503,7 @@ def test_nightly_eod_collector_completes_with_mocked_fetchers(tmp_path):
     }
 
     with patch("src.collector.parser.build_fetcher_registry", return_value=mock_registry):
-        from src.orchestrator.tasks import _nightly_eod_collector
+        from src.orchestrator.tasks_collector import _nightly_eod_collector
 
         _nightly_eod_collector(
             run_date="2026-05-09",
@@ -565,7 +565,7 @@ def test_nightly_eod_collector_bulk_deals_use_prev_weekday(tmp_path):
     }
 
     with patch("src.collector.parser.build_fetcher_registry", return_value=mock_registry):
-        from src.orchestrator.tasks import _nightly_eod_collector
+        from src.orchestrator.tasks_collector import _nightly_eod_collector
 
         _nightly_eod_collector(
             run_date="2026-05-11",  # Monday

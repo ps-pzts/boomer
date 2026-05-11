@@ -28,7 +28,9 @@ class TestExecuteWithRetryCore:
         def fn(run_date: str, run_id: int) -> None:
             pass
 
-        execute_with_retry("t1", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10)
+        execute_with_retry(
+            "t1", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10
+        )
         row = store.latest_for_date("t1", "2026-05-10")
         assert row is not None
         assert row.status == TaskStatus.SUCCESS
@@ -39,7 +41,9 @@ class TestExecuteWithRetryCore:
         def fn(run_date: str, run_id: int) -> None:
             raise ValueError("deliberate")
 
-        execute_with_retry("t2", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10)
+        execute_with_retry(
+            "t2", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10
+        )
         row = store.latest_for_date("t2", "2026-05-10")
         assert row is not None
         assert row.status == TaskStatus.FAILED_FINAL
@@ -51,7 +55,9 @@ class TestExecuteWithRetryCore:
         def fn(run_date: str, run_id: int) -> None:
             time.sleep(10)
 
-        execute_with_retry("t3", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=1)
+        execute_with_retry(
+            "t3", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=1
+        )
         row = store.latest_for_date("t3", "2026-05-10")
         assert row is not None
         assert row.status == TaskStatus.TIMEOUT
@@ -63,7 +69,13 @@ class TestExecuteWithRetryCore:
             pass
 
         execute_with_retry(
-            "t4", "2026-05-10", fn, store, RetryPolicy(max_attempts=1), timeout_seconds=10, manual_override=True
+            "t4",
+            "2026-05-10",
+            fn,
+            store,
+            RetryPolicy(max_attempts=1),
+            timeout_seconds=10,
+            manual_override=True,
         )
         row = store.latest_for_date("t4", "2026-05-10")
         assert row is not None

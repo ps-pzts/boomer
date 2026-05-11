@@ -79,6 +79,15 @@ Key ones resolved in Phase 4 implementation:
 
 ## Change log
 
+### 2026-05-12 — Codebase audit: lint, deprecations, file-size enforcement
+
+- Ruff: auto-fixed 11 issues (unsorted imports, unused imports, bare f-strings); manually fixed 11 more (E501 wraps, E402 import order)
+- `src/alerts/alerter.py`: replaced 3× `datetime.utcnow()` (deprecated in Python 3.12+) with `datetime.now(datetime.UTC)`; fixed naive/aware mismatch in `_last_warn_flush` initialization
+- `src/orchestrator/tasks.py` (727 lines, exceeded 600-line limit): split by responsibility into `tasks_collector.py` (61L), `tasks_brain.py` (313L), `tasks_executor.py` (165L), `tasks_maintenance.py` (76L); `tasks.py` now a thin registry (159L)
+- Bug fixed: `_position_review` had dangling implicit string concatenation on SQL query — the old simple SELECT was appended to the full JOIN query, producing invalid SQL
+- Bug fixed: `_position_review` used `pos["entry_price"]` in price fallback — correct column is `pos["average_entry_price"]`
+- 427 tests, 0 warnings, lint clean
+
 ### 2026-05-11 — Bug: task function API contract fixes (upfront audit)
 
 - `morning_batch_features`: arg order was `(sym, run_date, fs, db_path)`; correct `(db_path, fs, sym, exchange, as_of_date)`; run_date not converted to date; instruments `symbol`→`nse_symbol`; missing `exchange="NSE"`

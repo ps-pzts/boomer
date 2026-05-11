@@ -51,7 +51,9 @@ class SharesOutstandingFetcher(BaseFetcher):
 
     def validate(self, result: FetchResult) -> None:
         if result.status_code == 404:
-            raise PermanentFetchError("Shares outstanding: 404 — non-trading day or URL pattern wrong")
+            raise PermanentFetchError(
+                "Shares outstanding: 404 — non-trading day or URL pattern wrong"
+            )
         if result.status_code != 200:
             raise ValueError(f"Shares outstanding: HTTP {result.status_code}")
         # Accept CSV or ZIP; check we have some content.

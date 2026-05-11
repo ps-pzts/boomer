@@ -2,19 +2,17 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from executor.auto_login import (
+    _kite_extract_request_token,
     _write_env_token,
     fyers_auto_login,
     kite_auto_login,
     refresh_all_broker_tokens,
-    _kite_extract_request_token,
 )
-
 
 # ── _write_env_token ──────────────────────────────────────────────────────────
 
@@ -119,7 +117,9 @@ def test_fyers_auto_login_success(mock_totp, mock_post, mock_get):
     mock_sess.generate_token.return_value = {"access_token": "fyers_token"}
 
     with patch("fyers_apiv3.fyersModel.SessionModel", return_value=mock_sess):
-        token = fyers_auto_login("APPID-100", "secret", "https://127.0.0.1", "user1", "mypassword", "TOTP")
+        token = fyers_auto_login(
+            "APPID-100", "secret", "https://127.0.0.1", "user1", "mypassword", "TOTP"
+        )
 
     assert token == "fyers_token"
     mock_sess.set_token.assert_called_once_with("auth_xyz")
