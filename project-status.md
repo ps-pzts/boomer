@@ -99,6 +99,15 @@ Key ones resolved in Phase 4 implementation:
 - Bug fixed: `NameError: name 'os'` in `orchestrator.py _build_brokers()` — missing `import os`
 - Bug fixed: `nightly_eod_collector` called `build_fetcher_registry(db_path=...)` — fixed to `(db=conn, raw_dir=Path(...))`; called `CollectionRunStore(db_path)` — fixed to `CollectionRunStore(conn)`; called `run_context(name, run_date=...)` — fixed to `run_context(source)` (takes DataSource enum); called `fetcher.fetch(run_date=...)` — fixed to `fetcher.run(trade_date=date)`
 - Bug fixed: `base.py archive()` used `json.dumps(params)` — crashed with date objects; fixed to `json.dumps(params, default=str)`
+- Bug fixed: `nse_filings.py` sent `Accept-Encoding: br` — NSE replied with brotli; requests doesn't auto-decompress brotli; fixed by removing `br` from the header
+- Bug fixed: `base.py transport()` called `raise_for_status()` before validate() — prevented PermanentFetchError from firing on 404; removed the call
+- Bug fixed: `shares_outstanding.py` and `screener.py` raised `ValueError` on 404 — retried 4× instead of skipping; changed to `PermanentFetchError`
+- Bug fixed: `PositionReviewer()` was instantiated with kwargs — constructor takes no arguments
+- Bug fixed: `positions` query used `WHERE status='open'` — correct column is `is_open=1`
+- Bug fixed: `latest_for_date` used `ORDER BY attempt DESC` — all rows had `attempt=1` so ordering was non-deterministic; fixed to `ORDER BY id DESC`
+- Bug fixed: orchestrator dispatched same task twice per cron-minute (30s poll interval) — added 60-second cooldown guard in `_last_dispatched`
+- Bulk deals now fetch previous weekday (`_prev_weekday(trade_date)`) since NSE/BSE publish the file the morning after
+- `tests/test_integration_full_pipeline.py`: 16 integration tests covering migrations, crash recovery, task runner state machine, scheduler already_succeeded gate, latest_for_date ordering, CollectionRunStore run_context, BaseFetcher PermanentFetchError, archive deduplication, date params serialisation, nightly_eod_collector end-to-end, bulk deals prev-weekday, orchestrator dispatch
 
 ### 2026-05-10 — Phase 5: Orchestrator, Dashboard, Operations
 
