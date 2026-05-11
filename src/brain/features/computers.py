@@ -44,9 +44,9 @@ def compute_promoter_features(
         # Total shares for denominator
         so_row = conn.execute(
             """
-            SELECT shares_outstanding FROM shares_outstanding
-            WHERE symbol = ? AND exchange = ? AND observed_date <= ?
-            ORDER BY observed_date DESC LIMIT 1
+            SELECT total_shares FROM shares_outstanding
+            WHERE stock_symbol = ? AND exchange = ? AND trade_date <= ?
+            ORDER BY trade_date DESC LIMIT 1
             """,
             (stock_symbol, exchange, as_of_str),
         ).fetchone()
@@ -54,17 +54,17 @@ def compute_promoter_features(
         if so_row is None:
             return  # Cannot compute without shares_outstanding (design doc constraint)
 
-        total_shares = float(so_row["shares_outstanding"])
+        total_shares = float(so_row["total_shares"])
         if total_shares <= 0:
             return
 
-        # Promoter holding 90 days ago
+        # Promoter holding 90 days ago (all promoter_changes rows are promoter filings)
         past_row = conn.execute(
             """
-            SELECT SUM(acquirer_shares_after) AS holding
+            SELECT SUM(shares_held_after) AS holding
             FROM promoter_changes
-            WHERE symbol = ? AND exchange = ?
-              AND is_promoter = 1 AND observed_at <= ?
+            WHERE stock_symbol = ? AND exchange = ?
+              AND observed_at <= ?
             ORDER BY observed_at DESC LIMIT 1
             """,
             (stock_symbol, exchange, cutoff),
@@ -73,10 +73,10 @@ def compute_promoter_features(
         # Promoter holding as of today
         current_row = conn.execute(
             """
-            SELECT SUM(acquirer_shares_after) AS holding
+            SELECT SUM(shares_held_after) AS holding
             FROM promoter_changes
-            WHERE symbol = ? AND exchange = ?
-              AND is_promoter = 1 AND observed_at <= ?
+            WHERE stock_symbol = ? AND exchange = ?
+              AND observed_at <= ?
             ORDER BY observed_at DESC LIMIT 1
             """,
             (stock_symbol, exchange, as_of_str),
@@ -93,9 +93,9 @@ def compute_promoter_features(
         buy_row = conn.execute(
             """
             SELECT COUNT(*) AS cnt FROM promoter_changes
-            WHERE symbol = ? AND exchange = ?
-              AND is_promoter = 1 AND transaction_type = 'buy'
-              AND transaction_mode = 'market' AND observed_at > ? AND observed_at <= ?
+            WHERE stock_symbol = ? AND exchange = ?
+              AND transaction_mode = 'open_market'
+              AND observed_at > ? AND observed_at <= ?
             """,
             (stock_symbol, exchange, cutoff, as_of_str),
         ).fetchone()
@@ -105,7 +105,7 @@ def compute_promoter_features(
         pledge_row = conn.execute(
             """
             SELECT promoter_pledge_pct FROM promoter_changes
-            WHERE symbol = ? AND exchange = ? AND observed_at <= ?
+            WHERE stock_symbol = ? AND exchange = ? AND observed_at <= ?
               AND promoter_pledge_pct IS NOT NULL
             ORDER BY observed_at DESC LIMIT 1
             """,
@@ -139,9 +139,9 @@ def compute_smart_money_features(
     with _conn(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT is_buy, quantity, price, is_smart_money
+            SELECT transaction_type, quantity, price, is_smart_money
             FROM bulk_deals
-            WHERE symbol = ? AND exchange = ?
+            WHERE stock_symbol = ? AND exchange = ?
               AND is_smart_money = 1
               AND deal_date > ? AND deal_date <= ?
             """,
@@ -152,7 +152,7 @@ def compute_smart_money_features(
     buyers: set[str] = set()
     for row in rows:
         value = float(row["quantity"]) * float(row["price"])
-        if row["is_buy"]:
+        if row["transaction_type"] == "BUY":
             net_value += value
         else:
             net_value -= value
@@ -185,9 +185,9 @@ def compute_filing_sentiment_features(
     with _conn(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT sentiment_label, sentiment_confidence, filing_category
+            SELECT sentiment_label, sentiment_confidence, category
             FROM filings
-            WHERE symbol = ? AND exchange = ?
+            WHERE stock_symbol = ? AND exchange = ?
               AND observed_at > ? AND observed_at <= ?
             """,
             (stock_symbol, exchange, cutoff, as_of_str),
@@ -201,7 +201,7 @@ def compute_filing_sentiment_features(
     for row in rows:
         conf = float(row["sentiment_confidence"] or 0)
         label = row["sentiment_label"]
-        cat = row["filing_category"] or ""
+        cat = row["category"] or ""
 
         if conf >= sentiment_confidence_threshold:
             if label == "positive":
@@ -242,11 +242,11 @@ def compute_earnings_quality_features(
     with _conn(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT quarter_end_date, revenue, opm_pct, cfo, pat, observed_at
+            SELECT period_end, revenue, opm_pct, cfo, pat, observed_at
             FROM quarterly_financials
-            WHERE symbol = ? AND exchange = ?
+            WHERE stock_symbol = ? AND exchange = ?
               AND observed_at <= ?
-            ORDER BY quarter_end_date DESC
+            ORDER BY period_end DESC
             LIMIT 8
             """,
             (stock_symbol, exchange, as_of_str),
@@ -255,7 +255,7 @@ def compute_earnings_quality_features(
     if len(rows) < 2:
         return
 
-    source_max = max(date.fromisoformat(r["observed_at"][:10]) for r in rows)
+    source_max = max(date.fromisoformat(str(r["observed_at"])[:10]) for r in rows)
     wf = fs.write_feature
     sym, exc, d = stock_symbol, exchange, as_of_date
 
@@ -302,11 +302,11 @@ def compute_price_features(
     with _conn(db_path) as conn:
         rows_20 = conn.execute(
             """
-            SELECT close, high, low, volume, observed_date
+            SELECT close, high, low, volume, trade_date
             FROM prices
-            WHERE symbol = ? AND exchange = ?
-              AND observed_date > ? AND observed_date <= ?
-            ORDER BY observed_date DESC
+            WHERE stock_symbol = ? AND exchange = ?
+              AND trade_date > ? AND trade_date <= ?
+            ORDER BY trade_date DESC
             LIMIT 20
             """,
             (stock_symbol, exchange, cutoff_20, as_of_str),
@@ -325,6 +325,9 @@ def compute_price_features(
     highs = [float(r["high"]) for r in rows_20]
     lows = [float(r["low"]) for r in rows_20]
 
+    # Latest close price — used by recommendation packager for sizing
+    wf(sym, exc, "price_close", closes[0], d, d)
+
     avg_value = sum(c * v for c, v in zip(closes, volumes, strict=True)) / len(closes)
     wf(sym, exc, "avg_traded_value_20d", avg_value, d, d)
 
@@ -333,10 +336,10 @@ def compute_price_features(
         atr14 = sum(highs[i] - lows[i] for i in range(14)) / 14.0
         wf(sym, exc, "atr_14d", atr14, d, d)
 
-    # Volume z-score: (avg_5d - avg_20d) / std_20d
-    if len(volumes) >= 20:
+    # Volume z-score: (avg_5d - avg_baseline) / std_baseline
+    if len(volumes) >= 6:
         avg5 = sum(volumes[:5]) / 5.0
-        avg20 = sum(volumes) / 20.0
-        std20 = statistics.stdev(volumes)
-        if std20 > 0:
-            wf(sym, exc, "volume_zscore_5d", (avg5 - avg20) / std20, d, d)
+        avg_n = sum(volumes) / len(volumes)
+        std_n = statistics.stdev(volumes)
+        if std_n > 0:
+            wf(sym, exc, "volume_zscore_5d", (avg5 - avg_n) / std_n, d, d)

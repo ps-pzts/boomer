@@ -33,6 +33,8 @@ def _nightly_eod_collector(
     prev_trading_date = _prev_weekday(trade_date)
     _BULK_DEAL_SOURCES = {_DataSource.NSE_BULK_DEALS, _DataSource.BSE_BULK_DEALS}
 
+    from src.collector.parser import ParseWorker
+
     db_conn = _sqlite3.connect(db_path, timeout=10)
     store = CollectionRunStore(db_conn)
     registry = build_fetcher_registry(db=db_conn, raw_dir=_Path(archive_dir))
@@ -40,8 +42,11 @@ def _nightly_eod_collector(
         fetch_date = prev_trading_date if source in _BULK_DEAL_SOURCES else trade_date
         with store.run_context(source):
             fetcher.run(trade_date=fetch_date)
+
+    # Parse all newly archived raw rows into the domain tables.
+    parse_stats = ParseWorker(db_conn, _Path(archive_dir), registry).run_pending(limit=5000)
+    logger.info("nightly_eod_collector parse_stats=%s run_date=%s", parse_stats, run_date)
     db_conn.close()
-    logger.info("nightly_eod_collector completed run_date=%s", run_date)
 
 
 def _early_morning_data_check(run_date: str, run_id: int, db_path: str, **_: object) -> None:

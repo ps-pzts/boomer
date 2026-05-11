@@ -269,7 +269,7 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
             from src.capital.models import Track
 
             track = Track(signal.track)
-            bucket_capital = ledger.total_capital * risk_config._allocated_pct(track)
+            bucket_capital = ledger.total_capital * ledger._allocated_pct(track)
 
             plan = trade_planner.generate(
                 signal=signal,

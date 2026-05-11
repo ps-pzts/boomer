@@ -1,9 +1,10 @@
 """
 Tests for NSE prices fetcher — bhavcopy CSV parsing, pruning.
 
-Worked numerical example:
-  RELIANCE, EQ, 22-Apr-2024, O=2880 H=2950 L=2870 C=2920, Vol=5_000_000, Turnover=1460 lacs
-  Expected value_traded = 1460 * 100_000 = ₹146_000_000
+Worked numerical example (post-2025 BhavCopy_NSE_CM format):
+  RELIANCE, EQ, 2024-04-22, O=2880 H=2950 L=2870 C=2920, Vol=5_000_000
+  TtlTrfVal=146_000_000 (already in ₹, not lacs)
+  Expected value_traded = ₹146_000_000
 """
 
 import gzip
@@ -67,22 +68,23 @@ def _make_raw_row(db, body: bytes, tmp_path: Path) -> RawArchiveRow:
 
 
 NSE_BHAVCOPY_CSV = (
-    b"SYMBOL,SERIES,DATE1,PREV_CLOSE,OPEN_PRICE,HIGH_PRICE,LOW_PRICE,LAST_PRICE,"
-    b"CLOSE_PRICE,AVG_PRICE,TTL_TRD_QNTY,TURNOVER_LACS,NO_OF_TRADES,DELIV_QTY,DELIV_PER\n"
-    b"RELIANCE,EQ,22-Apr-2024,2890.00,2880.00,2950.00,2870.00,2920.00,"
-    b"2920.00,2910.00,5000000,1460.00,120000,2500000,50.0\n"
-    b"INFY,EQ,22-Apr-2024,1490.00,1495.00,1520.00,1480.00,1510.00,"
-    b"1510.00,1505.00,3000000,451.50,90000,1500000,50.0\n"
-    b"SOMENOTE,SM,22-Apr-2024,100,101,102,100,101,101,101,10000,1.01,500,5000,50.0\n"
+    b"TradDt,BizDt,Sgmt,Src,FinInstrmTp,FinInstrmId,ISIN,TckrSymb,SctySrs,"
+    b"OpnPric,HghPric,LwPric,ClsPric,LastPric,PrvsClsgPric,TtlTradgVol,TtlTrfVal\n"
+    b"2024-04-22,2024-04-22,CM,CM,EQ,RELIANCE,INE002A01018,RELIANCE,EQ,"
+    b"2880.00,2950.00,2870.00,2920.00,2920.00,2890.00,5000000,146000000.00\n"
+    b"2024-04-22,2024-04-22,CM,CM,EQ,INFY,INE009A01021,INFY,EQ,"
+    b"1495.00,1520.00,1480.00,1510.00,1510.00,1490.00,3000000,45150000.00\n"
+    b"2024-04-22,2024-04-22,CM,CM,SM,SOMENOTE,INE000X00001,SOMENOTE,SM,"
+    b"101.00,102.00,100.00,101.00,101.00,100.00,10000,1010000.00\n"
 )
 
 
 def test_parse_nse_bhavcopy_numerical_example(tmp_path):
     """
-    Worked example for RELIANCE row:
+    Worked example for RELIANCE row (post-2025 BhavCopy_NSE_CM format):
       volume = 5_000_000
-      turnover_lacs = 1460.00
-      value_traded = 1460 × 100_000 = ₹146_000_000
+      TtlTrfVal = 146_000_000 (₹ directly, not lacs)
+      value_traded = ₹146_000_000
     """
     db = _make_db()
     raw_row = _make_raw_row(db, NSE_BHAVCOPY_CSV, tmp_path)
