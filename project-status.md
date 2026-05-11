@@ -79,6 +79,19 @@ Key ones resolved in Phase 4 implementation:
 
 ## Change log
 
+### 2026-05-12 — End-to-end pipeline run: full signal→recommendation→GTT flow verified
+
+- Collected 46 trading days of NSE bhavcopy prices (139,578 rows) using new `BhavCopy_NSE_CM_0_0_0_{YYYYMMDD}_F_0000.csv.zip` format
+- Feature computation: 66,016+ features written for 2026-05-11 (prices for 2,452 stocks, sentiment/smart-money/filing for 9,778)
+- Signal generation: 3,688 signals (668 LONG, 813 SHORT, 2,207 neutral); regime=bull_calm (80.7% breadth)
+- Recommendation packager: 19 swing LONG recommendations produced; APM gate approved all (paper trading, all circuit breakers clear); 19 OCO-GTT orders written to gtt_orders table with valid_until=2027-05-11
+- Bug fixed: `risk_config._allocated_pct(track)` in `_morning_batch_recommendations` — correct call is `ledger._allocated_pct(track)` (method lives on `CapitalLedgerRow`, not `RiskConfig`)
+- Bug fixed: `volume_zscore_5d` not written for stocks with 19 trading days in 30-day window (April holiday months); lowered threshold from >=20 to >=6 rows, use available rows as baseline
+- Bug fixed: `compute_price_features` missing `price_close` write — all 3,688 signals had `direction=neutral` because recommendation packager skipped every signal with price_close=None
+- Bug fixed: feature computer column mismatches (symbol→stock_symbol, observed_date→trade_date, shares_outstanding→total_shares, acquirer_shares_after→shares_held_after, filing_category→category, quarter_end_date→period_end, is_buy→transaction_type in 5 compute functions)
+- Test: updated `test_prices.py` fixture to new BhavCopy_NSE_CM column format (TckrSymb/TradDt/TtlTrfVal in ₹ not lacs)
+- Missing orchestrator gap identified: APM gate (generated→approved_by_apm→queued_for_execution) is not wired as a task; currently requires manual step or dashboard approval for swing recommendations
+
 ### 2026-05-12 — Codebase audit: lint, deprecations, file-size enforcement
 
 - Ruff: auto-fixed 11 issues (unsorted imports, unused imports, bare f-strings); manually fixed 11 more (E501 wraps, E402 import order)
