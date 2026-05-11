@@ -162,7 +162,7 @@ class BaseFetcher(ABC):
             source=result.source,
             fetched_at=result.fetched_at,
             request_url=result.url,
-            request_params=json.dumps(result.params) if result.params else None,
+            request_params=json.dumps(result.params, default=str) if result.params else None,
             response_status=result.status_code,
             content_hash=result.content_hash,
             content_path=str(rel_path),
