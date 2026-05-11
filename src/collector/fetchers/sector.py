@@ -34,18 +34,28 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://nsearchives.nseindia.com/content/indices/ind_{stub}list.csv"
 
 # (filename_stub, broad_sector_label)
+# Broader indices are listed first so their Industry column populates sector
+# for mid/small-cap stocks not covered by sectoral indices.
+# Sectoral indices follow and overwrite with a cleaner sector label.
+# Empty string sector means: use the CSV's own Industry column as sector.
 # Stubs verified against NSE archives — 404s are skipped gracefully.
 _SECTOR_INDICES: list[tuple[str, str]] = [
-    ("niftybank",           "Banks"),
-    ("niftyit",             "Information Technology"),
-    ("niftypharma",         "Healthcare & Pharmaceuticals"),
-    ("niftyauto",           "Automobile"),
-    ("niftyfmcg",           "FMCG"),
-    ("niftymetal",          "Metals & Mining"),
-    ("niftyrealty",         "Real Estate"),
-    ("niftyenergy",         "Energy"),
-    ("niftyinfra",          "Infrastructure"),
-    ("niftymedia",          "Media & Entertainment"),
+    # Broad market — covers ~1000 stocks using NSE's own industry classification
+    ("nifty500",              ""),
+    ("niftymidcap150",        ""),
+    ("niftysmallcap250",      ""),
+    ("niftylargemidcap250",   ""),
+    # Sectoral indices — overwrite with a clean curated sector label
+    ("niftybank",             "Banks"),
+    ("niftyit",               "Information Technology"),
+    ("niftypharma",           "Healthcare & Pharmaceuticals"),
+    ("niftyauto",             "Automobile"),
+    ("niftyfmcg",             "FMCG"),
+    ("niftymetal",            "Metals & Mining"),
+    ("niftyrealty",           "Real Estate"),
+    ("niftyenergy",           "Energy"),
+    ("niftyinfra",            "Infrastructure"),
+    ("niftymedia",            "Media & Entertainment"),
     ("niftypsubank",          "PSU Banks"),
     ("niftyhealthcare",       "Healthcare & Pharmaceuticals"),
     ("niftyoilgas",           "Oil & Gas"),
@@ -154,14 +164,20 @@ def _parse_index_csv(
         if not symbol or series not in ("EQ", "BE", ""):
             continue
 
+        # For broad-market indices (sector=""), use the CSV's Industry column as sector.
+        # Broad indices use INSERT OR IGNORE so sectoral indices always win regardless
+        # of fetch order — sectoral indices use INSERT OR REPLACE to overwrite.
+        effective_sector = sector if sector else industry
+        upsert = "INSERT OR REPLACE" if sector else "INSERT OR IGNORE"
+
         try:
             db.execute(
-                """
-                INSERT OR REPLACE INTO sector_classifications
+                f"""
+                {upsert} INTO sector_classifications
                     (symbol, exchange, sector, industry, source, effective_from, updated_at)
                 VALUES (?, 'NSE', ?, ?, 'NSE', ?, ?)
                 """,
-                (symbol, sector, industry or None, run_date, now_str),
+                (symbol, effective_sector, industry or None, run_date, now_str),
             )
             inserted += 1
         except Exception as exc:
