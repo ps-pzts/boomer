@@ -634,5 +634,8 @@ def test_orchestrator_dispatches_task_and_records_result(tmp_path):
     thread.join(timeout=3)
 
     store = TaskRunStore(db_path)
-    row = store.latest_for_date("probe", datetime.date.today().isoformat())
+    # Orchestrator writes run_date in IST; match that to avoid UTC/IST day boundary failures.
+    from zoneinfo import ZoneInfo
+    ist_today = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    row = store.latest_for_date("probe", ist_today)
     assert row is not None and row.status.value == "SUCCESS"
