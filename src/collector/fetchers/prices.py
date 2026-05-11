@@ -2,10 +2,14 @@
 Daily OHLCV prices fetcher (Category A — daily snapshot).
 
 Primary source: NSE CM bhavcopy (free, authoritative).
-The full bhavcopy CSV for all equities is fetched once per day after market close.
+The full bhavcopy ZIP for all equities is fetched once per day after market close.
 Broker API (Kite) is used as cross-check for same-day EOD, not as primary.
 
 SQLite only holds a 30-day rolling window; older rows pruned after confirming parquet has them.
+
+URL format (as of 2025): BhavCopy_NSE_CM_0_0_0_{YYYYMMDD}_F_0000.csv.zip
+Column format: TckrSymb, SctySrs, TradDt, OpnPric, HghPric, LwPric, ClsPric,
+               TtlTradgVol, TtlTrfVal (in ₹, not lacs)
 """
 
 from __future__ import annotations
@@ -23,12 +27,12 @@ from collector.models import DataSource, Exchange, FetchResult, RawArchiveRow
 
 logger = logging.getLogger(__name__)
 
-# NSE CM bhavcopy — full equity bhavcopy with delivery data.
-# URL pattern verified against NSE archives (nsearchives.nseindia.com).
-# Date format in filename: DDMMMYYYY  e.g. 22APR2024
-_NSE_BHAVCOPY_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv"
-# Fallback URL pattern (older archives use a zip):
-_NSE_BHAVCOPY_ZIP_URL = "https://nsearchives.nseindia.com/content/historical/EQUITIES/{year}/{month}/cm{date}bhav.csv.zip"
+# NSE CM bhavcopy — new URL format (post-2025 redesign).
+# Date format in filename: YYYYMMDD  e.g. 20260511
+_NSE_BHAVCOPY_URL = (
+    "https://nsearchives.nseindia.com/content/cm/"
+    "BhavCopy_NSE_CM_0_0_0_{date}_F_0000.csv.zip"
+)
 
 
 class NsePricesFetcher(BaseFetcher):
@@ -40,25 +44,22 @@ class NsePricesFetcher(BaseFetcher):
 
     def fetch_url(self, trade_date: date | None = None, **kwargs) -> str:
         d = trade_date or date.today()
-        return _NSE_BHAVCOPY_URL.format(date=d.strftime("%d%b%Y").upper())
+        return _NSE_BHAVCOPY_URL.format(date=d.strftime("%Y%m%d"))
 
     def validate(self, result: FetchResult) -> None:
         if result.status_code == 404:
             raise PermanentFetchError("NSE prices: 404 — likely non-trading day")
         if result.status_code != 200:
             raise ValueError(f"NSE prices: HTTP {result.status_code}")
-        # Expect CSV content: should contain SYMBOL,SERIES,OPEN,...
-        text = result.body[:500].decode("utf-8", errors="replace")
-        if "SYMBOL" not in text and "symbol" not in text:
-            raise ValueError("NSE prices: response does not look like a bhavcopy CSV")
+        # Bhavcopy is delivered as a ZIP; verify magic bytes.
+        if result.body[:2] != b"PK":
+            raise ValueError("NSE prices: response is not a ZIP file (unexpected format)")
 
     def parse(self, raw_row: RawArchiveRow) -> int:
         body = self.load_raw_body(raw_row.content_path)
-        # Some NSE bhavcopy downloads are zipped; try to detect.
         if body[:2] == b"PK":
             with zipfile.ZipFile(io.BytesIO(body)) as zf:
-                name = zf.namelist()[0]
-                body = zf.read(name)
+                body = zf.read(zf.namelist()[0])
         return _parse_nse_bhavcopy_csv(body, raw_row, self._db, self.parser_version)
 
 
@@ -72,36 +73,36 @@ def _parse_nse_bhavcopy_csv(
     version: str,
 ) -> int:
     """
-    NSE CM bhavcopy columns (sec_bhavdata_full variant, 2024):
-    SYMBOL,SERIES,DATE1,PREV_CLOSE,OPEN_PRICE,HIGH_PRICE,LOW_PRICE,LAST_PRICE,
-    CLOSE_PRICE,AVG_PRICE,TTL_TRD_QNTY,TURNOVER_LACS,NO_OF_TRADES,DELIV_QTY,DELIV_PER
+    NSE CM bhavcopy columns (BhavCopy_NSE_CM variant, post-2025):
+    TradDt, BizDt, Sgmt, Src, FinInstrmTp, FinInstrmId, ISIN, TckrSymb, SctySrs,
+    OpnPric, HghPric, LwPric, ClsPric, LastPric, PrvsClsgPric, TtlTradgVol, TtlTrfVal, ...
 
     Only EQ and BE series included.
+    TtlTrfVal is in rupees (not lacs — the old format used TURNOVER_LACS).
     """
     text = body.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     inserted = 0
 
     for row in reader:
-        series = (row.get("SERIES") or "").strip()
+        series = (row.get("SctySrs") or "").strip()
         if series not in ("EQ", "BE", "SM", "ST"):
             continue
 
-        symbol = (row.get("SYMBOL") or "").strip()
+        symbol = (row.get("TckrSymb") or "").strip()
         if not symbol:
             continue
 
-        date_str = (row.get("DATE1") or row.get("TIMESTAMP") or "").strip()
+        date_str = (row.get("TradDt") or row.get("BizDt") or "").strip()
         trade_date = _parse_date(date_str)
 
         try:
-            open_ = float((row.get("OPEN_PRICE") or "0").replace(",", ""))
-            high = float((row.get("HIGH_PRICE") or "0").replace(",", ""))
-            low = float((row.get("LOW_PRICE") or "0").replace(",", ""))
-            close = float((row.get("CLOSE_PRICE") or row.get("LAST_PRICE") or "0").replace(",", ""))
-            volume = int(float((row.get("TTL_TRD_QNTY") or "0").replace(",", "")))
-            turnover_lacs = float((row.get("TURNOVER_LACS") or "0").replace(",", ""))
-            value_traded = turnover_lacs * 100_000  # lacs → ₹
+            open_ = float((row.get("OpnPric") or "0").replace(",", ""))
+            high = float((row.get("HghPric") or "0").replace(",", ""))
+            low = float((row.get("LwPric") or "0").replace(",", ""))
+            close = float((row.get("ClsPric") or row.get("LastPric") or "0").replace(",", ""))
+            volume = int(float((row.get("TtlTradgVol") or "0").replace(",", "")))
+            value_traded = float((row.get("TtlTrfVal") or "0").replace(",", ""))  # already in ₹
         except (ValueError, TypeError):
             continue
 
@@ -149,7 +150,6 @@ def prune_old_prices(db: sqlite3.Connection, keep_days: int = 30) -> int:
     Call only after confirming those rows exist in the parquet lake.
     Returns count of pruned rows.
     """
-    cutoff = date.today()
     from datetime import timedelta
 
     cutoff = (date.today() - timedelta(days=keep_days)).isoformat()
@@ -159,7 +159,7 @@ def prune_old_prices(db: sqlite3.Connection, keep_days: int = 30) -> int:
 
 
 def _parse_date(s: str) -> str:
-    for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d%b%Y"):
+    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d-%m-%Y", "%d%b%Y"):
         try:
             return datetime.strptime(s.strip(), fmt).date().isoformat()
         except ValueError:

@@ -227,7 +227,6 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
         "SELECT * FROM signals WHERE generated_at LIKE ? ORDER BY confidence DESC",
         (f"{run_date}%",),
     ).fetchall()
-    conn.close()
 
     trade_planner = TradePlanGenerator()
     rec_store = RecommendationStore(db_path)
@@ -293,12 +292,38 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
             if position_size < 1:
                 continue
 
+            # Persist trade plan before recommendation (FK constraint)
+            conn.execute(
+                """INSERT OR IGNORE INTO trade_plans (
+                    plan_id, signal_id, stock_symbol, exchange, track, direction,
+                    entry_zone_low, entry_zone_high, stop_loss_price, target_price,
+                    expected_reward_per_share, expected_risk_per_share,
+                    reward_to_risk, expected_value_per_share,
+                    decision, skip_reason, entry_strategy_id, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    plan.plan_id, plan.signal_id, plan.stock_symbol, plan.exchange,
+                    plan.track, plan.direction,
+                    str(plan.entry_zone_low), str(plan.entry_zone_high),
+                    str(plan.stop_loss_price), str(plan.target_price),
+                    str(plan.expected_reward_per_share), str(plan.expected_risk_per_share),
+                    str(plan.reward_to_risk), str(plan.expected_value_per_share),
+                    plan.decision, plan.skip_reason,
+                    plan.entry_strategy_id.value if plan.entry_strategy_id else None,
+                    now_utc.isoformat(),
+                ),
+            )
+            conn.commit()
+
             rec = packager.package(
                 plan=plan,
                 entry_plan=None,
                 signal=signal,
                 position_size_shares=position_size,
             )
+            # Route both swing and long-term for human approval (no auto-execution)
+            from src.brain.models import RecommendationStatus
+            rec.status = RecommendationStatus.AWAITING_HUMAN
             rec_store.save(rec)
             processed += 1
 
@@ -306,6 +331,9 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
             logger.warning(
                 "recommendation_failed symbol=%s error=%s", row["stock_symbol"], exc
             )
+
+    conn.commit()
+    conn.close()
 
     logger.info(
         "morning_batch_recommendations completed signals=%d recommendations=%d run_date=%s",

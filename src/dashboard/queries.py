@@ -173,15 +173,15 @@ def get_pending_recommendations(db_path: str, limit: int = 50) -> list[Recommend
                       r.track,
                       r.status,
                       r.generated_at as valid_until,
-                      tp.entry_zone_low as entry_low,
-                      tp.entry_zone_high as entry_high,
-                      tp.stop_loss_price as stop_loss,
-                      tp.target_price as target,
+                      COALESCE(tp.entry_zone_low,  r.entry_zone_low)  as entry_low,
+                      COALESCE(tp.entry_zone_high, r.entry_zone_high) as entry_high,
+                      COALESCE(tp.stop_loss_price, r.stop_loss_price) as stop_loss,
+                      COALESCE(tp.target_price,    r.target_price)    as target,
                       r.position_size_shares,
                       s.raw_score as signal_score,
                       s.confidence,
-                      tp.expected_value_per_share as ev,
-                      tp.reward_to_risk as rr,
+                      COALESCE(tp.expected_value_per_share, 0) as ev,
+                      COALESCE(tp.reward_to_risk, 0)           as rr,
                       COALESCE(sc.sector,'Unknown') as sector,
                       COALESCE(
                           (SELECT close FROM prices
@@ -190,7 +190,7 @@ def get_pending_recommendations(db_path: str, limit: int = 50) -> list[Recommend
                            ORDER BY trade_date DESC LIMIT 1), 0
                       ) as current_price
                FROM recommendations r
-               JOIN trade_plans tp ON tp.plan_id = r.plan_id
+               LEFT JOIN trade_plans tp ON tp.plan_id = r.plan_id
                JOIN signals s ON s.signal_id = r.signal_id
                LEFT JOIN sector_classifications sc ON sc.symbol = r.stock_symbol
                WHERE r.status = 'awaiting_human'
