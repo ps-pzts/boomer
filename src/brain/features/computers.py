@@ -330,6 +330,7 @@ def compute_price_features(
 
     avg_value = sum(c * v for c, v in zip(closes, volumes, strict=True)) / len(closes)
     wf(sym, exc, "avg_traded_value_20d", avg_value, d, d)
+    wf(sym, exc, "avg_daily_volume_20d", sum(volumes) / len(volumes), d, d)
 
     # ATR-14
     if len(rows_20) >= 14:
