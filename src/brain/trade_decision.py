@@ -70,7 +70,8 @@ class TradePlanGenerator:
             return self._skip(
                 plan_id, signal, current_price, generated_at,
                 SkipReason.LIQUIDITY_GATE,
-                f"avg_daily_turnover {avg_value_cr:.2f}Cr < min {risk_config.min_avg_daily_turnover_cr}Cr",
+                f"avg_daily_turnover {avg_value_cr:.2f}Cr"
+                f" < min {risk_config.min_avg_daily_turnover_cr}Cr",
             )
 
         # Step 1: entry zone (±0.5% of current price; refined by Stage 3.5)

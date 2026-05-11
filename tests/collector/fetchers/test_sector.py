@@ -11,6 +11,7 @@ Worked example (Nifty IT index):
   WIPRO → Information Technology, IT - Software
 """
 
+import glob
 import gzip
 import hashlib
 import sqlite3
@@ -19,13 +20,13 @@ from pathlib import Path
 
 import pytest
 
-from collector.fetchers.sector import NseSectorFetcher, _parse_index_csv, _STUB_TO_SECTOR
-from collector.models import DataSource, RawArchiveRow
+from collector.base import PermanentFetchError
+from collector.fetchers.sector import _STUB_TO_SECTOR, NseSectorFetcher, _parse_index_csv
+from collector.models import DataSource, FetchResult, RawArchiveRow
 
 
 def _make_db(tmp_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(tmp_path / "boomer.db"))
-    import glob
     for f in sorted(glob.glob("migrations/*.sql")):
         with open(f) as fh:
             conn.executescript(fh.read())
@@ -35,7 +36,7 @@ def _make_db(tmp_path: Path) -> sqlite3.Connection:
 def _make_raw_row(db, body: bytes, tmp_path: Path, url: str) -> RawArchiveRow:
     chash = hashlib.sha256(body).hexdigest()
     raw_id = "sector-raw-001"
-    rel_path = f"sector_classifications/2024/05/01/test.gz"
+    rel_path = "sector_classifications/2024/05/01/test.gz"
     abs_path = tmp_path / "raw" / rel_path
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     abs_path.write_bytes(gzip.compress(body))
@@ -157,9 +158,6 @@ def test_validate_rejects_non_csv(tmp_path):
     """validate() should raise on HTML/non-CSV responses."""
     db = _make_db(tmp_path)
     fetcher = NseSectorFetcher(db, tmp_path / "raw")
-    from collector.models import FetchResult
-    from datetime import datetime
-
     bad = FetchResult(
         source=DataSource.SECTOR_CLASSIFICATIONS,
         url="https://nsearchives.nseindia.com/content/indices/ind_niftyitlist.csv",
@@ -176,9 +174,6 @@ def test_validate_404_raises_permanent(tmp_path):
     """validate() should raise PermanentFetchError on 404."""
     db = _make_db(tmp_path)
     fetcher = NseSectorFetcher(db, tmp_path / "raw")
-    from collector.base import PermanentFetchError
-    from collector.models import FetchResult
-
     result = FetchResult(
         source=DataSource.SECTOR_CLASSIFICATIONS,
         url="https://nsearchives.nseindia.com/content/indices/ind_niftybanklist.csv",

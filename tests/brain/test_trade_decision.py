@@ -183,7 +183,11 @@ def test_price_too_low_skips(gen, rc):
     """CMP below min_stock_price (₹100) must be rejected before ATR math."""
     signal = _make_signal("swing", confidence=0.80)
     signal = signal.__class__(
-        **{**signal.__dict__, "feature_snapshot": {"price_close": 40, "avg_daily_volume_20d": 2_000_000, "avg_traded_value_20d": 80_000_000}}
+        **{**signal.__dict__, "feature_snapshot": {
+            "price_close": 40,
+            "avg_daily_volume_20d": 2_000_000,
+            "avg_traded_value_20d": 80_000_000,
+        }}
     )
     plan = gen.generate(
         signal,
@@ -201,7 +205,9 @@ def test_volume_too_low_skips(gen, rc):
     """Avg daily volume below 5,00,000 shares triggers liquidity gate."""
     signal = _make_signal("swing", confidence=0.80)
     signal = signal.__class__(
-        **{**signal.__dict__, "feature_snapshot": {"price_close": 500, "avg_daily_volume_20d": 100_000, "avg_traded_value_20d": 50_000_000}}
+        **{**signal.__dict__, "feature_snapshot": {
+            "price_close": 500, "avg_daily_volume_20d": 100_000, "avg_traded_value_20d": 50_000_000,
+        }}
     )
     plan = gen.generate(
         signal,
@@ -220,7 +226,9 @@ def test_turnover_too_low_skips(gen, rc):
     signal = _make_signal("swing", confidence=0.80)
     # avg_traded_value_20d = 3 crore = 30_000_000 (below 5 crore threshold)
     signal = signal.__class__(
-        **{**signal.__dict__, "feature_snapshot": {"price_close": 500, "avg_daily_volume_20d": 600_000, "avg_traded_value_20d": 30_000_000}}
+        **{**signal.__dict__, "feature_snapshot": {
+            "price_close": 500, "avg_daily_volume_20d": 600_000, "avg_traded_value_20d": 30_000_000,
+        }}
     )
     plan = gen.generate(
         signal,
@@ -239,7 +247,11 @@ def test_all_filters_pass_proceeds(gen, rc):
     signal = _make_signal("swing", confidence=0.80)
     # price=500 > 100, avg_vol=1M > 500k, turnover=50Cr > 5Cr
     signal = signal.__class__(
-        **{**signal.__dict__, "feature_snapshot": {"price_close": 500, "avg_daily_volume_20d": 1_000_000, "avg_traded_value_20d": 500_000_000}}
+        **{**signal.__dict__, "feature_snapshot": {
+            "price_close": 500,
+            "avg_daily_volume_20d": 1_000_000,
+            "avg_traded_value_20d": 500_000_000,
+        }}
     )
     plan = gen.generate(
         signal,

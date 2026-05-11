@@ -21,10 +21,10 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import sqlite3
 import time
 from datetime import UTC, date, datetime
 from pathlib import Path
-import sqlite3
 
 from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
 from collector.models import DataSource, FetchResult, RawArchiveRow
@@ -114,7 +114,9 @@ class NseSectorFetcher(BaseFetcher):
         if len(text) < 30:
             raise PermanentFetchError(f"NSE sector index: empty body for {result.url}")
         if "Symbol" not in text[:200] and "SYMBOL" not in text[:200]:
-            raise ValueError(f"NSE sector index: response doesn't look like index CSV: {result.url}")
+            raise ValueError(
+                f"NSE sector index: response doesn't look like index CSV: {result.url}"
+            )
 
     def parse(self, raw_row: RawArchiveRow) -> int:
         """Identify which sector index this raw_row is for and write classifications."""
