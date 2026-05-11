@@ -22,14 +22,19 @@ def _nightly_eod_collector(
     run_date: str, run_id: int, db_path: str, archive_dir: str, **_: object
 ) -> None:
     """Fetch EOD data from NSE/BSE: prices, filings, bulk deals, F&O OI."""
+    import sqlite3 as _sqlite3
+    from pathlib import Path as _Path
+
     from src.collector.health import CollectionRunStore
     from src.collector.parser import build_fetcher_registry
 
+    db_conn = _sqlite3.connect(db_path, timeout=10)
     store = CollectionRunStore(db_path)
-    registry = build_fetcher_registry(db_path=db_path, archive_dir=archive_dir)
+    registry = build_fetcher_registry(db=db_conn, raw_dir=_Path(archive_dir))
     for name, fetcher in registry.items():
         with store.run_context(name, run_date=run_date):
             fetcher.fetch(run_date=run_date)
+    db_conn.close()
     logger.info("nightly_eod_collector completed run_date=%s", run_date)
 
 
