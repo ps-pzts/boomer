@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from collector.base import BaseFetcher, _fmt_dt
+from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
 from collector.models import DataSource, FetchResult, ParseStatus, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class ScreenerFetcher(BaseFetcher):
 
     def validate(self, result: FetchResult) -> None:
         if result.status_code == 404:
-            raise ValueError("Screener: 404 — company not found on Screener.in")
+            raise PermanentFetchError("Screener: 404 — company not found on Screener.in")
         if result.status_code != 200:
             raise ValueError(f"Screener: HTTP {result.status_code}")
         html = result.body.decode("utf-8", errors="replace")

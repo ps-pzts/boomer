@@ -15,6 +15,15 @@ from .models import RetryPolicy, TaskDefinition
 logger = logging.getLogger(__name__)
 
 
+def _prev_weekday(d: object) -> object:
+    """Return the most recent weekday before d (Mon→Fri, Tue-Fri→day-1, Sat→Fri, Sun→Fri)."""
+    import datetime as _dt
+
+    day: _dt.date = d  # type: ignore[assignment]
+    days_back = {0: 3, 6: 2}.get(day.weekday(), 1)  # Mon=0→3, Sun=6→2, else 1
+    return day - _dt.timedelta(days=days_back)
+
+
 # ─── Task implementations ──────────────────────────────────────────────────────
 
 
@@ -29,13 +38,20 @@ def _nightly_eod_collector(
     from src.collector.health import CollectionRunStore
     from src.collector.parser import build_fetcher_registry
 
+    from src.collector.models import DataSource as _DataSource
+
     trade_date = _dt.date.fromisoformat(run_date)
+    # Bulk deal files are published the next morning — always fetch the previous trading day.
+    prev_trading_date = _prev_weekday(trade_date)
+    _BULK_DEAL_SOURCES = {_DataSource.NSE_BULK_DEALS, _DataSource.BSE_BULK_DEALS}
+
     db_conn = _sqlite3.connect(db_path, timeout=10)
     store = CollectionRunStore(db_conn)
     registry = build_fetcher_registry(db=db_conn, raw_dir=_Path(archive_dir))
     for source, fetcher in registry.items():
+        fetch_date = prev_trading_date if source in _BULK_DEAL_SOURCES else trade_date
         with store.run_context(source):
-            fetcher.run(trade_date=trade_date)
+            fetcher.run(trade_date=fetch_date)
     db_conn.close()
     logger.info("nightly_eod_collector completed run_date=%s", run_date)
 

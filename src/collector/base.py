@@ -122,10 +122,12 @@ class BaseFetcher(ABC):
 
     def transport(self, url: str, **kwargs) -> FetchResult:
         timeout = kwargs.pop("timeout", 30)
+        kwargs.pop("trade_date", None)  # consumed by fetch_url, not a URL param
         params = kwargs or None
         self._session.headers.update({"User-Agent": self._next_ua()})
         resp = self._session.get(url, params=params, timeout=timeout)
-        resp.raise_for_status()
+        # Don't raise_for_status here — let validate() decide whether 4xx is
+        # permanent (PermanentFetchError) or retryable (ValueError).
         body = resp.content
         return FetchResult(
             source=self.source,
