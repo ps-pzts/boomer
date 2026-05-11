@@ -48,8 +48,8 @@ def _compute_market_regime(db_path: str, run_date: str) -> str:
     breadth_pct = (above / len(rows)) * 100.0
 
     # VIX and Nifty vs 200DMA require data sources not yet collected; use neutral defaults.
-    nifty_vs_200dma_pct = 1.0   # slightly above DMA — neutral
-    vix_percentile = 40.0        # below median VIX — not fearful
+    nifty_vs_200dma_pct = 1.0  # slightly above DMA — neutral
+    vix_percentile = 40.0  # below median VIX — not fearful
 
     detector = RegimeDetector()
     regime = detector.detect(
@@ -182,7 +182,10 @@ def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object
     conn.close()
     logger.info(
         "morning_batch_signals completed symbols=%d signals_saved=%d run_date=%s regime=%s",
-        len(symbols), saved, run_date, regime,
+        len(symbols),
+        saved,
+        run_date,
+        regime,
     )
 
 
@@ -302,13 +305,22 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
                     decision, skip_reason, entry_strategy_id, created_at
                 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    plan.plan_id, plan.signal_id, plan.stock_symbol, plan.exchange,
-                    plan.track, plan.direction,
-                    str(plan.entry_zone_low), str(plan.entry_zone_high),
-                    str(plan.stop_loss_price), str(plan.target_price),
-                    str(plan.expected_reward_per_share), str(plan.expected_risk_per_share),
-                    str(plan.reward_to_risk), str(plan.expected_value_per_share),
-                    plan.decision, plan.skip_reason,
+                    plan.plan_id,
+                    plan.signal_id,
+                    plan.stock_symbol,
+                    plan.exchange,
+                    plan.track,
+                    plan.direction,
+                    str(plan.entry_zone_low),
+                    str(plan.entry_zone_high),
+                    str(plan.stop_loss_price),
+                    str(plan.target_price),
+                    str(plan.expected_reward_per_share),
+                    str(plan.expected_risk_per_share),
+                    str(plan.reward_to_risk),
+                    str(plan.expected_value_per_share),
+                    plan.decision,
+                    plan.skip_reason,
                     plan.entry_strategy_id.value if plan.entry_strategy_id else None,
                     now_utc.isoformat(),
                 ),
@@ -323,19 +335,20 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
             )
             # Route both swing and long-term for human approval (no auto-execution)
             from src.brain.models import RecommendationStatus
+
             rec.status = RecommendationStatus.AWAITING_HUMAN
             rec_store.save(rec)
             processed += 1
 
         except Exception as exc:
-            logger.warning(
-                "recommendation_failed symbol=%s error=%s", row["stock_symbol"], exc
-            )
+            logger.warning("recommendation_failed symbol=%s error=%s", row["stock_symbol"], exc)
 
     conn.commit()
     conn.close()
 
     logger.info(
         "morning_batch_recommendations completed signals=%d recommendations=%d run_date=%s",
-        len(today_signals), processed, run_date,
+        len(today_signals),
+        processed,
+        run_date,
     )

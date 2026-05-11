@@ -64,9 +64,7 @@ def _weekly_harvest_check(run_date: str, run_id: int, db_path: str, **_: object)
         logger.info("harvest_check: threshold not met run_date=%s", run_date)
 
 
-def _nightly_backup(
-    run_date: str, run_id: int, db_path: str, backup_dir: str, **_: object
-) -> None:
+def _nightly_backup(run_date: str, run_id: int, db_path: str, backup_dir: str, **_: object) -> None:
     """Copy SQLite DB to daily backup directory."""
     import shutil
 

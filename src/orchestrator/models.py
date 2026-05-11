@@ -99,9 +99,7 @@ class BotModeStore:
         import datetime
 
         now = (
-            datetime.datetime.now(datetime.UTC)
-            .isoformat(timespec="seconds")
-            .replace("+00:00", "Z")
+            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         )
         with self._conn() as conn:
             old = conn.execute("SELECT mode FROM bot_mode WHERE id = 1").fetchone()
@@ -138,9 +136,7 @@ class TaskRunStore:
         import datetime
 
         now = (
-            datetime.datetime.now(datetime.UTC)
-            .isoformat(timespec="seconds")
-            .replace("+00:00", "Z")
+            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         )
         with self._conn() as conn:
             cur = conn.execute(
@@ -162,9 +158,7 @@ class TaskRunStore:
         import datetime
 
         now = (
-            datetime.datetime.now(datetime.UTC)
-            .isoformat(timespec="seconds")
-            .replace("+00:00", "Z")
+            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         )
         with self._conn() as conn:
             conn.execute(

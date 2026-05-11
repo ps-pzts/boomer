@@ -30,8 +30,7 @@ logger = logging.getLogger(__name__)
 # NSE CM bhavcopy — new URL format (post-2025 redesign).
 # Date format in filename: YYYYMMDD  e.g. 20260511
 _NSE_BHAVCOPY_URL = (
-    "https://nsearchives.nseindia.com/content/cm/"
-    "BhavCopy_NSE_CM_0_0_0_{date}_F_0000.csv.zip"
+    "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{date}_F_0000.csv.zip"
 )
 
 

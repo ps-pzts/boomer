@@ -60,7 +60,5 @@ def _early_morning_data_check(run_date: str, run_id: int, db_path: str, **_: obj
     ).fetchone()
     conn.close()
     if row["n"] == 0:
-        raise RuntimeError(
-            f"No prices for trade_date={run_date}. EOD collector may have failed."
-        )
+        raise RuntimeError(f"No prices for trade_date={run_date}. EOD collector may have failed.")
     logger.info("data_check passed: %d price rows for %s", row["n"], run_date)

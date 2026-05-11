@@ -91,9 +91,7 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     for pos in open_positions:
         try:
             features = fs.get_features_as_of(pos["symbol"], pos["exchange"] or "NSE", as_of_date)
-            current_price = Decimal(
-                str(features.get("price_close", pos["average_entry_price"]))
-            )
+            current_price = Decimal(str(features.get("price_close", pos["average_entry_price"])))
 
             # Most-recent signal for this position's original signal_id.
             sig_row = conn.execute(
@@ -138,9 +136,12 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
 
             if health.exit_recommended or broken:
                 logger.warning(
-                    "position_exit_flagged position_id=%s symbol=%s score=%.1f "
-                    "broken=%s reason=%s",
-                    pos["position_id"], pos["symbol"], health.total_score, broken, reason,
+                    "position_exit_flagged position_id=%s symbol=%s score=%.1f broken=%s reason=%s",
+                    pos["position_id"],
+                    pos["symbol"],
+                    health.total_score,
+                    broken,
+                    reason,
                 )
 
         except Exception as exc:

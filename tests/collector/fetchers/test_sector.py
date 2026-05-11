@@ -44,8 +44,16 @@ def _make_raw_row(db, body: bytes, tmp_path: Path, url: str) -> RawArchiveRow:
         "INSERT INTO raw_archive (raw_id, source, fetched_at, request_url, "
         "response_status, content_hash, content_path, parse_status) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (raw_id, DataSource.SECTOR_CLASSIFICATIONS.value, "2024-05-01T10:00:00.000000Z",
-         url, 200, chash, rel_path, "pending"),
+        (
+            raw_id,
+            DataSource.SECTOR_CLASSIFICATIONS.value,
+            "2024-05-01T10:00:00.000000Z",
+            url,
+            200,
+            chash,
+            rel_path,
+            "pending",
+        ),
     )
     db.commit()
     return RawArchiveRow(
@@ -106,9 +114,7 @@ def test_parse_bank_index_csv(tmp_path):
     count = _parse_index_csv(BANK_CSV, "Banks", raw_row, db, "v1")
 
     assert count == 2
-    row = db.execute(
-        "SELECT sector FROM sector_classifications WHERE symbol='HDFCBANK'"
-    ).fetchone()
+    row = db.execute("SELECT sector FROM sector_classifications WHERE symbol='HDFCBANK'").fetchone()
     assert row[0] == "Banks"
 
 
@@ -148,9 +154,7 @@ def test_fetcher_parse_dispatches_by_url(tmp_path):
 
     count = fetcher.parse(raw_row)
     assert count == 3
-    row = db.execute(
-        "SELECT sector FROM sector_classifications WHERE symbol='TCS'"
-    ).fetchone()
+    row = db.execute("SELECT sector FROM sector_classifications WHERE symbol='TCS'").fetchone()
     assert row[0] == "Information Technology"
 
 

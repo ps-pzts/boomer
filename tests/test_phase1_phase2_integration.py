@@ -27,6 +27,7 @@ from collector.sentiment import SentimentPipeline, apply_sentiment_to_filings
 
 def _apply_migrations(db_path: str) -> None:
     import glob
+
     conn = sqlite3.connect(db_path)
     for f in sorted(glob.glob("migrations/*.sql")):
         with open(f) as fh:

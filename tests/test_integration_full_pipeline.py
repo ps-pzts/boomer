@@ -60,8 +60,7 @@ def test_all_migrations_apply_to_single_db(tmp_path):
         conn.executescript(Path(path).read_text())
 
     tables = {
-        r[0]
-        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
     # Spot-check one key table per phase
     for expected in ("risk_config", "raw_archive", "signals", "orders", "task_runs"):
@@ -596,9 +595,7 @@ def test_orchestrator_dispatches_task_and_records_result(tmp_path):
     conn = sqlite3.connect(db_path)
     conn.execute("INSERT OR IGNORE INTO bot_mode (id, mode) VALUES (1, 'auto')")
     # 2026-01-12 is a Monday — seed as trading day (not a holiday)
-    conn.execute(
-        "DELETE FROM trading_calendar WHERE trade_date='2026-01-12'"
-    )
+    conn.execute("DELETE FROM trading_calendar WHERE trade_date='2026-01-12'")
     conn.commit()
     conn.close()
 

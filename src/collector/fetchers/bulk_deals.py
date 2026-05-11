@@ -141,8 +141,10 @@ def _parse_nse_bulk_csv(
         symbol = (row.get("Symbol") or row.get("SYMBOL") or "").strip()
         client = (row.get("Client Name") or row.get("CLIENT NAME") or "").strip()
         tx_raw = (
-            row.get("Buy/Sell") or row.get("Buy / Sell") or row.get("BUY/SELL") or ""
-        ).strip().upper()
+            (row.get("Buy/Sell") or row.get("Buy / Sell") or row.get("BUY/SELL") or "")
+            .strip()
+            .upper()
+        )
         qty_str = (
             (row.get("Quantity Traded") or row.get("QUANTITY") or "0").replace(",", "").strip()
         )
@@ -183,13 +185,22 @@ def _parse_nse_bulk_csv(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    deal_id, raw_row.raw_id, version,
-                    symbol, Exchange.NSE.value,
-                    deal_date, _fmt_dt(raw_row.fetched_at),
-                    client, client_norm,
+                    deal_id,
+                    raw_row.raw_id,
+                    version,
+                    symbol,
+                    Exchange.NSE.value,
+                    deal_date,
+                    _fmt_dt(raw_row.fetched_at),
+                    client,
+                    client_norm,
                     1 if _is_smart_money(client_norm) else 0,
-                    tx_type.value, qty, price, qty * price,
-                    0, None,
+                    tx_type.value,
+                    qty,
+                    price,
+                    qty * price,
+                    0,
+                    None,
                 ),
             )
             if db.execute("SELECT changes()").fetchone()[0]:
@@ -252,13 +263,22 @@ def _parse_bse_bulk_json(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    deal_id, raw_row.raw_id, version,
-                    scrip_code, Exchange.BSE.value,
-                    deal_date, _fmt_dt(raw_row.fetched_at),
-                    client, client_norm,
+                    deal_id,
+                    raw_row.raw_id,
+                    version,
+                    scrip_code,
+                    Exchange.BSE.value,
+                    deal_date,
+                    _fmt_dt(raw_row.fetched_at),
+                    client,
+                    client_norm,
                     1 if _is_smart_money(client_norm) else 0,
-                    tx_type.value, qty, price, qty * price,
-                    0, None,
+                    tx_type.value,
+                    qty,
+                    price,
+                    qty * price,
+                    0,
+                    None,
                 ),
             )
             if db.execute("SELECT changes()").fetchone()[0]:

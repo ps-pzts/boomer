@@ -67,12 +67,16 @@ def _answer_callback(token: str, callback_id: str, text: str = "") -> None:
 
 
 def _edit_message_text(token: str, chat_id: str | int, message_id: int, text: str) -> None:
-    _call(token, "editMessageText", {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "parse_mode": "HTML",
-    })
+    _call(
+        token,
+        "editMessageText",
+        {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": "HTML",
+        },
+    )
 
 
 # ── Database helpers ───────────────────────────────────────────────────────────
@@ -112,7 +116,8 @@ def _get_snapshot(db_path: str) -> dict:
             (run_date,),
         ).fetchone()[0]
         circuit_breakers = [
-            r[0] for r in conn.execute(
+            r[0]
+            for r in conn.execute(
                 "SELECT DISTINCT breaker_name FROM circuit_breaker_events"
                 " WHERE event_type='tripped' AND DATE(event_time)=?",
                 (run_date,),
@@ -228,10 +233,12 @@ def _fmt_rec_card(idx: int, r: dict) -> str:
 
 def _rec_inline_keyboard(rec_id: str) -> dict:
     return {
-        "inline_keyboard": [[
-            {"text": "✅ Approve", "callback_data": f"approve:{rec_id}"},
-            {"text": "❌ Reject", "callback_data": f"reject:{rec_id}"},
-        ]]
+        "inline_keyboard": [
+            [
+                {"text": "✅ Approve", "callback_data": f"approve:{rec_id}"},
+                {"text": "❌ Reject", "callback_data": f"reject:{rec_id}"},
+            ]
+        ]
     }
 
 
@@ -251,7 +258,8 @@ def handle_screen(token: str, chat_id: str | int, db_path: str) -> None:
     _send(token, chat_id, f"<b>⏳ {len(recs)} recommendation(s) awaiting approval</b>")
     for idx, rec in enumerate(recs, 1):
         _send(
-            token, chat_id,
+            token,
+            chat_id,
             _fmt_rec_card(idx, rec),
             reply_markup=_rec_inline_keyboard(rec["recommendation_id"]),
         )
@@ -265,7 +273,7 @@ def handle_callback(token: str, callback: dict, db_path: str) -> None:
     original_text = callback["message"].get("text", "")
 
     if data.startswith("approve:"):
-        rec_id = data[len("approve:"):]
+        rec_id = data[len("approve:") :]
         ok = _approve_rec(db_path, rec_id)
         if ok:
             _answer_callback(token, callback_id, "✅ Approved")
@@ -274,7 +282,7 @@ def handle_callback(token: str, callback: dict, db_path: str) -> None:
             _answer_callback(token, callback_id, "Already actioned or not found")
 
     elif data.startswith("reject:"):
-        rec_id = data[len("reject:"):]
+        rec_id = data[len("reject:") :]
         ok = _reject_rec(db_path, rec_id)
         if ok:
             _answer_callback(token, callback_id, "❌ Rejected")
@@ -297,11 +305,15 @@ class TelegramBot:
         self._offset = 0
 
     def _get_updates(self) -> list[dict]:
-        result = _call(self._token, "getUpdates", {
-            "offset": self._offset,
-            "timeout": 30,
-            "allowed_updates": ["message", "callback_query"],
-        })
+        result = _call(
+            self._token,
+            "getUpdates",
+            {
+                "offset": self._offset,
+                "timeout": 30,
+                "allowed_updates": ["message", "callback_query"],
+            },
+        )
         if not result.get("ok"):
             return []
         return result.get("result", [])
@@ -326,10 +338,12 @@ class TelegramBot:
         elif text in ("/screen", "/screen@boomerbot", "/approvals", "/approvals@boomerbot"):
             handle_screen(self._token, msg["chat"]["id"], self._db_path)
         elif text in ("/help", "/start"):
-            _send(self._token, msg["chat"]["id"],
+            _send(
+                self._token,
+                msg["chat"]["id"],
                 "<b>Boomer Bot Commands</b>\n\n"
                 "/status — system snapshot (mode, signals, P&amp;L)\n"
-                "/screen — pending recommendations with approve/reject buttons\n"
+                "/screen — pending recommendations with approve/reject buttons\n",
             )
 
     def run_forever(self) -> None:

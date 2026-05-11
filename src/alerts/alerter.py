@@ -171,9 +171,7 @@ class AlertManager:
 
     def _persist(self, alert: Alert) -> None:
         now = (
-            datetime.datetime.now(datetime.UTC)
-            .isoformat(timespec="seconds")
-            .replace("+00:00", "Z")
+            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         )
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)
@@ -199,9 +197,7 @@ class AlertManager:
 
     def _record_missed_critical(self, alert: Alert) -> None:
         now = (
-            datetime.datetime.now(datetime.UTC)
-            .isoformat(timespec="seconds")
-            .replace("+00:00", "Z")
+            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         )
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)

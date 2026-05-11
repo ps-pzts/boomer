@@ -1,4 +1,5 @@
 """Tests for src/executor/auto_login.py — automated broker TOTP login."""
+
 from __future__ import annotations
 
 import os
