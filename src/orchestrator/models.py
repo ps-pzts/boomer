@@ -167,7 +167,7 @@ class TaskRunStore:
             row = conn.execute(
                 """SELECT * FROM task_runs
                    WHERE task_id=? AND run_date=?
-                   ORDER BY attempt DESC LIMIT 1""",
+                   ORDER BY id DESC LIMIT 1""",
                 (task_id, run_date),
             ).fetchone()
         if row is None:

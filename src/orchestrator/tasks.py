@@ -217,7 +217,7 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     from src.brain.position_review import PositionReviewer
 
     feature_store = FeatureStore(db_path)
-    reviewer = PositionReviewer(db_path=db_path, feature_store=feature_store)
+    reviewer = PositionReviewer()
 
     import sqlite3
 

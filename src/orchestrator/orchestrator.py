@@ -61,6 +61,7 @@ class Orchestrator:
         )
         self._poll_interval = poll_interval
         self._running_tasks: dict[str, threading.Thread] = {}
+        self._last_dispatched: dict[str, datetime.datetime] = {}
         self._stop_event = threading.Event()
 
     # ─── Lifecycle ─────────────────────────────────────────────────────────────
@@ -104,11 +105,17 @@ class Orchestrator:
                 if task_id in self._running_tasks and self._running_tasks[task_id].is_alive():
                     continue  # already running
 
+                # Prevent double-firing within the same cron minute (poll runs every 30s).
+                last = self._last_dispatched.get(task_id)
+                if last and (now_utc - last).total_seconds() < 60:
+                    continue
+
                 should, reason = self._scheduler.should_run(task_def, now_utc, run_date)
                 if not should:
                     continue
 
                 logger.info("orchestrator_dispatch task_id=%s run_date=%s", task_id, run_date)
+                self._last_dispatched[task_id] = now_utc
                 t = threading.Thread(
                     target=self._run_task,
                     args=(task_def, run_date),
