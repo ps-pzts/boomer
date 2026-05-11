@@ -224,7 +224,7 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     open_positions = conn.execute(
-        "SELECT position_id, symbol, track FROM positions WHERE status='open'"
+        "SELECT position_id, symbol, track FROM positions WHERE is_open=1"
     ).fetchall()
     conn.close()
 
