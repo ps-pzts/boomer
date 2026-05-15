@@ -4,7 +4,8 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.models import (
@@ -15,6 +16,8 @@ from executor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 class ReconciliationLoop:
@@ -84,7 +87,7 @@ class ReconciliationLoop:
         return (row[0] if row else 0) > 0
 
     def resolve_alert(self, alert_id: str, note: str) -> None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             "UPDATE reconciliation_alerts"
             " SET resolved=1, resolved_at=?, resolution_note=? WHERE alert_id=?",
@@ -197,7 +200,7 @@ class ReconciliationLoop:
         broker_value: str | None,
     ) -> str:
         alert_id = str(uuid.uuid4())
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             """
             INSERT INTO reconciliation_alerts

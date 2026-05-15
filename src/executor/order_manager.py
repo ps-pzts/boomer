@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.models import (
@@ -19,6 +20,8 @@ from executor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 # Routing table: track → broker_id
 # All tracks routed to Kite until Fyers trading is validated.
@@ -68,7 +71,7 @@ class OrderManager:
         self._pre_trade_checks(request, broker, ltp, track)
 
         order_id = str(uuid.uuid4())
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._insert_order(order_id, request, broker.broker_id, OrderStatus.CREATED, now)
 
         self._transition(order_id, OrderStatus.SUBMITTING)
@@ -142,7 +145,7 @@ class OrderManager:
             msg = f"Invalid transition {record.status} → {new_status} for order {order_id}"
             logger.error(msg)
             raise StateMachineError(msg)
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             "UPDATE orders SET status=?, updated_at=? WHERE order_id=?",
             (new_status, now, order_id),
@@ -171,7 +174,9 @@ class OrderManager:
                 )
 
         # 3. Duplicate detection — identical request in last 30s
-        cutoff = (datetime.now(UTC) - timedelta(seconds=_DUPLICATE_WINDOW_SECONDS)).isoformat()
+        cutoff = (
+            datetime.now(IST).replace(tzinfo=None) - timedelta(seconds=_DUPLICATE_WINDOW_SECONDS)
+        ).isoformat()
         if request.idempotency_key:
             row = self._db.execute(
                 "SELECT order_id FROM orders WHERE idempotency_key=? AND created_at>?",
@@ -196,10 +201,9 @@ class OrderManager:
 
         # 6. Market hours for intraday — caller must enforce; logged here only
         if track == "intraday":
-            now = datetime.now(UTC)
-            # IST = UTC+5:30; market 9:15–15:30 IST = 3:45–10:00 UTC
-            market_open = now.replace(hour=3, minute=45, second=0, microsecond=0)
-            market_close = now.replace(hour=10, minute=0, second=0, microsecond=0)
+            now = datetime.now(IST)
+            market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+            market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
             if not (market_open <= now <= market_close):
                 raise PreTradeCheckError("Intraday order outside market hours")
 
@@ -285,7 +289,7 @@ class OrderManager:
         exec_id = str(uuid.uuid4())
         qty = raw.get("filled_quantity", 0) - record.filled_quantity
         price = raw.get("average_fill_price", 0.0)
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             """
             INSERT INTO executions
@@ -303,7 +307,7 @@ class OrderManager:
 
     def _log_order_error(self, order_id: str, message: str) -> None:
         err_id = str(uuid.uuid4())
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             "INSERT INTO executor_errors"
             " (error_id, error_type, order_id, message, created_at) VALUES (?,?,?,?,?)",

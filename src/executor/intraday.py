@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from executor.models import (
     OrderRequest,
@@ -11,13 +12,14 @@ from executor.models import (
     ProductType,
 )
 
+IST = ZoneInfo("Asia/Kolkata")
+
 logger = logging.getLogger(__name__)
 
-# IST = UTC+5:30
-_MARKET_OPEN_UTC = (3, 45)  # 09:15 IST
-_LAST_ENTRY_UTC = (9, 0)  # 14:30 IST — no new intraday entries after this
-_SQUAREOFF_UTC = (9, 44)  # 15:14 IST — orchestrator calls square_off at this time
-_MARKET_CLOSE_UTC = (10, 0)  # 15:30 IST
+_MARKET_OPEN_IST = (9, 15)
+_LAST_ENTRY_IST = (14, 30)   # no new entries after this
+_SQUAREOFF_IST = (15, 14)    # orchestrator calls square_off at this time
+_MARKET_CLOSE_IST = (15, 30)
 
 _SIGNAL_VALIDITY_MINUTES = 30
 _STOCK_COOLDOWN_MINUTES = 60  # per-stock intraday cooldown (Loophole 2)
@@ -66,7 +68,7 @@ class IntradayPipeline:
             return False
 
         try:
-            now = datetime.now(UTC)
+            now = datetime.now(IST)
             if not self._is_entry_window(now):
                 logger.info("Intraday cycle: outside entry window — monitoring only")
                 self._monitor_positions()
@@ -102,9 +104,9 @@ class IntradayPipeline:
         om: OrderManager = self._om  # type: ignore[assignment]
         pm: PositionManager = self._pm  # type: ignore[assignment]
 
-        now = datetime.now(UTC)
-        squareoff_window_start = now.replace(hour=9, minute=30)  # 15:00 IST
-        squareoff_window_end = now.replace(hour=9, minute=50)  # 15:20 IST
+        now = datetime.now(IST)
+        squareoff_window_start = now.replace(hour=15, minute=0, second=0, microsecond=0)
+        squareoff_window_end = now.replace(hour=15, minute=20, second=0, microsecond=0)
         if not (squareoff_window_start <= now <= squareoff_window_end):
             logger.warning("square_off_all_intraday called outside valid window — ignoring")
             return []
@@ -134,7 +136,7 @@ class IntradayPipeline:
 
     def is_signal_still_valid(self, symbol: str, generated_at: datetime) -> bool:
         """Intraday signals expire after 30 minutes (Loophole 1)."""
-        elapsed = (datetime.now(UTC) - generated_at).total_seconds()
+        elapsed = (datetime.now(IST) - generated_at).total_seconds()
         return elapsed < _SIGNAL_VALIDITY_MINUTES * 60
 
     def is_in_cooldown(self, symbol: str) -> bool:
@@ -142,17 +144,17 @@ class IntradayPipeline:
         last = self._last_signal_time.get(symbol)
         if not last:
             return False
-        elapsed = (datetime.now(UTC) - last).total_seconds()
+        elapsed = (datetime.now(IST) - last).total_seconds()
         return elapsed < _STOCK_COOLDOWN_MINUTES * 60
 
     def record_signal_acted(self, symbol: str) -> None:
-        self._last_signal_time[symbol] = datetime.now(UTC)
+        self._last_signal_time[symbol] = datetime.now(IST)
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _is_entry_window(self, now: datetime) -> bool:
-        open_h, open_m = _MARKET_OPEN_UTC
-        cutoff_h, cutoff_m = _LAST_ENTRY_UTC
+        open_h, open_m = _MARKET_OPEN_IST
+        cutoff_h, cutoff_m = _LAST_ENTRY_IST
         market_open = now.replace(hour=open_h, minute=open_m, second=0, microsecond=0)
         entry_cutoff = now.replace(hour=cutoff_h, minute=cutoff_m, second=0, microsecond=0)
         return market_open <= now <= entry_cutoff

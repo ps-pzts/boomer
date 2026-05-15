@@ -33,11 +33,14 @@ Worked example (verifiable by hand):
             = 0.525
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from brain.signals.long_term import LongTermSignalGenerator
+
+IST = ZoneInfo("Asia/Kolkata")
 
 SYMBOL = "RELIANCE"
 EXCHANGE = "NSE"
@@ -67,7 +70,7 @@ def gen():
 
 
 def test_full_signal_bull_calm(gen):
-    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(IST))
     assert signal is not None
     assert signal.raw_score == pytest.approx(0.525, abs=0.01)
     assert signal.direction.value == "long"
@@ -76,14 +79,14 @@ def test_full_signal_bull_calm(gen):
 
 def test_liquidity_gate_fails_below_5cr(gen):
     features = {**_BASE_FEATURES, "avg_traded_value_20d": 1e7}  # ₹0.1 cr
-    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST))
     assert signal is None
 
 
 def test_promoter_none_when_shares_outstanding_missing(gen):
     features = {**_BASE_FEATURES}
     del features["promoter_holding_pct_change_90d"]
-    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST))
     # Signal still generated; promoter sub-signal contributes 0 (absent)
     assert signal is not None
     # raw_score is lower because promoter weight (0.30) is redistributed
@@ -93,16 +96,16 @@ def test_promoter_none_when_shares_outstanding_missing(gen):
 def test_earnings_none_when_data_missing(gen):
     features = {**_BASE_FEATURES}
     del features["revenue_growth_yoy_pct"]
-    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST))
     assert signal is not None
 
 
 def test_red_flag_penalty_applied(gen):
     features = {**_BASE_FEATURES, "has_auditor_change_90d": 1}
-    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST))
     assert signal is not None
     # Filing score should be heavily penalised; overall score lower
-    normal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(UTC))
+    normal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(IST))
     assert signal.raw_score < normal.raw_score
 
 
@@ -122,6 +125,6 @@ def test_bear_regime_weights_promoter_heaviest(gen):
 
 
 def test_confidence_between_0_and_1(gen):
-    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(IST))
     assert signal is not None
     assert 0.0 <= signal.confidence <= 1.0

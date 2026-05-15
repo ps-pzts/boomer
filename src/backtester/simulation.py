@@ -7,8 +7,9 @@ import math
 import sqlite3
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from backtester.costs import CostModel
 from backtester.models import (
@@ -25,6 +26,8 @@ from executor.models import (
     OrderType,
     PriceBar,
 )
+
+IST = ZoneInfo("Asia/Kolkata")
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +76,7 @@ class BacktestSimulation:
         Persists run, trades, and daily states to DB.
         """
         run_id = str(uuid.uuid4())
-        start_iso = datetime.now(UTC).isoformat()
+        start_iso = datetime.now(IST).replace(tzinfo=None).isoformat()
 
         self._persist_run_start(run_id, start_iso)
         logger.info("Backtest started run_id=%s name=%s", run_id, self._config.name)
@@ -329,7 +332,7 @@ class BacktestSimulation:
         self._db.commit()
 
     def _persist_run_complete(self, run_id: str, summary: BacktestSummary) -> None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             """
             UPDATE backtest_runs SET

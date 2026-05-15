@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from brain.models import (
     RED_FLAG_CATEGORIES,
@@ -20,6 +21,8 @@ from brain.models import (
     RecommendationStatus,
     SignalRecord,
 )
+
+IST = ZoneInfo("Asia/Kolkata")
 
 # Confidence threshold below which the signal is considered dead
 SIGNAL_DEAD_CONFIDENCE = 0.4
@@ -146,7 +149,7 @@ class PositionReviewer:
             regime_favorable=round(regime_component, 1),
             exit_recommended=exit_recommended,
             exit_reason=exit_reason,
-            scored_at=datetime.now(UTC),
+            scored_at=datetime.now(IST).replace(tzinfo=None),
         )
 
     def check_thesis_broken(

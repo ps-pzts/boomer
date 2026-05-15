@@ -64,7 +64,8 @@ class TestOrderManagerRouting:
             mock_dt.now.return_value.__class__ = type(mock_dt.now.return_value)
             import datetime as real_dt
 
-            now = real_dt.datetime(2024, 1, 2, 4, 0, 0, tzinfo=real_dt.UTC)
+            tz_ist = real_dt.timezone(real_dt.timedelta(hours=5, minutes=30))
+            now = real_dt.datetime(2024, 1, 2, 9, 30, 0, tzinfo=tz_ist)
             mock_dt.now.return_value = now
             mock_dt.fromisoformat = real_dt.datetime.fromisoformat
             mock_dt.now.side_effect = lambda tz=None: now
@@ -134,7 +135,8 @@ class TestPreTradeChecks:
         db = om._db
         import datetime as real_dt
 
-        now = real_dt.datetime.now(real_dt.UTC).isoformat()
+        _tz_ist = real_dt.timezone(real_dt.timedelta(hours=5, minutes=30))
+        now = real_dt.datetime.now(_tz_ist).replace(tzinfo=None).isoformat()
         # Manually insert an existing order with same key
         db.execute(
             """INSERT INTO orders
@@ -159,7 +161,8 @@ class TestOrderManagerIdempotency:
         db = om._db
         import datetime as real_dt
 
-        now = real_dt.datetime.now(real_dt.UTC).isoformat()
+        _tz_ist = real_dt.timezone(real_dt.timedelta(hours=5, minutes=30))
+        now = real_dt.datetime.now(_tz_ist).replace(tzinfo=None).isoformat()
         db.execute(
             """INSERT INTO orders
                (order_id, broker_order_id, broker_id, symbol, exchange, side,

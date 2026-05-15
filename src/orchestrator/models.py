@@ -97,10 +97,10 @@ class BotModeStore:
         self, new_mode: BotMode, changed_by: str = "system", reason: str | None = None
     ) -> None:
         import datetime
+        from zoneinfo import ZoneInfo
 
-        now = (
-            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-        )
+        now = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+            .isoformat(timespec="seconds")
         with self._conn() as conn:
             old = conn.execute("SELECT mode FROM bot_mode WHERE id = 1").fetchone()
             old_mode = old["mode"] if old else BotMode.AUTO
@@ -134,10 +134,10 @@ class TaskRunStore:
         self, task_id: str, run_date: str, attempt: int = 1, manual_override: bool = False
     ) -> int:
         import datetime
+        from zoneinfo import ZoneInfo
 
-        now = (
-            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-        )
+        now = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+            .isoformat(timespec="seconds")
         with self._conn() as conn:
             cur = conn.execute(
                 """INSERT INTO task_runs
@@ -156,10 +156,10 @@ class TaskRunStore:
         error_traceback: str | None = None,
     ) -> None:
         import datetime
+        from zoneinfo import ZoneInfo
 
-        now = (
-            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-        )
+        now = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+            .isoformat(timespec="seconds")
         with self._conn() as conn:
             conn.execute(
                 """UPDATE task_runs SET status=?, ended_at=?, error_message=?, error_traceback=?
@@ -200,9 +200,11 @@ class TaskRunStore:
 
     def recent(self, hours: int = 24) -> list[TaskRun]:
         import datetime as _dt
+        from zoneinfo import ZoneInfo
 
-        cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(hours=hours)
-        cutoff_str = cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
+        now_ist = _dt.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+        cutoff = now_ist - _dt.timedelta(hours=hours)
+        cutoff_str = cutoff.isoformat(timespec="seconds")
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM task_runs WHERE started_at >= ? ORDER BY started_at DESC",

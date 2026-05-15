@@ -11,10 +11,11 @@ import json
 import sqlite3
 import uuid
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from brain.models import (
     EntryPlan,
@@ -27,6 +28,7 @@ from brain.models import (
 )
 from capital.models import Track
 
+IST = ZoneInfo("Asia/Kolkata")
 
 class RecommendationPackager:
     """Converts a Stage 3 TradePlan + Stage 3.5 EntryPlan into a Recommendation."""
@@ -69,7 +71,7 @@ class RecommendationPackager:
             operator_modified=False,
             original_params=None,
             portfolio_impact=portfolio_impact,
-            generated_at=datetime.now(UTC),
+            generated_at=datetime.now(IST).replace(tzinfo=None),
             intent=plan.track,
         )
 
@@ -91,7 +93,7 @@ class RecommendationPackager:
             RecommendationStatus.APPROVED_BY_APM if passed else RecommendationStatus.REJECTED_BY_APM
         )
         recommendation.decision_reason = reason if not passed else "all_checks_passed"
-        recommendation.decided_at = datetime.now(UTC)
+        recommendation.decided_at = datetime.now(IST).replace(tzinfo=None)
         return recommendation
 
     def validate_operator_modification(
@@ -211,7 +213,7 @@ class RecommendationStore:
         outcome: RecommendationOutcome,
         recorded_at: datetime | None = None,
     ) -> None:
-        now = (recorded_at or datetime.now(UTC)).isoformat()
+        now = (recorded_at or datetime.now(IST).replace(tzinfo=None)).isoformat()
         with self._conn() as conn:
             conn.execute(
                 """

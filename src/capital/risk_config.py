@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from capital.models import RiskConfig, Track
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def _row_to_risk_config(row: sqlite3.Row) -> RiskConfig:
@@ -76,7 +79,7 @@ class RiskConfigStore:
                 return self.load_version(1)
 
             config_id = str(uuid.uuid4())
-            now = datetime.now(UTC).isoformat()
+            now = datetime.now(IST).replace(tzinfo=None).isoformat()
             conn.execute(
                 """
                 INSERT INTO risk_config (
@@ -135,7 +138,7 @@ class RiskConfigStore:
         with self._conn() as conn:
             config_id = str(uuid.uuid4())
             new_version = current.version + 1
-            now = datetime.now(UTC).isoformat()
+            now = datetime.now(IST).replace(tzinfo=None).isoformat()
             conn.execute(
                 """
                 INSERT INTO risk_config SELECT

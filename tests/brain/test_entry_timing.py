@@ -1,7 +1,8 @@
 """Tests for Stage 3.5 entry timing classifiers."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -13,7 +14,8 @@ from brain.entry_timing import (
 )
 from brain.models import Direction, EntryStrategy, TradePlan
 
-_NOW = datetime(2024, 5, 1, 7, 0, tzinfo=UTC)
+IST = ZoneInfo("Asia/Kolkata")
+_NOW = datetime(2024, 5, 1, 7, 0, tzinfo=IST)
 
 
 def _make_plan(track="long_term"):

@@ -149,7 +149,7 @@ def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object
     from src.brain.signals.swing import SwingSignalGenerator
 
     as_of_date = _dt.date.fromisoformat(run_date)
-    now_utc = _dt.datetime.now(_dt.UTC)
+    now_ist = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=5, minutes=30)))
     regime = _compute_market_regime(db_path, run_date)
     fs = FeatureStore(db_path)
 
@@ -171,7 +171,7 @@ def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object
             if not features:
                 continue
             for gen in generators:
-                signal = gen.generate(sym, "NSE", features, regime, now_utc)
+                signal = gen.generate(sym, "NSE", features, regime, now_ist)
                 if signal is not None:
                     _save_signal(conn, signal)  # type: ignore[arg-type]
                     saved += 1
@@ -206,7 +206,7 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
     from src.capital.risk_config import RiskConfigStore
     from src.capital.state import CapitalStateManager
 
-    now_utc = _dt.datetime.now(_dt.UTC)
+    now_ist = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=5, minutes=30)))
 
     # Load capital and risk config — both required for trade sizing.
     capital_mgr = CapitalStateManager(db_path)
@@ -225,7 +225,7 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
 
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
-    # signals table has generated_at (UTC ISO timestamp), no status column.
+    # signals table has generated_at (IST ISO timestamp), no status column.
     today_signals = conn.execute(
         "SELECT * FROM signals WHERE generated_at LIKE ? ORDER BY confidence DESC",
         (f"{run_date}%",),
@@ -279,7 +279,7 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
                 atr_14d=atr_14d,
                 bucket_capital=bucket_capital,
                 risk_config=risk_config,
-                generated_at=now_utc,
+                generated_at=now_ist,
             )
 
             if plan.decision != "proceed":
@@ -322,7 +322,7 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
                     plan.decision,
                     plan.skip_reason,
                     plan.entry_strategy_id.value if plan.entry_strategy_id else None,
-                    now_utc.isoformat(),
+                    now_ist.isoformat(),
                 ),
             )
             conn.commit()

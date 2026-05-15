@@ -8,13 +8,16 @@ Key properties:
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from brain.models import RED_FLAG_CATEGORIES, Direction, SignalRecord
 from brain.position_review import PositionRecord, PositionReviewer
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def _make_position(
@@ -35,7 +38,7 @@ def _make_position(
         sector="Finance",
         entry_price=entry,
         current_price=current,
-        entry_date=datetime(2024, 3, 1, tzinfo=UTC),
+        entry_date=datetime(2024, 3, 1, tzinfo=IST),
         expected_target=Decimal("1200"),
         original_stop=Decimal("950"),
         signal_id=str(uuid.uuid4()),
@@ -65,7 +68,7 @@ class TestHealthScore:
             regime_at_signal="bull_calm",
             contributing_signals=[],
             feature_snapshot={},
-            generated_at=datetime.now(UTC),
+            generated_at=datetime.now(IST),
         )
         score = reviewer.health_score(pos, sig, "bull_calm")
         assert score.total_score > 50
@@ -128,7 +131,7 @@ class TestThesisBroken:
             regime_at_signal="bear",
             contributing_signals=[],
             feature_snapshot={},
-            generated_at=datetime.now(UTC),
+            generated_at=datetime.now(IST),
         )
         broken, reason = reviewer.check_thesis_broken(pos, sig, {})
         assert broken is True
@@ -153,7 +156,7 @@ class TestThesisBroken:
             regime_at_signal="bull_calm",
             contributing_signals=[],
             feature_snapshot={},
-            generated_at=datetime.now(UTC),
+            generated_at=datetime.now(IST),
         )
         broken, _ = reviewer.check_thesis_broken(pos, sig, {})
         assert broken is False
@@ -165,7 +168,7 @@ class TestMaterialFilingHandler:
         pos_list = [pos]
         prices = {("HDFC", "NSE"): Decimal("1050")}
         recs = reviewer.handle_material_filing(
-            "fraud_disclosure", "HDFC", "NSE", pos_list, prices, datetime.now(UTC)
+            "fraud_disclosure", "HDFC", "NSE", pos_list, prices, datetime.now(IST)
         )
         assert len(recs) == 1
         assert "fraud_disclosure" in recs[0].decision_reason
@@ -174,19 +177,19 @@ class TestMaterialFilingHandler:
     def test_non_red_flag_no_exit(self, reviewer):
         pos = _make_position()
         recs = reviewer.handle_material_filing(
-            "quarterly_results", "HDFC", "NSE", [pos], {}, datetime.now(UTC)
+            "quarterly_results", "HDFC", "NSE", [pos], {}, datetime.now(IST)
         )
         assert recs == []
 
     def test_unaffected_symbol_no_exit(self, reviewer):
         pos = _make_position()  # HDFC
         recs = reviewer.handle_material_filing(
-            "fraud_disclosure", "INFY", "NSE", [pos], {}, datetime.now(UTC)
+            "fraud_disclosure", "INFY", "NSE", [pos], {}, datetime.now(IST)
         )
         assert recs == []
 
     def test_all_red_flag_categories_trigger(self, reviewer):
         for cat in RED_FLAG_CATEGORIES:
             pos = _make_position()
-            recs = reviewer.handle_material_filing(cat, "HDFC", "NSE", [pos], {}, datetime.now(UTC))
+            recs = reviewer.handle_material_filing(cat, "HDFC", "NSE", [pos], {}, datetime.now(IST))
             assert len(recs) == 1, f"category {cat!r} should trigger exit"

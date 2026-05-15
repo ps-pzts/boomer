@@ -19,12 +19,17 @@ UTC = ZoneInfo("UTC")
 
 
 def cron_matches(expr: str, dt: datetime.datetime) -> bool:
-    """Return True if `dt` (UTC) matches the cron expression (interpreted as UTC)."""
+    """Return True if `dt` matches the cron expression (interpreted as IST).
+
+    All schedule strings in tasks.py are written in IST. `dt` may be any
+    timezone-aware datetime — it is converted to IST before evaluation.
+    """
+    ist_dt = dt.astimezone(IST)
     try:
         from croniter import croniter  # type: ignore[import]
 
-        cron = croniter(expr, dt - datetime.timedelta(minutes=1))
-        return cron.get_next(datetime.datetime) <= dt
+        cron = croniter(expr, ist_dt - datetime.timedelta(minutes=1))
+        return cron.get_next(datetime.datetime) <= ist_dt
     except ImportError:
         pass
     # Minimal fallback: parse standard 5-field cron
@@ -33,11 +38,11 @@ def cron_matches(expr: str, dt: datetime.datetime) -> bool:
         return False
     minute, hour, dom, month, dow = parts
     return (
-        _field_matches(minute, dt.minute)
-        and _field_matches(hour, dt.hour)
-        and _field_matches(dom, dt.day)
-        and _field_matches(month, dt.month)
-        and _field_matches(dow, dt.weekday() + 1 if dt.weekday() < 6 else 0)  # Mon=1..Sun=0
+        _field_matches(minute, ist_dt.minute)
+        and _field_matches(hour, ist_dt.hour)
+        and _field_matches(dom, ist_dt.day)
+        and _field_matches(month, ist_dt.month)
+        and _field_matches(dow, ist_dt.weekday() + 1 if ist_dt.weekday() < 6 else 0)  # Mon=1..Sun=0
     )
 
 
@@ -92,7 +97,7 @@ class Scheduler:
         self._intraday_fail_count: dict[str, int] = {}
 
     def should_run(
-        self, task: TaskDefinition, now_utc: datetime.datetime, run_date: str
+        self, task: TaskDefinition, now: datetime.datetime, run_date: str
     ) -> tuple[bool, str]:
         """Return (should_run, reason)."""
         mode = self._mode_store.current_mode()
@@ -106,7 +111,7 @@ class Scheduler:
         if not task.run_on_holiday and not is_trading_day(self._db_path, run_date):
             return False, "holiday"
 
-        if not cron_matches(task.schedule, now_utc):
+        if not cron_matches(task.schedule, now):
             return False, "cron_no_match"
 
         # Don't re-run a successful task for the same run_date
@@ -132,7 +137,7 @@ class Scheduler:
         else:
             self._intraday_fail_count[run_date] = 0
 
-    def current_run_date(self, now_utc: datetime.datetime) -> str:
+    def current_run_date(self, now: datetime.datetime) -> str:
         """Run date is the IST calendar date."""
-        ist_now = now_utc.astimezone(IST)
+        ist_now = now.astimezone(IST)
         return ist_now.date().isoformat()

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import datetime
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 from executor.models import (
     BrokerFunds,
@@ -12,6 +13,7 @@ from executor.models import (
 )
 from executor.reconciliation import ReconciliationLoop
 
+IST = ZoneInfo("Asia/Kolkata")
 
 def _make_db() -> sqlite3.Connection:
     db = sqlite3.connect(":memory:")
@@ -26,7 +28,7 @@ def _make_db() -> sqlite3.Connection:
 def _seed_position(
     db: sqlite3.Connection, symbol: str, broker_id: str, track: str = "swing"
 ) -> None:
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(IST).isoformat()
     db.execute(
         """INSERT INTO positions
         (position_id, symbol, exchange, track, bucket_id, broker_id, quantity,

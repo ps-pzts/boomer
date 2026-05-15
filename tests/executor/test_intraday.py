@@ -1,22 +1,24 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 from executor.intraday import IntradayPipeline
 
+IST = ZoneInfo("Asia/Kolkata")
 
 class TestIntradaySignalValidity:
     def test_signal_within_30_min_is_valid(self):
         pipeline = IntradayPipeline(order_manager=MagicMock(), position_manager=MagicMock())
-        generated = datetime.now(UTC)
+        generated = datetime.now(IST)
         assert pipeline.is_signal_still_valid("RELIANCE", generated) is True
 
     def test_signal_older_than_30_min_is_invalid(self):
         pipeline = IntradayPipeline(order_manager=MagicMock(), position_manager=MagicMock())
         from datetime import timedelta
 
-        generated = datetime.now(UTC) - timedelta(minutes=31)
+        generated = datetime.now(IST) - timedelta(minutes=31)
         assert pipeline.is_signal_still_valid("RELIANCE", generated) is False
 
 

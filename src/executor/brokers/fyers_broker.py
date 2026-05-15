@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.models import (
@@ -22,6 +23,8 @@ from executor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 # fyers-apiv3 order type codes
 _FYERS_ORDER_TYPE = {
@@ -219,7 +222,7 @@ class FyersBroker(Broker):
 
     def place_gtt(self, request: GttRequest) -> str:
         self._ensure_authenticated()
-        expiry = (datetime.now(UTC) + timedelta(days=request.valid_days)).strftime("%Y-%m-%d")
+        expiry = (datetime.now(IST) + timedelta(days=request.valid_days)).strftime("%Y-%m-%d")
 
         if request.gtt_type == GttType.SINGLE:
             data = {

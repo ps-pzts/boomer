@@ -17,10 +17,13 @@ import logging
 import os
 import sqlite3
 import threading
+from zoneinfo import ZoneInfo
 
 from .email_alert import format_email_subject, send_email
 from .models import Alert, AlertSeverity
 from .telegram import format_alert_text, send_telegram
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +68,7 @@ class AlertManager:
         self._warn_batch_hours = warn_batch_hours
         self._warn_buffer: list[Alert] = []
         self._last_warn_flush: datetime.datetime = datetime.datetime(
-            2000, 1, 1, tzinfo=datetime.UTC
+            2000, 1, 1, tzinfo=_IST
         )
         self._lock = threading.Lock()
 
@@ -95,7 +98,7 @@ class AlertManager:
         alert = Alert(AlertSeverity.WARN, title, body, source_task_id)
         with self._lock:
             self._warn_buffer.append(alert)
-            now = datetime.datetime.now(datetime.UTC)
+            now = datetime.datetime.now(_IST)
             hours_since = (now - self._last_warn_flush).total_seconds() / 3600
             if hours_since >= self._warn_batch_hours:
                 self._flush_warn_buffer(now)
@@ -171,7 +174,7 @@ class AlertManager:
 
     def _persist(self, alert: Alert) -> None:
         now = (
-            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+            datetime.datetime.now(_IST).replace(tzinfo=None).isoformat(timespec="seconds")
         )
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)
@@ -197,7 +200,7 @@ class AlertManager:
 
     def _record_missed_critical(self, alert: Alert) -> None:
         now = (
-            datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+            datetime.datetime.now(_IST).replace(tzinfo=None).isoformat(timespec="seconds")
         )
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)

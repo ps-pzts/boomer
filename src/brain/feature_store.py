@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
+IST = ZoneInfo("Asia/Kolkata")
 
 class FeatureStore:
     """Stage 0 — point-in-time feature storage and retrieval.
@@ -38,7 +40,7 @@ class FeatureStore:
     ) -> str:
         """Write a feature row. Supersedes any existing row for same symbol+name+valid_from."""
         feature_id = str(uuid.uuid4())
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         valid_from_str = valid_from.isoformat()
         observed_str = source_max_observed_at.isoformat()
         metadata_json = json.dumps(metadata) if metadata else None

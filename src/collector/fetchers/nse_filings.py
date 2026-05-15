@@ -12,10 +12,11 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-from collector.base import BaseFetcher, _fmt_dt, _now_utc
+from collector.base import BaseFetcher, _fmt_dt, _now_ist
 from collector.models import (
     DataSource,
     Exchange,
@@ -26,6 +27,8 @@ from collector.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 _NSE_HOMEPAGE = "https://www.nseindia.com"
 _NSE_ANNOUNCEMENTS_URL = (
@@ -67,7 +70,7 @@ class NseFilingsFetcher(BaseFetcher):
             status_code=resp.status_code,
             body=body,
             content_hash=hashlib.sha256(body).hexdigest(),
-            fetched_at=_now_utc(),
+            fetched_at=_now_ist(),
         )
 
     def validate(self, result: FetchResult) -> None:
@@ -145,17 +148,17 @@ class NseFilingsFetcher(BaseFetcher):
     def _refresh_cookies_if_needed(self) -> None:
         """Hit NSE homepage to get a valid session cookie if stale or absent."""
         if self._cookie_refreshed_at is not None:
-            age_s = (_now_utc() - self._cookie_refreshed_at).total_seconds()
+            age_s = (_now_ist() - self._cookie_refreshed_at).total_seconds()
             if age_s < 1800:  # reuse cookie for 30 minutes
                 return
         self._session.get(_NSE_HOMEPAGE, timeout=15)
-        self._cookie_refreshed_at = _now_utc()
+        self._cookie_refreshed_at = _now_ist()
         logger.debug("NSE session cookies refreshed")
 
 
 def _parse_nse_datetime(dt_str: str) -> tuple[str, str | None]:
     if not dt_str:
-        return datetime.now(UTC).date().isoformat(), None
+        return datetime.now(IST).date().isoformat(), None
     dt_str = dt_str.strip()
     fmts = ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
     for fmt in fmts:
