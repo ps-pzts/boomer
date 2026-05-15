@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+from zoneinfo import ZoneInfo
+
+_IST = ZoneInfo("Asia/Kolkata")
 import sqlite3
 import threading
 import time
@@ -96,7 +99,7 @@ def test_crash_recovery_marks_running_as_interrupted(tmp_path):
     assert row is not None and row.status.value == "RUNNING"
 
     # Re-open as orchestrator would: mark RUNNING → INTERRUPTED
-    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    now = datetime.datetime.now(_IST).replace(tzinfo=None).isoformat(timespec="seconds")
     conn = sqlite3.connect(db_path)
     cur = conn.execute(
         "UPDATE task_runs SET status='INTERRUPTED', ended_at=? WHERE status='RUNNING'", (now,)
@@ -235,7 +238,10 @@ def test_scheduler_already_succeeded_blocks_rerun(tmp_path):
     run_id = run_store.create("probe_task", run_date, attempt=1)
     run_store.update(run_id, "SUCCESS")
 
-    now_utc = dt.datetime(2026, 1, 12, 10, 0, 0, tzinfo=dt.UTC)
+    # schedule "0 10 * * 1-5" is IST 10:00 — pass IST-aware datetime so cron matches
+    from zoneinfo import ZoneInfo
+
+    now_utc = dt.datetime(2026, 1, 12, 10, 0, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
     should, reason = scheduler.should_run(task, now_utc, run_date)
 
     assert should is False
@@ -342,7 +348,8 @@ def test_fetcher_404_skips_without_retrying(tmp_path):
 
         def transport(self, url, **kwargs):
             import hashlib
-            from datetime import UTC, datetime
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
 
             from src.collector.models import FetchResult
 
@@ -353,7 +360,7 @@ def test_fetcher_404_skips_without_retrying(tmp_path):
                 status_code=404,
                 body=body,
                 content_hash=hashlib.sha256(body).hexdigest(),
-                fetched_at=datetime.now(UTC),
+                fetched_at=datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None),
             )
 
     db_path = _make_db(tmp_path)
@@ -401,7 +408,8 @@ def test_archive_deduplicates_on_content_hash(tmp_path):
     fetcher = MinimalFetcher(db=conn, raw_dir=tmp_path / "raw")
 
     body = b"SYMBOL,CLOSE\nRELIANCE,2500\n"
-    from datetime import UTC, datetime
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     result = FetchResult(
         source=DataSource.PRICES,
@@ -409,7 +417,7 @@ def test_archive_deduplicates_on_content_hash(tmp_path):
         status_code=200,
         body=body,
         content_hash=hashlib.sha256(body).hexdigest(),
-        fetched_at=datetime.now(UTC),
+        fetched_at=datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None),
     )
 
     row1 = fetcher.archive(result)
@@ -447,7 +455,8 @@ def test_archive_stores_date_params_as_string(tmp_path):
 
     body = b"oi,data"
     trade_date = dt.date(2026, 5, 9)
-    from datetime import UTC, datetime
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     result = FetchResult(
         source=DataSource.FO_OI,
@@ -455,7 +464,7 @@ def test_archive_stores_date_params_as_string(tmp_path):
         status_code=200,
         body=body,
         content_hash=hashlib.sha256(body).hexdigest(),
-        fetched_at=datetime.now(UTC),
+        fetched_at=datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None),
         params={"trade_date": trade_date},
     )
 

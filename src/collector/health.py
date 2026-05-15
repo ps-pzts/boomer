@@ -11,9 +11,12 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from collector.models import CollectionRunRow, DataSource, RunStatus
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 class CollectionRunStore:
@@ -24,7 +27,7 @@ class CollectionRunStore:
         row = CollectionRunRow(
             run_id=str(uuid.uuid4()),
             source=source,
-            started_at=_now_utc(),
+            started_at=_now_ist(),
         )
         self._db.execute(
             """
@@ -39,7 +42,7 @@ class CollectionRunStore:
         return row
 
     def finish(self, row: CollectionRunRow) -> None:
-        row.ended_at = _now_utc()
+        row.ended_at = _now_ist()
         self._db.execute(
             """
             UPDATE collection_runs
@@ -113,8 +116,8 @@ class CollectionRunStore:
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 
-def _now_utc() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+def _now_ist() -> datetime:
+    return datetime.now(IST).replace(tzinfo=None)
 
 
 def _fmt_dt(dt: datetime) -> str:

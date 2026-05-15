@@ -1,9 +1,10 @@
 """Tests for Stage 5 RecommendationPackager and RecommendationStore."""
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -18,7 +19,9 @@ from brain.models import (
 from brain.packager import RecommendationPackager, RecommendationStore
 from db.migrations import run_migrations
 
-_NOW = datetime(2024, 6, 1, 8, 0, tzinfo=UTC)
+IST = ZoneInfo("Asia/Kolkata")
+
+_NOW = datetime(2024, 6, 1, 8, 0, tzinfo=IST)
 _MIGRATIONS = Path(__file__).parents[2] / "migrations"
 
 
@@ -119,7 +122,7 @@ class TestPackager:
         assert rec.position_size_shares == 12
 
 
-_OUTCOME_DATE = datetime(2024, 6, 1, 9, 0, tzinfo=UTC)
+_OUTCOME_DATE = datetime(2024, 6, 1, 9, 0, tzinfo=IST)
 
 
 class TestRecommendationStore:

@@ -256,7 +256,7 @@ async def set_mode(mode: Annotated[str, Form()], _: AuthDep) -> RedirectResponse
     allowed = {"auto", "paused", "emergency_stop"}
     if mode not in allowed:
         raise HTTPException(status_code=400, detail=f"Invalid mode. Allowed: {allowed}")
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    now = datetime.datetime.now(IST).replace(tzinfo=None).isoformat(timespec="seconds")
     conn = _write_conn()
     try:
         old = conn.execute("SELECT mode FROM bot_mode WHERE id=1").fetchone()
@@ -281,7 +281,7 @@ async def set_mode(mode: Annotated[str, Form()], _: AuthDep) -> RedirectResponse
 
 @app.post("/alerts/{alert_id}/acknowledge")
 async def ack_missed_alert(alert_id: int, _: AuthDep) -> dict:
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    now = datetime.datetime.now(IST).replace(tzinfo=None).isoformat(timespec="seconds")
     conn = _write_conn()
     try:
         conn.execute(

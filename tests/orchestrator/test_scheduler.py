@@ -2,6 +2,7 @@
 
 import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -16,6 +17,8 @@ from src.orchestrator.models import (
     TaskStatus,
 )
 from src.orchestrator.scheduler import Scheduler, cron_matches, dependency_met
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 @pytest.fixture()
@@ -51,36 +54,36 @@ def _make_task(
 
 class TestCronMatches:
     def test_every_minute_matches(self) -> None:
-        dt = datetime.datetime(2026, 5, 10, 7, 0, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 10, 9, 0, 0, tzinfo=IST)
         assert cron_matches("* * * * *", dt) is True
 
     def test_specific_hour_minute_matches(self) -> None:
-        dt = datetime.datetime(2026, 5, 10, 7, 0, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 10, 7, 0, 0, tzinfo=IST)  # IST 07:00
         assert cron_matches("0 7 * * *", dt) is True
 
     def test_specific_hour_minute_no_match(self) -> None:
-        dt = datetime.datetime(2026, 5, 10, 7, 1, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 10, 7, 1, 0, tzinfo=IST)  # IST 07:01
         assert cron_matches("0 7 * * *", dt) is False
 
     def test_every_30_min_matches_at_00(self) -> None:
-        dt = datetime.datetime(2026, 5, 10, 9, 0, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 10, 9, 0, 0, tzinfo=IST)
         assert cron_matches("*/30 * * * *", dt) is True
 
     def test_every_30_min_matches_at_30(self) -> None:
-        dt = datetime.datetime(2026, 5, 10, 9, 30, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 10, 9, 30, 0, tzinfo=IST)
         assert cron_matches("*/30 * * * *", dt) is True
 
     def test_every_30_min_no_match_at_15(self) -> None:
-        dt = datetime.datetime(2026, 5, 10, 9, 15, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 10, 9, 15, 0, tzinfo=IST)
         assert cron_matches("*/30 * * * *", dt) is False
 
     def test_weekday_range_monday(self) -> None:
-        mon = datetime.datetime(2026, 5, 11, 6, 30, tzinfo=datetime.UTC)  # Monday
-        assert cron_matches("30 6 * * 1-5", mon) is True
+        mon = datetime.datetime(2026, 5, 11, 9, 30, tzinfo=IST)  # Monday IST
+        assert cron_matches("30 9 * * 1-5", mon) is True
 
     def test_weekday_range_saturday_no_match(self) -> None:
-        sat = datetime.datetime(2026, 5, 9, 6, 30, tzinfo=datetime.UTC)  # Saturday
-        assert cron_matches("30 6 * * 1-5", sat) is False
+        sat = datetime.datetime(2026, 5, 9, 9, 30, tzinfo=IST)  # Saturday IST
+        assert cron_matches("30 9 * * 1-5", sat) is False
 
 
 # ─── Scheduler.should_run ─────────────────────────────────────────────────────
@@ -97,7 +100,7 @@ class TestSchedulerShouldRun:
 
     def test_cron_no_match_blocks(self, db_path: Path) -> None:
         s = self._make_scheduler(db_path)
-        dt = datetime.datetime(2026, 5, 11, 6, 0, tzinfo=datetime.UTC)  # 06:00 not 07:00
+        dt = datetime.datetime(2026, 5, 11, 6, 0, tzinfo=IST)  # 06:00 IST — no match for "0 7 *"
         ok, reason = s.should_run(s._tasks["simple_task"], dt, "2026-05-11")
         assert not ok
         assert "cron_no_match" in reason
@@ -107,7 +110,7 @@ class TestSchedulerShouldRun:
         mode_store.set_mode(BotMode.EMERGENCY_STOP)
         s = self._make_scheduler(db_path)
         s._mode_store = mode_store
-        dt = datetime.datetime(2026, 5, 11, 7, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 11, 7, 0, tzinfo=IST)
         ok, reason = s.should_run(s._tasks["simple_task"], dt, "2026-05-11")
         assert not ok
         assert "emergency_stop" in reason
@@ -117,7 +120,7 @@ class TestSchedulerShouldRun:
         mode_store.set_mode(BotMode.PAUSED)
         s = self._make_scheduler(db_path)
         s._mode_store = mode_store
-        dt = datetime.datetime(2026, 5, 11, 7, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 11, 7, 0, tzinfo=IST)
         ok, reason = s.should_run(s._tasks["simple_task"], dt, "2026-05-11")
         assert not ok
         assert "paused" in reason
@@ -127,20 +130,20 @@ class TestSchedulerShouldRun:
         mode_store.set_mode(BotMode.PAUSED)
         s = self._make_scheduler(db_path)
         s._mode_store = mode_store
-        dt = datetime.datetime(2026, 5, 11, 9, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 11, 9, 0, tzinfo=IST)
         ok, _ = s.should_run(s._tasks["trailing_task"], dt, "2026-05-11")
         assert ok
 
     def test_holiday_blocks_non_holiday_task(self, db_path: Path) -> None:
         s = self._make_scheduler(db_path)
-        dt = datetime.datetime(2026, 1, 26, 7, 0, tzinfo=datetime.UTC)  # Republic Day
+        dt = datetime.datetime(2026, 1, 26, 7, 0, tzinfo=IST)  # IST 07:00 — Republic Day
         ok, reason = s.should_run(s._tasks["simple_task"], dt, "2026-01-26")
         assert not ok
         assert "holiday" in reason
 
     def test_holiday_allows_holiday_task(self, db_path: Path) -> None:
         s = self._make_scheduler(db_path)
-        dt = datetime.datetime(2026, 1, 26, 0, 0, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 1, 26, 0, 0, tzinfo=IST)
         ok, _ = s.should_run(s._tasks["holiday_task"], dt, "2026-01-26")
         assert ok
 
@@ -149,7 +152,8 @@ class TestSchedulerShouldRun:
         run_id = run_store.create("simple_task", "2026-05-11")
         run_store.update(run_id, TaskStatus.SUCCESS)
         s = self._make_scheduler(db_path)
-        dt = datetime.datetime(2026, 5, 11, 7, 0, tzinfo=datetime.UTC)
+        # simple_task schedule is "0 7 * * 1-5" (IST) — pass IST 07:00 to match cron
+        dt = datetime.datetime(2026, 5, 11, 7, 0, tzinfo=IST)
         ok, reason = s.should_run(s._tasks["simple_task"], dt, "2026-05-11")
         assert not ok
         assert "already_succeeded" in reason
@@ -158,7 +162,7 @@ class TestSchedulerShouldRun:
         tasks = {"intraday_cycle": _make_task("intraday_cycle", "* * * * *")}
         s = Scheduler(tasks, TaskRunStore(db_path), BotModeStore(db_path), str(db_path))
         s._intraday_fail_count["2026-05-11"] = 3
-        dt = datetime.datetime(2026, 5, 11, 9, 30, tzinfo=datetime.UTC)
+        dt = datetime.datetime(2026, 5, 11, 9, 30, tzinfo=IST)
         ok, reason = s.should_run(s._tasks["intraday_cycle"], dt, "2026-05-11")
         assert not ok
         assert "disabled" in reason

@@ -3,10 +3,12 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+IST = ZoneInfo("Asia/Kolkata")
 
 @dataclass(frozen=True)
 class HarvestResult:
@@ -116,7 +118,7 @@ class SelfFundingHarvest:
             return result
 
         event_id = str(uuid.uuid4())
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
 
         with self._conn() as conn:
             conn.execute(

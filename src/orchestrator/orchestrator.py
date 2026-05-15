@@ -20,6 +20,7 @@ import os
 import signal
 import sys
 import threading
+from zoneinfo import ZoneInfo
 
 from ..banner import log_boot_sequence, log_crash_recovery, log_shutdown
 from .models import BotModeStore, TaskRunStore
@@ -28,6 +29,8 @@ from .task_runner import execute_with_retry
 from .tasks import build_task_registry
 
 logger = logging.getLogger(__name__)
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 
 class Orchestrator:
@@ -81,8 +84,10 @@ class Orchestrator:
         """On startup, mark any RUNNING tasks from previous run as INTERRUPTED."""
         import datetime as dt
         import sqlite3
+        from zoneinfo import ZoneInfo
 
-        now = dt.datetime.now(dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        now = dt.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+            .isoformat(timespec="seconds")
         conn = sqlite3.connect(self._db_path, timeout=5)
         try:
             cur = conn.execute(
@@ -98,8 +103,8 @@ class Orchestrator:
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
-            now_utc = datetime.datetime.now(datetime.UTC)
-            run_date = self._scheduler.current_run_date(now_utc)
+            now_ist = datetime.datetime.now(_IST)
+            run_date = self._scheduler.current_run_date(now_ist)
 
             for task_id, task_def in self._tasks.items():
                 if task_id in self._running_tasks and self._running_tasks[task_id].is_alive():
@@ -107,15 +112,15 @@ class Orchestrator:
 
                 # Prevent double-firing within the same cron minute (poll runs every 30s).
                 last = self._last_dispatched.get(task_id)
-                if last and (now_utc - last).total_seconds() < 60:
+                if last and (now_ist - last).total_seconds() < 60:
                     continue
 
-                should, reason = self._scheduler.should_run(task_def, now_utc, run_date)
+                should, reason = self._scheduler.should_run(task_def, now_ist, run_date)
                 if not should:
                     continue
 
                 logger.info("orchestrator_dispatch task_id=%s run_date=%s", task_id, run_date)
-                self._last_dispatched[task_id] = now_utc
+                self._last_dispatched[task_id] = now_ist
                 t = threading.Thread(
                     target=self._run_task,
                     args=(task_def, run_date),

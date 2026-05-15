@@ -4,7 +4,8 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.models import (
@@ -17,6 +18,8 @@ from executor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 _UNPROTECTED_RETRY_INTERVAL_SECONDS = 60
 _UNPROTECTED_FORCE_CLOSE_SECONDS = 600  # Loophole 3: force-close after 10 min
@@ -61,7 +64,7 @@ class GttManager:
 
         broker_gtt_id = broker.place_gtt(request)
         gtt_id = str(uuid.uuid4())
-        now = datetime.now(UTC)
+        now = datetime.now(IST)
         valid_until = now + timedelta(days=request.valid_days)
 
         self._db.execute(
@@ -130,7 +133,8 @@ class GttManager:
         self._db.execute(
             "UPDATE gtt_orders"
             " SET sl_trigger_price=?, sl_limit_price=?, last_checked_at=? WHERE gtt_id=?",
-            (new_sl, new_sl * 0.995, datetime.now(UTC).isoformat(), position.gtt_oco_id),
+            (new_sl, new_sl * 0.995, datetime.now(IST).replace(tzinfo=None).isoformat(),
+             position.gtt_oco_id),
         )
         self._db.commit()
         logger.info(
@@ -151,7 +155,7 @@ class GttManager:
             str(g.get("id", g.get("trigger_id", g.get("broker_gtt_id", "")))): g
             for g in broker.list_gtts()
         }
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         triggered = []
 
         rows = self._db.execute(
@@ -199,13 +203,13 @@ class GttManager:
 
         om: OrderManager = order_manager  # type: ignore[assignment]
         force_closed: list[str] = []
-        now = datetime.now(UTC)
+        now = datetime.now(IST)
 
         for pos in positions:
             if not pos.unprotected_flag or not pos.is_open:
                 continue
             unprotected_since = pos.unprotected_since or pos.entry_at
-            elapsed = (now - unprotected_since.replace(tzinfo=UTC)).total_seconds()
+            elapsed = (now - unprotected_since.replace(tzinfo=IST)).total_seconds()
             if elapsed >= _UNPROTECTED_FORCE_CLOSE_SECONDS:
                 logger.error(
                     "Force-closing unprotected position %s %s — 10 min unprotected",
@@ -282,7 +286,7 @@ class GttManager:
 
     def _raise_gtt_alert(self, broker_id: BrokerName, gtt_id: str, message: str) -> None:
         alert_id = str(uuid.uuid4())
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             """
             INSERT INTO reconciliation_alerts

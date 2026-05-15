@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -21,6 +22,8 @@ from capital.pre_trade import PreTradeChecker
 from capital.risk_config import RiskConfigStore
 from capital.state import CapitalStateManager
 from db.migrations import run_migrations
+
+IST = ZoneInfo("Asia/Kolkata")
 
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
@@ -95,7 +98,7 @@ def _make_request(
         signal_confidence=confidence,
         sector="Energy",
         current_regime=regime,
-        requested_at=datetime(2026, 1, 2, 4, 0, tzinfo=UTC),
+        requested_at=datetime(2026, 1, 2, 4, 0, tzinfo=IST),
     )
 
 
@@ -219,7 +222,7 @@ def test_single_stock_concentration_breach_rejected(
         signal_confidence=Decimal("0.65"),
         sector="Energy",
         current_regime=Regime.BULL_CALM,
-        requested_at=datetime(2026, 1, 2, 4, 0, tzinfo=UTC),
+        requested_at=datetime(2026, 1, 2, 4, 0, tzinfo=IST),
         existing_position_value=existing,
         pending_order_value=Decimal("0"),
     )

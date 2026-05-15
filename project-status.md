@@ -6,11 +6,11 @@
 
 ---
 
-## Status: All phases complete — CI/CD pipeline in place
+## Status: All phases complete — UTC→IST migration done
 
-**Current phase:** Phase 5 complete. GitHub Actions CI (lint + test on every PR) and manual CD (SSH deploy with pre-flight checks) added. 391 tests, lint clean.
+**Current phase:** Phase 5 complete. Codebase migrated from UTC to IST throughout (India-only system, no DST). 325 tests pass, lint clean.
 
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-16
 
 ---
 
@@ -26,6 +26,7 @@
 | Design | open-questions.md | 24 open questions organized by phase |
 | Design | design-evolution.md | Narrative history: 18 issues + 7 hard blockers resolved |
 | Infra | CLAUDE.md | Project rules: git workflow, tests, PRs, file limits, context continuity |
+| Infra | UTC→IST migration | All timestamps now use IST (Asia/Kolkata) throughout — DB writes, market hours checks, cron comparisons, all tests. CLAUDE.md Rule 9 updated: "All timestamps use IST, never UTC." Root cause: system is India-only with no DST; UTC was unnecessary overhead. |
 
 ---
 

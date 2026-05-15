@@ -28,8 +28,9 @@ Worked example (verifiable by hand):
   Decision: proceed
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -37,7 +38,8 @@ from brain.models import Direction, SkipReason
 from brain.trade_decision import TradePlanGenerator
 from capital.models import RiskConfig
 
-GENERATED_AT = datetime(2024, 4, 1, 7, 0, tzinfo=UTC)
+IST = ZoneInfo("Asia/Kolkata")
+GENERATED_AT = datetime(2024, 4, 1, 7, 0, tzinfo=IST)
 
 
 def _make_risk_config() -> RiskConfig:

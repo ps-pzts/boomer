@@ -1,10 +1,13 @@
 """Tests for IntradaySignalGenerator."""
 
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from brain.signals.intraday import IntradaySignalGenerator
+
+IST = ZoneInfo("Asia/Kolkata")
 
 SYMBOL = "NIFTY_STOCK"
 EXCHANGE = "NSE"
@@ -30,7 +33,7 @@ def gen():
 
 
 def test_generates_signal(gen):
-    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(IST))
     assert signal is not None
     assert signal.track == "intraday"
 
@@ -39,18 +42,18 @@ def test_liquidity_gate_10cr(gen):
     features = {**_BASE_FEATURES, "avg_traded_value_20d": 5e9}  # ₹50 cr but below ₹10 cr
     # ₹50 cr < ₹10 cr? No — 5e9 = ₹500 cr. Let me use a value below ₹10 cr.
     features["avg_traded_value_20d"] = 5e7  # ₹0.5 cr
-    assert gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(UTC)) is None
+    assert gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST)) is None
 
 
 def test_large_gap_scored_zero(gen):
     features = {**_BASE_FEATURES, "premarket_gap_pct": 3.5}
-    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST))
     # Large gap signal is neutralised — overall score should still compute but gap component = 0
     assert signal is not None
 
 
 def test_confidence_between_0_and_1(gen):
-    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(UTC))
+    signal = gen.generate(SYMBOL, EXCHANGE, _BASE_FEATURES, "bull_calm", datetime.now(IST))
     assert 0.0 <= signal.confidence <= 1.0
 
 

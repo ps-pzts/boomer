@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -15,6 +16,7 @@ from executor.models import (
     PositionRecord,
 )
 
+IST = ZoneInfo("Asia/Kolkata")
 
 def _make_db() -> sqlite3.Connection:
     db = sqlite3.connect(":memory:")
@@ -29,7 +31,7 @@ def _make_db() -> sqlite3.Connection:
 def _make_position(
     symbol: str = "RELIANCE", atr: float = 20.0, sl: float = 2400.0
 ) -> PositionRecord:
-    now = datetime.now(UTC)
+    now = datetime.now(IST)
     return PositionRecord(
         position_id="pos-1",
         symbol=symbol,

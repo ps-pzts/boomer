@@ -15,7 +15,7 @@ import io
 import logging
 import sqlite3
 
-from collector.base import BaseFetcher, _fmt_dt, _now_utc
+from collector.base import BaseFetcher, _fmt_dt, _now_ist
 from collector.models import DataSource, FetchResult, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def _parse_kite_instruments_csv(
     """
     text = body.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
-    refreshed_at = _fmt_dt(_now_utc())
+    refreshed_at = _fmt_dt(_now_ist())
     inserted = 0
     updated = 0
 

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from capital.models import (
     CapitalLedgerRow,
@@ -14,9 +15,11 @@ from capital.models import (
     allocation_for_capital,
 )
 
+IST = ZoneInfo("Asia/Kolkata")
 
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat()
+
+def _now_ist() -> str:
+    return datetime.now(IST).replace(tzinfo=None).isoformat()
 
 
 def _to_decimal(val: float | None) -> Decimal:
@@ -125,7 +128,7 @@ class CapitalStateManager:
 
         alloc = allocation_for_capital(starting_capital)
         ledger_id = str(uuid.uuid4())
-        now = _utc_now()
+        now = _now_ist()
 
         with self._conn() as conn:
             conn.execute(
@@ -182,7 +185,7 @@ class CapitalStateManager:
         alloc = allocation_for_capital(total_capital)
 
         ledger_id = str(uuid.uuid4())
-        now = _utc_now()
+        now = _now_ist()
 
         with self._conn() as conn:
             conn.execute(
@@ -237,7 +240,7 @@ class CapitalStateManager:
 
         hwm_adjustment = amount  # HWM moves by the same amount as the capital flow.
         event_id = str(uuid.uuid4())
-        now = _utc_now()
+        now = _now_ist()
 
         with self._conn() as conn:
             conn.execute(
@@ -268,7 +271,7 @@ class CapitalStateManager:
         trip_threshold: Decimal,
     ) -> None:
         event_id = str(uuid.uuid4())
-        now = _utc_now()
+        now = _now_ist()
         with self._conn() as conn:
             conn.execute(
                 """
@@ -282,7 +285,7 @@ class CapitalStateManager:
 
     def record_circuit_breaker_reset(self, breaker_name: str, reason: str) -> None:
         event_id = str(uuid.uuid4())
-        now = _utc_now()
+        now = _now_ist()
         with self._conn() as conn:
             conn.execute(
                 """

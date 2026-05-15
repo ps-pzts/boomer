@@ -19,12 +19,15 @@ import sqlite3
 import time
 import uuid
 from abc import ABC, abstractmethod
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 
 from collector.models import DataSource, FetchResult, ParseStatus, RawArchiveRow
+
+IST = ZoneInfo("Asia/Kolkata")
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +138,7 @@ class BaseFetcher(ABC):
             status_code=resp.status_code,
             body=body,
             content_hash=hashlib.sha256(body).hexdigest(),
-            fetched_at=_now_utc(),
+            fetched_at=_now_ist(),
             params=params,
         )
 
@@ -197,7 +200,7 @@ class BaseFetcher(ABC):
     def mark_parsed(self, raw_id: str, version: str, status: ParseStatus) -> None:
         self._db.execute(
             "UPDATE raw_archive SET parser_version=?, parsed_at=?, parse_status=? WHERE raw_id=?",
-            (version, _fmt_dt(_now_utc()), status.value, raw_id),
+            (version, _fmt_dt(_now_ist()), status.value, raw_id),
         )
         self._db.commit()
 
@@ -220,8 +223,8 @@ class BaseFetcher(ABC):
 # ── module-level helpers ───────────────────────────────────────────────────────
 
 
-def _now_utc() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+def _now_ist() -> datetime:
+    return datetime.now(IST).replace(tzinfo=None)
 
 
 def _fmt_dt(dt: datetime | None) -> str | None:

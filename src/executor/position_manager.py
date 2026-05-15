@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from executor.gtt_manager import GttManager
 from executor.models import (
@@ -18,6 +19,8 @@ from executor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 _GRADUATION_ATR_STOP_MULTIPLIER = 3.0  # long-term stop = 3×ATR (vs swing 2×ATR)
 _GRADUATION_MIN_GAIN_ATR = 1.0  # minimum gain before graduation is considered
@@ -65,7 +68,7 @@ class PositionManager:
     ) -> str:
         """Create position record on entry fill. Returns position_id."""
         position_id = str(uuid.uuid4())
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             """
             INSERT INTO positions (
@@ -100,7 +103,7 @@ class PositionManager:
         return position_id
 
     def close_position(self, position_id: str, exit_price: float, realised_pnl: float) -> None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             """
             UPDATE positions
@@ -127,7 +130,7 @@ class PositionManager:
             self._db.commit()
 
     def mark_unprotected(self, position_id: str) -> None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._db.execute(
             "UPDATE positions SET unprotected_flag=1, unprotected_since=? WHERE position_id=?",
             (now, position_id),

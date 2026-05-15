@@ -160,7 +160,7 @@ If the code you are about to write contradicts the design document, the design d
 
 **No hardcoded rupee amounts.** Every threshold is a percentage or a function of capital. If you find yourself writing `if loss > 1000`, that's a bug.
 
-**All timestamps stored as UTC.** Convert to IST only at display time (dashboard templates, alert messages). Never store IST in the database.
+**All timestamps use IST (Asia/Kolkata).** India has no DST — IST is always UTC+5:30 with no ambiguity. Store IST in the database; display IST on the dashboard. Never store UTC, never convert to UTC internally.
 
 **Every trade decision is logged with attribution.** Any code path that approves, rejects, or modifies a trade must write a structured log entry including: which rule fired, what the input values were, and what the outcome was.
 

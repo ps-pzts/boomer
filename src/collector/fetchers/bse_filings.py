@@ -12,8 +12,9 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from collector.base import BaseFetcher, _fmt_dt
 from collector.models import (
@@ -24,6 +25,8 @@ from collector.models import (
     ParseStatus,
     RawArchiveRow,
 )
+
+IST = ZoneInfo("Asia/Kolkata")
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +133,7 @@ class BseFilingsFetcher(BaseFetcher):
 def _parse_bse_datetime(dt_str: str) -> tuple[str, str | None]:
     """Return (ISO date, ISO time | None) from BSE datetime string."""
     if not dt_str:
-        return datetime.now(UTC).date().isoformat(), None
+        return datetime.now(IST).date().isoformat(), None
     dt_str = dt_str.strip()
     for fmt in ("%d %b %Y %I:%M %p", "%d/%m/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:

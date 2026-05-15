@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.models import (
@@ -22,6 +23,8 @@ from executor.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 _KITE_STATUS_MAP: dict[str, OrderStatus] = {
     "OPEN": OrderStatus.PENDING,
@@ -188,7 +191,7 @@ class KiteBroker(Broker):
         self._start_ticker_if_needed(symbols)
 
     def get_ltp(self, symbol: str, exchange: str) -> float | None:
-        now = datetime.now(UTC)
+        now = datetime.now(IST)
         ts = self._ltp_timestamp.get(symbol)
         if ts and (now - ts).total_seconds() < self._LTP_STALENESS_SECONDS:
             return self._ltp.get(symbol)
@@ -328,7 +331,7 @@ class KiteBroker(Broker):
             logger.error("Failed to start KiteTicker: %s", exc)
 
     def _on_ticks_received(self, ws: object, ticks: list[dict]) -> None:
-        now = datetime.now(UTC)
+        now = datetime.now(IST)
         for tick in ticks:
             symbol = tick.get("tradingsymbol", "")
             ltp = float(tick.get("last_price", 0))

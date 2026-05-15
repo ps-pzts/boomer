@@ -23,11 +23,14 @@ import io
 import logging
 import sqlite3
 import time
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
 from collector.models import DataSource, FetchResult, RawArchiveRow
+
+IST = ZoneInfo("Asia/Kolkata")
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +157,7 @@ def _parse_index_csv(
     text = body.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
 
-    now_str = _fmt_dt(datetime.now(UTC))
+    now_str = _fmt_dt(datetime.now(IST).replace(tzinfo=None))
     run_date = raw_row.fetched_at.date().isoformat()
     inserted = 0
 
