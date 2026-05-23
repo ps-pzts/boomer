@@ -10,9 +10,10 @@ Run: python simulate.py
 import sqlite3
 import tempfile
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 from capital.circuit_breakers import evaluate_circuit_breakers
 from capital.models import (
@@ -26,6 +27,8 @@ from capital.models import (
 from capital.pre_trade import PreTradeChecker
 from capital.risk_config import RiskConfigStore
 from collector.sentiment import SentimentPipeline, apply_sentiment_to_filings
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -233,7 +236,7 @@ def case1_bull():
         signal_confidence=Decimal("0.72"),
         sector="energy",
         current_regime=Regime.BULL_CALM,
-        requested_at=datetime.now(UTC),
+        requested_at=datetime.now(_IST),
     )
 
     swing_bucket = ledger.bucket_capital(Track.SWING)
@@ -346,7 +349,7 @@ def case2_bear():
         signal_confidence=Decimal("0.60"),
         sector="consumer",
         current_regime=Regime.SIDEWAYS,
-        requested_at=datetime.now(UTC),
+        requested_at=datetime.now(_IST),
     )
 
     perm = checker.check(req)

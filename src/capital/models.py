@@ -206,7 +206,7 @@ class TradeRequest:
     signal_confidence: Decimal  # 0.0–1.0
     sector: str
     current_regime: Regime
-    requested_at: datetime  # UTC
+    requested_at: datetime  # IST
     # Concentration inputs: existing holding + all pending resting orders for same stock
     existing_position_value: Decimal = Decimal("0")
     pending_order_value: Decimal = Decimal("0")
