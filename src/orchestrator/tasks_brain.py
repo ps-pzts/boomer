@@ -231,9 +231,45 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
         (f"{run_date}%",),
     ).fetchall()
 
+    from src.brain.models import RecommendationStatus
+    from src.capital.circuit_breakers import evaluate_circuit_breakers
+    from src.capital.models import Track
+
     trade_planner = TradePlanGenerator()
     rec_store = RecommendationStore(db_path)
     packager = RecommendationPackager()
+
+    # Build APM circuit-breaker state once for all swing/intraday recs.
+    # Called pre-market: today's realised P&L is 0, nifty intraday move is 0.
+    _cb_state = evaluate_circuit_breakers(
+        intraday_realised_pnl_today=Decimal("0"),
+        intraday_bucket_capital=ledger.total_capital * ledger._allocated_pct(Track.INTRADAY),
+        intraday_consecutive_losses_today=0,
+        swing_realised_pnl_this_week=Decimal("0"),
+        swing_bucket_capital=ledger.total_capital * ledger._allocated_pct(Track.SWING),
+        swing_losing_trades_30d=ledger.consecutive_loss_days,
+        portfolio_realised_pnl_today=Decimal("0"),
+        total_capital=Decimal(str(ledger.total_capital)),
+        portfolio_realised_pnl_this_week=Decimal("0"),
+        live_drawdown_pct=Decimal(str(ledger.eod_drawdown_pct or 0)),
+        nifty_intraday_move_pct=Decimal("0"),
+        current_time_ist_hour=now_ist.hour,
+        current_time_ist_minute=now_ist.minute,
+        black_swan_manually_tripped=False,
+        config=risk_config,
+    )
+
+    def _apm_circuit_check(rec: object) -> tuple[bool, str]:
+        from src.brain.models import Recommendation as _Rec
+        r: _Rec = rec  # type: ignore[assignment]
+        track = Track(r.track)
+        if _cb_state.track_blocked(track):
+            tripped = [
+                f.name for f in _cb_state.__dataclass_fields__  # type: ignore[attr-defined]
+                if getattr(_cb_state, f.name) == "tripped"
+            ]
+            return False, f"circuit_breaker_tripped:{','.join(tripped)}"
+        return True, "all_checks_passed"
 
     processed = 0
     for row in today_signals:
@@ -268,8 +304,6 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
                 )
                 continue
 
-            from src.capital.models import Track
-
             track = Track(signal.track)
             bucket_capital = ledger.total_capital * ledger._allocated_pct(track)
 
@@ -295,7 +329,7 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
             if position_size < 1:
                 continue
 
-            # Persist trade plan before recommendation (FK constraint)
+            # Persist trade plan before recommendation (FK constraint).
             conn.execute(
                 """INSERT OR IGNORE INTO trade_plans (
                     plan_id, signal_id, stock_symbol, exchange, track, direction,
@@ -327,16 +361,23 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
             )
             conn.commit()
 
+            # Package and route per design spec:
+            #   swing/intraday → APM auto-decides via circuit-breaker check tree
+            #   long_term      → awaiting_human (dashboard approval required)
             rec = packager.package(
                 plan=plan,
                 entry_plan=None,
                 signal=signal,
                 position_size_shares=position_size,
             )
-            # Route both swing and long-term for human approval (no auto-execution)
-            from src.brain.models import RecommendationStatus
-
-            rec.status = RecommendationStatus.AWAITING_HUMAN
+            if rec.requires_human:
+                # Long-term: wait for operator approval in dashboard.
+                rec.status = RecommendationStatus.AWAITING_HUMAN
+            else:
+                # Swing/intraday: APM decides now.
+                packager.apm_decide(rec, _apm_circuit_check)
+                if rec.status == RecommendationStatus.APPROVED_BY_APM:
+                    rec.status = RecommendationStatus.QUEUED_FOR_EXECUTION
             rec_store.save(rec)
             processed += 1
 

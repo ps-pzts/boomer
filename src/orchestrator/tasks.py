@@ -27,6 +27,7 @@ from .tasks_executor import (
     _intraday_squareoff,
     _position_review,
     _pre_market_executor_setup,
+    _swing_gtt_dispatch,
 )
 from .tasks_maintenance import _eod_reconciliation, _nightly_backup, _weekly_harvest_check
 
@@ -105,6 +106,14 @@ def build_task_registry(
             dependencies=["morning_batch_recommendations"],
             timeout_seconds=300,
             retry_policy=RetryPolicy(max_attempts=1),
+        ),
+        "swing_gtt_dispatch": TaskDefinition(
+            task_id="swing_gtt_dispatch",
+            fn=_wrap(_swing_gtt_dispatch, broker_deps),  # type: ignore[arg-type]
+            schedule="25 9 * * 1-5",  # 09:25 IST — after broker tokens refreshed
+            dependencies=["pre_market_executor_setup"],
+            timeout_seconds=300,
+            retry_policy=RetryPolicy(max_attempts=2, backoff_seconds=[60]),
         ),
         "intraday_cycle": TaskDefinition(
             task_id="intraday_cycle",
