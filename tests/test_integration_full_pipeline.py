@@ -620,6 +620,7 @@ def test_orchestrator_dispatches_task_and_records_result(tmp_path):
         dependencies=[],
         timeout_seconds=5,
         retry_policy=RetryPolicy(max_attempts=1),
+        run_on_holiday=True,  # dispatch test must run on weekends/holidays too
     )
 
     orc = Orchestrator(
