@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# dev.sh — start orchestrator + dashboard locally as independent background processes
+# dev.sh — start orchestrator + dashboard + telegram bot locally as background processes
 # Usage: ./dev.sh
-# Stop:  ./dev.sh stop   (kills both processes)
+# Stop:  ./dev.sh stop
 set -euo pipefail
 
 PIDFILE_ORC=".pids/orchestrator.pid"
 PIDFILE_DASH=".pids/dashboard.pid"
+PIDFILE_BOT=".pids/telegram_bot.pid"
 LOG_ORC="data/logs/orchestrator.log"
 LOG_DASH="data/logs/dashboard.log"
+LOG_BOT="data/logs/telegram_bot.log"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -15,7 +17,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 stop_all() {
     local stopped=0
-    for pf in "$PIDFILE_ORC" "$PIDFILE_DASH"; do
+    for pf in "$PIDFILE_ORC" "$PIDFILE_DASH" "$PIDFILE_BOT"; do
         if [[ -f "$pf" ]]; then
             local pid; pid=$(<"$pf")
             if kill -0 "$pid" 2>/dev/null; then
@@ -101,10 +103,23 @@ nohup uvicorn src.dashboard.app:app --host 0.0.0.0 --port "$DASHBOARD_PORT" >> "
 echo $! > "$PIDFILE_DASH"
 echo "Dashboard started  (pid $!, log: $LOG_DASH)"
 
+# ── telegram bot (long-poll — only starts if credentials are set) ─────────────
+
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
+    BOOMER_DB_PATH="$BOOMER_DB_PATH" \
+    TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+    TELEGRAM_CHAT_ID="$TELEGRAM_CHAT_ID" \
+    nohup python -m src.alerts.telegram_bot >> "$LOG_BOT" 2>&1 &
+    echo $! > "$PIDFILE_BOT"
+    echo "Telegram bot  started (pid $!, log: $LOG_BOT)"
+else
+    echo "Telegram bot  skipped (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set in .env)"
+fi
+
 # ── done ─────────────────────────────────────────────────────────────────────
 
 echo ""
 echo "Dashboard → http://localhost:${DASHBOARD_PORT}"
 echo ""
-echo "Tail logs:  tail -f $LOG_ORC $LOG_DASH"
-echo "Stop both:  ./dev.sh stop"
+echo "Tail logs:  tail -f $LOG_ORC $LOG_DASH $LOG_BOT"
+echo "Stop all:   ./dev.sh stop"

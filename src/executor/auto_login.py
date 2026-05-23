@@ -233,10 +233,19 @@ def refresh_all_broker_tokens() -> dict[str, str]:
             _write_env_token(_ENV_PATH, "KITE_ACCESS_TOKEN", token)
             updated["kite"] = token
             logger.info("refresh_all_broker_tokens: kite token refreshed")
-            _notify(f"Kite login successful — token refreshed for {kite_user}")
+            _notify(
+                f"Kite token refreshed for <b>{kite_user}</b>\n"
+                f"Token: <code>{token[:12]}…</code>\n"
+                f"Expires: today 11:59 PM IST (Kite tokens reset at midnight)"
+            )
         except Exception as exc:
             logger.error("refresh_all_broker_tokens: kite failed — %s", exc)
-            _notify(f"Kite auto-login FAILED — {exc}", error=True)
+            _notify(
+                f"Kite auto-login FAILED for <b>{kite_user}</b>\n"
+                f"Error: {exc}\n"
+                "Action: check KITE_PASSWORD / KITE_TOTP_SECRET in .env",
+                error=True,
+            )
     else:
         logger.debug("refresh_all_broker_tokens: kite TOTP credentials not set, skipping")
 
@@ -256,10 +265,19 @@ def refresh_all_broker_tokens() -> dict[str, str]:
             _write_env_token(_ENV_PATH, "FYERS_ACCESS_TOKEN", token)
             updated["fyers"] = token
             logger.info("refresh_all_broker_tokens: fyers token refreshed")
-            _notify(f"Fyers login successful — token refreshed for {fyers_user}")
+            _notify(
+                f"Fyers token refreshed for <b>{fyers_user}</b>\n"
+                f"Token: <code>{token[:12]}…</code>\n"
+                f"Expires: today 11:59 PM IST (Fyers tokens reset at midnight)"
+            )
         except Exception as exc:
             logger.error("refresh_all_broker_tokens: fyers failed — %s", exc)
-            _notify(f"Fyers auto-login FAILED — {exc}", error=True)
+            _notify(
+                f"Fyers auto-login FAILED for <b>{fyers_user}</b>\n"
+                f"Error: {exc}\n"
+                "Action: check FYERS_PIN / FYERS_TOTP_SECRET in .env",
+                error=True,
+            )
     else:
         logger.debug("refresh_all_broker_tokens: fyers TOTP credentials not set, skipping")
 

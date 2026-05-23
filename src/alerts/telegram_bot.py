@@ -1,12 +1,12 @@
 """Telegram command bot for Boomer operator interface.
 
-Supports two commands:
-  /status  — system snapshot: mode, signals, pending approvals, open positions, today's PnL
-  /screen  — list today's awaiting_human recommendations with ✅/❌ inline buttons
+Supported commands:
+  /status  — snapshot: mode, broker session health, signals, queued GTTs, P&L
+  /approve — list awaiting_human recs with ✅/❌ inline buttons
 
 Inline button callbacks:
-  approve:<rec_id>  — approve a recommendation
-  reject:<rec_id>   — reject with default reason
+  approve:<rec_id>  — transitions rec awaiting_human → queued_for_execution
+  reject:<rec_id>   — transitions rec awaiting_human → rejected_by_apm
 
 Uses Telegram Bot API (long-polling getUpdates). No SDK; stdlib urllib only.
 Run as a standalone process alongside the orchestrator.
@@ -35,14 +35,14 @@ _API = "https://api.telegram.org/bot{token}/{method}"
 # ── Low-level Telegram API calls ──────────────────────────────────────────────
 
 
-def _call(token: str, method: str, payload: dict) -> dict:
+def _call(token: str, method: str, payload: dict, timeout: int = 15) -> dict:
     url = _API.format(token=token, method=method)
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace")
@@ -105,6 +105,14 @@ def _get_snapshot(db_path: str) -> dict:
         approvals = conn.execute(
             "SELECT COUNT(*) FROM recommendations WHERE status='awaiting_human'"
         ).fetchone()[0]
+        queued = conn.execute(
+            "SELECT COUNT(*) FROM recommendations WHERE status='queued_for_execution'"
+        ).fetchone()[0]
+        submitted_today = conn.execute(
+            "SELECT COUNT(*) FROM recommendations"
+            " WHERE status='submitted_to_broker' AND DATE(submitted_at)=?",
+            (run_date,),
+        ).fetchone()[0]
         lt_open = conn.execute(
             "SELECT COUNT(*) FROM positions WHERE is_open=1 AND track='long_term'"
         ).fetchone()[0]
@@ -123,6 +131,14 @@ def _get_snapshot(db_path: str) -> dict:
                 (run_date,),
             ).fetchall()
         ]
+        # Broker session: check if pre_market_executor_setup ran successfully today
+        broker_row = conn.execute(
+            "SELECT started_at FROM task_runs"
+            " WHERE task_id='pre_market_executor_setup' AND status='SUCCESS'"
+            " AND DATE(started_at)=? ORDER BY started_at DESC LIMIT 1",
+            (run_date,),
+        ).fetchone()
+        broker_refreshed_at = broker_row["started_at"][:5] if broker_row else None
     finally:
         conn.close()
     return {
@@ -130,10 +146,13 @@ def _get_snapshot(db_path: str) -> dict:
         "run_date": run_date,
         "signals": signals,
         "approvals": approvals,
+        "queued": queued,
+        "submitted_today": submitted_today,
         "lt_open": lt_open,
         "sw_open": sw_open,
         "pnl": float(pnl),
         "circuit_breakers": circuit_breakers,
+        "broker_refreshed_at": broker_refreshed_at,
     }
 
 
@@ -168,10 +187,11 @@ def _get_pending_recs(db_path: str) -> list[dict]:
 def _approve_rec(db_path: str, rec_id: str) -> bool:
     conn = _db_conn(db_path)
     try:
+        now = datetime.now(IST).isoformat()
         cur = conn.execute(
-            "UPDATE recommendations SET status='approved_by_apm'"
+            "UPDATE recommendations SET status='queued_for_execution', decided_at=?"
             " WHERE recommendation_id=? AND status='awaiting_human'",
-            (rec_id,),
+            (now, rec_id),
         )
         conn.commit()
         return cur.rowcount > 0
@@ -206,16 +226,26 @@ def _fmt_status(snap: dict) -> str:
     if snap["circuit_breakers"]:
         cb = "\n⚡ <b>Circuit breakers:</b> " + ", ".join(snap["circuit_breakers"])
     pnl_sign = "+" if snap["pnl"] >= 0 else ""
+    if snap["broker_refreshed_at"]:
+        broker_line = f"🔐 Broker session: ✅ refreshed at {snap['broker_refreshed_at']} IST"
+    else:
+        broker_line = "🔐 Broker session: ⚠️ not refreshed today"
+    generated_at = datetime.now(IST).strftime("%d %b %Y %H:%M:%S IST")
     return (
         f"<b>📊 Boomer Status — {snap['run_date']}</b>\n\n"
         f"{mode_emoji} Mode: <b>{snap['mode']}</b>\n"
-        f"📡 Signals today: {snap['signals']}\n"
-        f"⏳ Pending approvals: <b>{snap['approvals']}</b>\n\n"
+        f"{broker_line}\n\n"
+        f"<b>Recommendations</b>\n"
+        f"  📡 Signals today: {snap['signals']}\n"
+        f"  ⏳ Awaiting approval: <b>{snap['approvals']}</b>\n"
+        f"  🚀 Queued for GTT: {snap['queued']}\n"
+        f"  ✅ Submitted today: {snap['submitted_today']}\n\n"
         f"<b>Open positions</b>\n"
         f"  Long-term: {snap['lt_open']}\n"
         f"  Swing: {snap['sw_open']}\n\n"
-        f"💰 Today's P&L: {pnl_sign}₹{snap['pnl']:,.0f}"
-        f"{cb}"
+        f"💰 Today's P&amp;L: {pnl_sign}₹{snap['pnl']:,.0f}"
+        f"{cb}\n\n"
+        f"<i>Generated at {generated_at}</i>"
     )
 
 
@@ -250,7 +280,7 @@ def handle_status(token: str, chat_id: str | int, db_path: str) -> None:
     _send(token, chat_id, _fmt_status(snap))
 
 
-def handle_screen(token: str, chat_id: str | int, db_path: str) -> None:
+def handle_approve(token: str, chat_id: str | int, db_path: str) -> None:
     recs = _get_pending_recs(db_path)
     if not recs:
         _send(token, chat_id, "✅ No recommendations awaiting approval.")
@@ -304,15 +334,18 @@ class TelegramBot:
         self._db_path = db_path
         self._offset = 0
 
+    _POLL_SECONDS = 20  # Telegram long-poll hold duration
+
     def _get_updates(self) -> list[dict]:
         result = _call(
             self._token,
             "getUpdates",
             {
                 "offset": self._offset,
-                "timeout": 30,
+                "timeout": self._POLL_SECONDS,
                 "allowed_updates": ["message", "callback_query"],
             },
+            timeout=self._POLL_SECONDS + 10,  # urllib must exceed the Telegram hold duration
         )
         if not result.get("ok"):
             return []
@@ -335,20 +368,35 @@ class TelegramBot:
         text = (msg.get("text") or "").strip().lower()
         if text in ("/status", "/status@boomerbot"):
             handle_status(self._token, msg["chat"]["id"], self._db_path)
-        elif text in ("/screen", "/screen@boomerbot", "/approvals", "/approvals@boomerbot"):
-            handle_screen(self._token, msg["chat"]["id"], self._db_path)
+        elif text in ("/approve", "/approve@boomerbot", "/screen", "/screen@boomerbot"):
+            handle_approve(self._token, msg["chat"]["id"], self._db_path)
         elif text in ("/help", "/start"):
             _send(
                 self._token,
                 msg["chat"]["id"],
                 "<b>Boomer Bot Commands</b>\n\n"
-                "/status — system snapshot (mode, signals, P&amp;L)\n"
-                "/screen — pending recommendations with approve/reject buttons\n",
+                "/status — system snapshot: mode, broker session, signals, queued GTTs, P&amp;L\n"
+                "/approve — pending long-term recs with ✅ Approve / ❌ Reject buttons\n",
             )
 
     def run_forever(self) -> None:
+        import signal as _signal
+
+        def _shutdown(signum: int, frame: object) -> None:
+            logger.info("telegram_bot_stopping signal=%d", signum)
+            _send(
+                self._token, self._chat_id,
+                f"🔴 <b>Boomer bot going offline</b>\n"
+                f"Graceful shutdown (signal {signum}). "
+                "Commands will not be processed until restarted."
+            )
+            raise SystemExit(0)
+
+        _signal.signal(_signal.SIGTERM, _shutdown)
+        _signal.signal(_signal.SIGINT, _shutdown)
+
         logger.info("telegram_bot_starting chat_id=%s", self._chat_id)
-        _send(self._token, self._chat_id, "🤖 <b>Boomer bot online.</b> Send /status or /screen.")
+        _send(self._token, self._chat_id, "🤖 <b>Boomer bot online.</b> Send /status or /approve.")
         while True:
             try:
                 updates = self._get_updates()
@@ -360,6 +408,8 @@ class TelegramBot:
                         logger.error(
                             "dispatch_error update_id=%s: %s", update.get("update_id"), exc
                         )
+            except SystemExit:
+                raise
             except Exception as exc:
                 logger.error("polling_error: %s", exc)
                 time.sleep(5)
@@ -372,3 +422,8 @@ def from_env(db_path: str | None = None) -> TelegramBot:
         raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set")
     path = db_path or os.environ.get("BOOMER_DB_PATH", "/var/lib/boomer/boomer.db")
     return TelegramBot(token=token, chat_id=chat_id, db_path=path)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    from_env().run_forever()
