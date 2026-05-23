@@ -1,0 +1,19 @@
+[Unit]
+Description=Boomer Telegram Bot — operator command interface
+After=network.target
+
+[Service]
+Type=simple
+User=boomer
+Group=boomer
+WorkingDirectory=/opt/boomer
+EnvironmentFile=/etc/boomer/secrets.env
+ExecStart=/opt/boomer/.venv/bin/python -m src.alerts.telegram_bot
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/boomer/bot.log
+StandardError=append:/var/log/boomer/bot.log
+
+# Bot is UI-only — its crashes never affect trading operations.
+[Install]
+WantedBy=multi-user.target

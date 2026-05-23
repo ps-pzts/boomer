@@ -6,11 +6,11 @@
 
 ---
 
-## Status: All phases complete — APM gate + GTT dispatch fully wired
+## Status: All phases complete — nightly self-healing + full service restart
 
-**Current phase:** Phase 5 complete. APM gate correctly routes swing/intraday to auto-approval and GTT broker dispatch; long-term to human approval queue. Dashboard approval transitions directly to `queued_for_execution`. 439 tests pass, lint clean.
+**Current phase:** Phase 5 complete. Nightly health check (01:45 IST) added; restart_guard now cycles all three services; bot gets its own systemd unit. 444 tests pass, lint clean.
 
-**Last updated:** 2026-05-23
+**Last updated:** 2026-05-24
 
 ---
 
@@ -29,6 +29,9 @@
 | Infra | UTC→IST migration | All timestamps now use IST (Asia/Kolkata) throughout — DB writes, market hours checks, cron comparisons, all tests. CLAUDE.md Rule 9 updated: "All timestamps use IST, never UTC." Root cause: system is India-only with no DST; UTC was unnecessary overhead. |
 | Bug | APM gate + GTT dispatch | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic; swing/intraday now call `packager.apm_decide()` with live circuit breaker check → `QUEUED_FOR_EXECUTION` if approved; long-term remains `AWAITING_HUMAN`. New `swing_gtt_dispatch` task (09:25 IST) reads `queued_for_execution` recs, places OCO-GTT via Kite (MockBroker fallback), writes to `gtt_orders`, updates rec to `submitted_to_broker`. Dashboard `_approve_rec()` fixed to transition directly to `queued_for_execution` so human-approved long-term recs are also picked up. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
+| Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
+| Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
+| Ops | Bot systemd unit | New `ops/systemd/boomer-bot.service` — runs `python -m src.alerts.telegram_bot`, same shape as orchestrator/dashboard units. |
 
 ---
 
