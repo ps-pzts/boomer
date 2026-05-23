@@ -1,4 +1,4 @@
-"""12 scheduled task definitions.
+"""13 scheduled task definitions.
 
 Each task function signature: fn(run_date: str, run_id: int, **kwargs) -> None
 Tasks call into the appropriate subsystem modules. External I/O (brokers, HTTP)
@@ -33,6 +33,7 @@ from .tasks_maintenance import (
     _eod_reconciliation,
     _morning_heartbeat,
     _nightly_backup,
+    _nightly_health_check,
     _weekly_harvest_check,
 )
 
@@ -176,6 +177,15 @@ def build_task_registry(
             dependencies=[],
             timeout_seconds=900,
             retry_policy=RetryPolicy(max_attempts=2, backoff_seconds=[300]),
+            run_on_holiday=True,
+        ),
+        "nightly_health_check": TaskDefinition(
+            task_id="nightly_health_check",
+            fn=_wrap(_nightly_health_check, {}),  # type: ignore[arg-type]
+            schedule="45 1 * * *",  # 01:45 IST — before 03:00 restart_guard
+            dependencies=[],
+            timeout_seconds=300,
+            retry_policy=RetryPolicy(max_attempts=1),
             run_on_holiday=True,
         ),
     }

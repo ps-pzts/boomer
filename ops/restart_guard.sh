@@ -1,10 +1,12 @@
 #!/bin/bash
-# 3 AM orchestrator restart guard.
+# 3 AM nightly restart guard.
 # Called by cron: 0 3 * * * /opt/boomer/ops/restart_guard.sh >> /var/log/boomer/restart_guard.log 2>&1
 #
+# Restarts all three Boomer services: orchestrator, dashboard, and bot.
 # Checks for running tasks before killing the orchestrator.
 # If any task is RUNNING, waits 20 minutes before restarting.
 # This prevents killing nightly_eod_collector mid-run (see Phase 5 Loophole 6).
+# nightly_health_check runs at 01:45 IST so any DB/disk issues are reported before this fires.
 
 set -euo pipefail
 
@@ -30,3 +32,9 @@ fi
 
 systemctl restart boomer-orchestrator.service
 log "boomer-orchestrator.service restarted"
+
+systemctl restart boomer-dashboard.service
+log "boomer-dashboard.service restarted"
+
+systemctl restart boomer-bot.service
+log "boomer-bot.service restarted"

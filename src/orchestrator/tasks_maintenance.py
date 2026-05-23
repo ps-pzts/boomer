@@ -122,6 +122,116 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
     )
 
 
+def _nightly_health_check(run_date: str, run_id: int, db_path: str, **_: object) -> None:
+    """01:45 IST nightly self-healing check — runs before the 03:00 restart_guard.
+
+    Checks:
+    - SQLite PRAGMA integrity_check
+    - WAL checkpoint (flush) + VACUUM (reclaim disk space)
+    - Stuck RUNNING tasks (> 1 h old, likely orphaned after a crash)
+    - Disk space (warn if < 20 % free)
+
+    Sends a single Telegram report: ✅ all clear / ⚠️ issues found.
+    """
+    import os
+    import shutil
+    import sqlite3
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    IST = ZoneInfo("Asia/Kolkata")
+    issues: list[str] = []
+    db_mb = 0.0
+    free_pct = 100.0
+
+    # 1. Integrity check + WAL checkpoint ─────────────────────────────────────
+    try:
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok":
+                issues.append(f"DB integrity: {integrity}")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
+    except Exception as exc:
+        issues.append(f"DB check failed: {exc}")
+
+    # VACUUM requires no active WAL readers — use a fresh connection.
+    try:
+        vconn = sqlite3.connect(db_path, timeout=30)
+        try:
+            vconn.execute("VACUUM")
+        finally:
+            vconn.close()
+        db_mb = os.path.getsize(db_path) / (1024 * 1024)
+    except Exception as exc:
+        issues.append(f"VACUUM failed: {exc}")
+
+    # 2. Stuck RUNNING tasks (> 1 h) ──────────────────────────────────────────
+    cutoff = (
+        datetime.now(IST) - timedelta(hours=1)
+    ).replace(tzinfo=None).isoformat(timespec="seconds")
+    try:
+        conn = sqlite3.connect(db_path, timeout=5)
+        conn.row_factory = sqlite3.Row
+        try:
+            stuck = conn.execute(
+                "SELECT task_id FROM task_runs"
+                " WHERE status='RUNNING' AND started_at < ?",
+                (cutoff,),
+            ).fetchall()
+        finally:
+            conn.close()
+        if stuck:
+            names = ", ".join(r["task_id"] for r in stuck)
+            issues.append(f"Stuck RUNNING task(s): {names}")
+    except Exception as exc:
+        issues.append(f"Stuck-task check failed: {exc}")
+
+    # 3. Disk space ───────────────────────────────────────────────────────────
+    try:
+        usage = shutil.disk_usage(os.path.dirname(os.path.abspath(db_path)))
+        free_pct = usage.free / usage.total * 100
+        if free_pct < 20.0:
+            free_gb = usage.free / (1024 ** 3)
+            issues.append(f"Low disk space: {free_pct:.1f}% free ({free_gb:.1f} GB)")
+    except Exception as exc:
+        issues.append(f"Disk check failed: {exc}")
+
+    # 4. Telegram report ──────────────────────────────────────────────────────
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        logger.info(
+            "nightly_health_check run_date=%s issues=%d (Telegram not configured)",
+            run_date, len(issues),
+        )
+        return
+
+    from alerts.telegram import send_telegram
+
+    if issues:
+        lines = "\n".join(f"  ⚠️ {i}" for i in issues)
+        msg = (
+            f"⚠️ <b>Nightly health check — issues found</b> ({run_date})\n\n"
+            f"{lines}\n\n"
+            "<i>Review before market open.</i>"
+        )
+    else:
+        msg = (
+            f"✅ <b>Nightly health check — all clear</b> ({run_date})\n\n"
+            f"  DB integrity: ok\n"
+            f"  WAL checkpoint: done\n"
+            f"  VACUUM: done — DB now {db_mb:.1f} MB\n"
+            f"  Stuck tasks: none\n"
+            f"  Disk free: {free_pct:.1f}%"
+        )
+
+    send_telegram(token, chat_id, msg)
+    logger.info("nightly_health_check run_date=%s issues=%d", run_date, len(issues))
+
+
 def _nightly_backup(run_date: str, run_id: int, db_path: str, backup_dir: str, **_: object) -> None:
     """Copy SQLite DB to daily backup directory."""
     import shutil
