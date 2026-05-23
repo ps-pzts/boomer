@@ -155,6 +155,126 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     )
 
 
+def _swing_gtt_dispatch(
+    run_date: str, run_id: int, db_path: str, brokers: list | None = None, **_: object
+) -> None:
+    """Place OCO-GTT orders for all queued_for_execution recommendations.
+
+    Reads every recommendation in queued_for_execution status and submits an
+    OCO-GTT to the broker (entry trigger + stop-loss + target legs).
+    Updates status to submitted_to_broker on success, logs errors individually
+    so one bad recommendation never blocks the rest.
+    """
+    import sqlite3
+    import uuid
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from src.executor.brokers.mock_broker import MockBroker
+    from src.executor.models import BrokerName, GttRequest, GttStatus, GttType
+
+    IST = ZoneInfo("Asia/Kolkata")
+
+    # Resolve broker: prefer Kite from the injected list; fall back to mock.
+    broker = None
+    for b in brokers or []:
+        if getattr(b, "broker_id", None) == BrokerName.KITE:
+            broker = b
+            break
+    if broker is None:
+        broker = MockBroker()
+        logger.warning(
+            "swing_gtt_dispatch: no live Kite broker injected — using MockBroker (paper mode)"
+        )
+
+    conn = sqlite3.connect(db_path, timeout=10)
+    conn.row_factory = sqlite3.Row
+
+    pending = conn.execute(
+        "SELECT * FROM recommendations WHERE status='queued_for_execution'"
+    ).fetchall()
+
+    now_ist = datetime.now(IST)
+    dispatched = 0
+    for row in pending:
+        rec_id = row["recommendation_id"]
+        symbol = row["stock_symbol"]
+        try:
+            entry_high = float(row["entry_zone_high"])
+            stop = float(row["stop_loss_price"])
+            target = float(row["target_price"])
+            qty = int(row["position_size_shares"])
+
+            if qty < 1 or entry_high <= 0 or stop <= 0 or target <= 0:
+                logger.warning(
+                    "swing_gtt_dispatch: skip rec_id=%s symbol=%s reason=invalid_params",
+                    rec_id, symbol,
+                )
+                continue
+
+            # Build OCO-GTT: entry buy trigger + stop-loss sell + target sell.
+            # Entry trigger fires when LTP crosses entry_zone_high (breakout).
+            # Small slippage buffers: +0.2% on entry limit, -0.2% on exits.
+            gtt_req = GttRequest(
+                symbol=symbol,
+                exchange=row["exchange"] or "NSE",
+                gtt_type=GttType.OCO,
+                quantity=qty,
+                trigger_price=round(entry_high, 2),
+                limit_price=round(entry_high * 1.002, 2),
+                sl_trigger_price=round(stop, 2),
+                sl_limit_price=round(stop * 0.998, 2),
+                target_trigger_price=round(target, 2),
+                target_limit_price=round(target * 0.998, 2),
+                valid_days=365,
+            )
+
+            broker_gtt_id = broker.place_gtt(gtt_req)
+            gtt_id = str(uuid.uuid4())
+            # Store in gtt_orders for reconciliation.
+            conn.execute(
+                """INSERT INTO gtt_orders (
+                    gtt_id, broker_gtt_id, broker_id, symbol, exchange, gtt_type,
+                    trigger_price, limit_price, sl_trigger_price, sl_limit_price,
+                    target_trigger_price, target_limit_price, quantity, status,
+                    parent_order_id, triggered_order_id, valid_until, created_at, last_checked_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    gtt_id, str(broker_gtt_id), broker.broker_id,
+                    symbol, gtt_req.exchange, GttType.OCO,
+                    gtt_req.trigger_price, gtt_req.limit_price,
+                    gtt_req.sl_trigger_price, gtt_req.sl_limit_price,
+                    gtt_req.target_trigger_price, gtt_req.target_limit_price,
+                    qty, GttStatus.GTT_ACTIVE,
+                    None, None,
+                    now_ist.replace(year=now_ist.year + 1).date().isoformat(),
+                    now_ist.isoformat(), now_ist.isoformat(),
+                ),
+            )
+            conn.execute(
+                "UPDATE recommendations SET status='submitted_to_broker', decided_at=?"
+                " WHERE recommendation_id=?",
+                (now_ist.isoformat(), rec_id),
+            )
+            conn.commit()
+            dispatched += 1
+            logger.info(
+                "swing_gtt_dispatch: GTT placed symbol=%s rec_id=%s gtt_id=%s broker_gtt_id=%s",
+                symbol, rec_id, gtt_id, broker_gtt_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "swing_gtt_dispatch: failed rec_id=%s symbol=%s error=%s",
+                rec_id, symbol, exc,
+            )
+
+    conn.close()
+    logger.info(
+        "swing_gtt_dispatch completed queued=%d dispatched=%d run_date=%s",
+        len(pending), dispatched, run_date,
+    )
+
+
 def _intraday_squareoff(
     run_date: str, run_id: int, intraday_runner: object = None, **_: object
 ) -> None:

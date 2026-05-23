@@ -6,11 +6,11 @@
 
 ---
 
-## Status: All phases complete — UTC→IST migration done
+## Status: All phases complete — APM gate + GTT dispatch fully wired
 
-**Current phase:** Phase 5 complete. Codebase migrated from UTC to IST throughout (India-only system, no DST). 325 tests pass, lint clean.
+**Current phase:** Phase 5 complete. APM gate correctly routes swing/intraday to auto-approval and GTT broker dispatch; long-term to human approval queue. Dashboard approval transitions directly to `queued_for_execution`. 439 tests pass, lint clean.
 
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-23
 
 ---
 
@@ -27,6 +27,8 @@
 | Design | design-evolution.md | Narrative history: 18 issues + 7 hard blockers resolved |
 | Infra | CLAUDE.md | Project rules: git workflow, tests, PRs, file limits, context continuity |
 | Infra | UTC→IST migration | All timestamps now use IST (Asia/Kolkata) throughout — DB writes, market hours checks, cron comparisons, all tests. CLAUDE.md Rule 9 updated: "All timestamps use IST, never UTC." Root cause: system is India-only with no DST; UTC was unnecessary overhead. |
+| Bug | APM gate + GTT dispatch | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic; swing/intraday now call `packager.apm_decide()` with live circuit breaker check → `QUEUED_FOR_EXECUTION` if approved; long-term remains `AWAITING_HUMAN`. New `swing_gtt_dispatch` task (09:25 IST) reads `queued_for_execution` recs, places OCO-GTT via Kite (MockBroker fallback), writes to `gtt_orders`, updates rec to `submitted_to_broker`. Dashboard `_approve_rec()` fixed to transition directly to `queued_for_execution` so human-approved long-term recs are also picked up. |
+| Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 
 ---
 

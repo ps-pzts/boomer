@@ -128,13 +128,21 @@ async def today(request: Request, _: AuthDep) -> HTMLResponse:
 
 
 def _approve_rec(rec_id: str) -> bool:
-    """Write approved_by_apm status. Returns True if a row was actually updated."""
+    """Human approves a long-term recommendation.
+
+    Transitions: awaiting_human → approved_by_apm → queued_for_execution.
+    The swing_gtt_dispatch orchestrator task picks up queued_for_execution
+    at 09:25 IST and places the OCO-GTT on the broker.
+    Returns True if a row was actually updated.
+    """
     conn = _write_conn()
     try:
+        now = datetime.datetime.now(IST).isoformat()
         cur = conn.execute(
-            "UPDATE recommendations SET status='approved_by_apm'"
+            "UPDATE recommendations"
+            " SET status='queued_for_execution', decided_at=?"
             " WHERE recommendation_id=? AND status='awaiting_human'",
-            (rec_id,),
+            (now, rec_id),
         )
         conn.commit()
         return cur.rowcount > 0
