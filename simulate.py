@@ -36,9 +36,10 @@ SEP = "─" * 60
 
 
 def make_db() -> tuple[sqlite3.Connection, str]:
+    import glob
     tmp = tempfile.mktemp(suffix=".db")
     conn = sqlite3.connect(tmp)
-    for f in ["migrations/0001_initial_schema.sql", "migrations/0002_collector_schema.sql"]:
+    for f in sorted(glob.glob("migrations/*.sql")):
         with open(f) as fh:
             conn.executescript(fh.read())
     return conn, tmp
@@ -350,8 +351,6 @@ def case2_bear():
         sector="consumer",
         current_regime=Regime.SIDEWAYS,
         requested_at=datetime.now(_IST),
-    )
-
     perm = checker.check(req)
     status = "✓ APPROVED" if perm.approved else "✗ REJECTED"
     print(f"\n  Result: {status}")

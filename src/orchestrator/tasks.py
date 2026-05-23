@@ -29,7 +29,12 @@ from .tasks_executor import (
     _pre_market_executor_setup,
     _swing_gtt_dispatch,
 )
-from .tasks_maintenance import _eod_reconciliation, _nightly_backup, _weekly_harvest_check
+from .tasks_maintenance import (
+    _eod_reconciliation,
+    _morning_heartbeat,
+    _nightly_backup,
+    _weekly_harvest_check,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +144,14 @@ def build_task_registry(
             dependencies=[],
             timeout_seconds=300,
             retry_policy=RetryPolicy(max_attempts=1),
+        ),
+        "morning_heartbeat": TaskDefinition(
+            task_id="morning_heartbeat",
+            fn=_wrap(_morning_heartbeat, {}),  # type: ignore[arg-type]
+            schedule="0 8 * * 1-5",  # 08:00 IST Mon–Fri
+            dependencies=[],
+            timeout_seconds=30,
+            retry_policy=RetryPolicy(max_attempts=2, backoff_seconds=[60]),
         ),
         "eod_reconciliation": TaskDefinition(
             task_id="eod_reconciliation",

@@ -38,6 +38,16 @@ def _pre_market_executor_setup(
                         broker.broker_id,
                         exc,
                     )
+                    try:
+                        from src.alerts.alerter import get_alerter
+                        get_alerter().critical(
+                            f"Broker re-auth failed — {broker.broker_id}",
+                            f"Token was refreshed but broker.authenticate() failed: {exc}. "
+                            "GTT dispatch at 09:25 will abort. Check broker credentials.",
+                            source_task_id="pre_market_executor_setup",
+                        )
+                    except Exception:
+                        pass
         else:
             logger.info(
                 "pre_market_executor_setup: no TOTP credentials configured — "
@@ -187,6 +197,27 @@ def _swing_gtt_dispatch(
             "swing_gtt_dispatch: no live Kite broker injected — using MockBroker (paper mode)"
         )
 
+    # Pre-flight: verify broker session is alive before touching any rec.
+    # A stale Kite token causes every place_gtt() to fail silently — abort early instead.
+    try:
+        broker.get_funds()
+    except Exception as exc:
+        logger.error(
+            "swing_gtt_dispatch: broker session invalid — aborting. broker=%s error=%s",
+            getattr(broker, "broker_id", "unknown"), exc,
+        )
+        try:
+            from src.alerts.alerter import get_alerter
+            get_alerter().critical(
+                "GTT dispatch aborted — broker session invalid",
+                f"Broker {getattr(broker, 'broker_id', 'unknown')} session check failed: {exc}. "
+                "No queued_for_execution recs were submitted. Refresh the access token.",
+                source_task_id="swing_gtt_dispatch",
+            )
+        except Exception:
+            pass
+        return
+
     conn = sqlite3.connect(db_path, timeout=10)
     conn.row_factory = sqlite3.Row
 
@@ -251,10 +282,12 @@ def _swing_gtt_dispatch(
                     now_ist.isoformat(), now_ist.isoformat(),
                 ),
             )
+            now_str = now_ist.isoformat()
             conn.execute(
-                "UPDATE recommendations SET status='submitted_to_broker', decided_at=?"
+                "UPDATE recommendations"
+                " SET status='submitted_to_broker', decided_at=?, submitted_at=?"
                 " WHERE recommendation_id=?",
-                (now_ist.isoformat(), rec_id),
+                (now_str, now_str, rec_id),
             )
             conn.commit()
             dispatched += 1
