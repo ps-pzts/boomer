@@ -195,28 +195,46 @@ class KiteBroker(Broker):
         ts = self._ltp_timestamp.get(symbol)
         if ts and (now - ts).total_seconds() < self._LTP_STALENESS_SECONDS:
             return self._ltp.get(symbol)
-        # Tick is stale — fall back to REST quote
         self._ensure_authenticated()
+        # Tier 1: REST LTP endpoint (requires market data subscription)
         try:
             data = self._kite.ltp([f"{exchange}:{symbol}"])
-            key = f"{exchange}:{symbol}"
-            return float(data[key]["last_price"])
+            price = float(data[f"{exchange}:{symbol}"]["last_price"])
+            self._ltp[symbol] = price
+            self._ltp_timestamp[symbol] = now
+            return price
         except Exception:
-            return self._ltp.get(symbol)
+            pass
+        # Tier 2: holdings + positions — available on base plan, covers held stocks
+        try:
+            for h in self._kite.holdings():
+                if h["tradingsymbol"] == symbol and h.get("last_price", 0) > 0:
+                    return float(h["last_price"])
+            for p in self._kite.positions().get("day", []):
+                if p["tradingsymbol"] == symbol and p.get("last_price", 0) > 0:
+                    return float(p["last_price"])
+        except Exception:
+            pass
+        # Tier 3: last known tick (may be stale — better than None)
+        return self._ltp.get(symbol)
 
     # ── GTT methods ───────────────────────────────────────────────────────────
 
     def place_gtt(self, request: GttRequest) -> str:
         self._ensure_authenticated()
+        last_price = self.get_ltp(request.symbol, request.exchange)
+        if not last_price:
+            raise RuntimeError(
+                f"Cannot place GTT for {request.symbol}: LTP unavailable. "
+                "Ensure the tick feed is subscribed or the market data plan is active."
+            )
         if request.gtt_type == GttType.SINGLE:
             params = {
                 "trigger_type": self._kite.GTT_TYPE_SINGLE,
                 "tradingsymbol": request.symbol,
                 "exchange": request.exchange,
                 "trigger_values": [request.trigger_price],
-                "last_price": (
-                    self.get_ltp(request.symbol, request.exchange) or request.trigger_price
-                ),
+                "last_price": last_price,
                 "orders": [
                     {
                         "transaction_type": "SELL",
@@ -233,9 +251,7 @@ class KiteBroker(Broker):
                 "tradingsymbol": request.symbol,
                 "exchange": request.exchange,
                 "trigger_values": [request.sl_trigger_price, request.target_trigger_price],
-                "last_price": (
-                    self.get_ltp(request.symbol, request.exchange) or request.sl_trigger_price
-                ),
+                "last_price": last_price,
                 "orders": [
                     {
                         "transaction_type": "SELL",
