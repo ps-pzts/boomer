@@ -190,6 +190,19 @@ Key ones resolved in Phase 4 implementation:
 - Bug fixed: GTT `daily_reconcile()` key lookup — extended to handle `broker_gtt_id` key in MockBroker dicts alongside `id`/`trigger_id`
 - Bug fixed: circuit check test — price sanity check (5%) fires before circuit check (20%) for the same extreme-price scenario; test renamed to `test_extreme_price_rejected`
 
+### 2026-05-25 — Phase 3: Feature Computer Registry
+
+- **Root cause fixed**: signal generators consumed 29 feature keys; `computers.py` only computed 16 — ~55% of swing signal weight and the entire intraday track running on `None`
+- `src/brain/features/computers.py`: `compute_price_features` expanded with second SQL query (290-day window, LIMIT 200) to write `dma_20`, `high_20d`, `dma_50`, `dma_200`; added `compute_filing_count_features` (writes `filing_count_7d`) and `compute_catalyst_proximity_features` (writes `days_to_next_catalyst`)
+- `src/brain/features/computers_market.py` (NEW): `compute_technical_pattern_score` (3-component price structure, must run after price_features), `compute_fo_features` (overnight OI change + max pain proximity), `compute_sector_relative_strength` (20d return z-score vs sector peers, handles zero-std case), `compute_price_mode_classifier` (lag-1 autocorrelation, 12 rows), `compute_beta_features` (20d beta vs NIFTY 50 in prices table), `compute_overnight_news_features` (confidence-weighted filing sentiment since prior day 4PM IST)
+- `src/brain/features/runner.py` (NEW): `FeatureComputer` frozen dataclass (`fn`, `writes`, `essential`, `requires_live`); `run_track_computers()` executes registry in list order, skips live-only, propagates essential failures, warns on non-essential
+- `src/brain/features/track_swing.py` (NEW): `SWING_COMPUTERS` — 10-entry ordered registry; price_features → technical_pattern_score → filing/catalyst/sector/mode/sentiment/smart_money/promoter/earnings computers
+- `src/brain/features/track_intraday.py` (NEW): `INTRADAY_COMPUTERS` — 4 batch + 5 live-only computers; live-only (`fn=None`, `requires_live=True`) skipped by runner, injected at signal time
+- `src/brain/features/track_long_term.py` (NEW): `LONG_TERM_COMPUTERS` — price_features + filing_sentiment + smart_money + promoter + earnings; `pe_percentile_5y` not computable from current schema (open Q3-4)
+- 37 new feature tests in `tests/brain/features/` (test_computers.py, test_computers_market.py, test_runner.py)
+- Bug fixed: `compute_sector_relative_strength` returned None when all sector peers had identical returns (sector_std=0); now maps +3.0/-3.0 for clear outperformer/underperformer
+- 491 total tests; 0 failures; lint clean
+
 ### 2026-05-10 — Phase 3: Brain Framework
 
 - `migrations/0003_brain_schema.sql`: 6 tables — features (point-in-time indexed), sector_classifications, signals, trade_plans, recommendations, recommendation_outcomes

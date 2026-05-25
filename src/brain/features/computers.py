@@ -288,21 +288,33 @@ def compute_price_features(
     exchange: str,
     as_of_date: date,
 ) -> None:
-    """Compute price-derived features: liquidity, ATR, volume z-score.
+    """Compute price-derived features: liquidity, ATR, volume z-score, DMAs, rolling high.
+
+    Two queries are issued:
+      rows_20   — last 20 trading days (30-calendar-day window) for ATR / volume / liquidity.
+      rows_long — up to 200 trading days (290-calendar-day window) for DMA-20/50/200, high_20d.
+
+    In live mode the SQLite prices table holds only the last ~30 days; DMA-50 and DMA-200
+    are written only when the full historical window is available (backtesting or after
+    the initial history load from the parquet lake).
 
     Writes:
-        avg_traded_value_20d
-        atr_14d
-        volume_zscore_5d
-        pe_percentile_5y  (requires pe_ratio in prices table)
+        price_close, avg_traded_value_20d, avg_daily_volume_20d
+        atr_14d, volume_zscore_5d
+        dma_20, high_20d          (requires >= 20 rows in the long window)
+        dma_50                    (requires >= 50 rows)
+        dma_200                   (requires >= 200 rows)
     """
+    import statistics
+
     as_of_str = as_of_date.isoformat()
     cutoff_20 = (as_of_date - timedelta(days=30)).isoformat()
+    cutoff_long = (as_of_date - timedelta(days=290)).isoformat()
 
     with _conn(db_path) as conn:
         rows_20 = conn.execute(
             """
-            SELECT close, high, low, volume, trade_date
+            SELECT close, high, low, volume
             FROM prices
             WHERE stock_symbol = ? AND exchange = ?
               AND trade_date > ? AND trade_date <= ?
@@ -312,35 +324,124 @@ def compute_price_features(
             (stock_symbol, exchange, cutoff_20, as_of_str),
         ).fetchall()
 
+        rows_long = conn.execute(
+            """
+            SELECT close, high
+            FROM prices
+            WHERE stock_symbol = ? AND exchange = ?
+              AND trade_date > ? AND trade_date <= ?
+            ORDER BY trade_date DESC
+            LIMIT 200
+            """,
+            (stock_symbol, exchange, cutoff_long, as_of_str),
+        ).fetchall()
+
     if not rows_20:
         return
-
-    import statistics
 
     wf = fs.write_feature
     sym, exc, d = stock_symbol, exchange, as_of_date
 
     closes = [float(r["close"]) for r in rows_20]
     volumes = [float(r["volume"]) for r in rows_20]
-    highs = [float(r["high"]) for r in rows_20]
+    highs_20 = [float(r["high"]) for r in rows_20]
     lows = [float(r["low"]) for r in rows_20]
 
-    # Latest close price — used by recommendation packager for sizing
     wf(sym, exc, "price_close", closes[0], d, d)
 
     avg_value = sum(c * v for c, v in zip(closes, volumes, strict=True)) / len(closes)
     wf(sym, exc, "avg_traded_value_20d", avg_value, d, d)
     wf(sym, exc, "avg_daily_volume_20d", sum(volumes) / len(volumes), d, d)
 
-    # ATR-14
     if len(rows_20) >= 14:
-        atr14 = sum(highs[i] - lows[i] for i in range(14)) / 14.0
+        atr14 = sum(highs_20[i] - lows[i] for i in range(14)) / 14.0
         wf(sym, exc, "atr_14d", atr14, d, d)
 
-    # Volume z-score: (avg_5d - avg_baseline) / std_baseline
     if len(volumes) >= 6:
         avg5 = sum(volumes[:5]) / 5.0
         avg_n = sum(volumes) / len(volumes)
         std_n = statistics.stdev(volumes)
         if std_n > 0:
             wf(sym, exc, "volume_zscore_5d", (avg5 - avg_n) / std_n, d, d)
+
+    long_closes = [float(r["close"]) for r in rows_long]
+    long_highs = [float(r["high"]) for r in rows_long]
+
+    if len(long_closes) >= 20:
+        wf(sym, exc, "dma_20", sum(long_closes[:20]) / 20.0, d, d)
+        wf(sym, exc, "high_20d", max(long_highs[:20]), d, d)
+    if len(long_closes) >= 50:
+        wf(sym, exc, "dma_50", sum(long_closes[:50]) / 50.0, d, d)
+    if len(long_closes) >= 200:
+        wf(sym, exc, "dma_200", sum(long_closes[:200]) / 200.0, d, d)
+
+
+def compute_filing_count_features(
+    db_path: str,
+    fs: FeatureStore,
+    stock_symbol: str,
+    exchange: str,
+    as_of_date: date,
+) -> None:
+    """Compute rolling filing count for the swing news_flow sub-signal (weight 0.10).
+
+    Writes:
+        filing_count_7d — total filings of any category in the last 7 calendar days
+    """
+    cutoff = (as_of_date - timedelta(days=7)).isoformat()
+    as_of_str = as_of_date.isoformat()
+
+    with _conn(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM filings
+            WHERE stock_symbol = ? AND exchange = ?
+              AND observed_at > ? AND observed_at <= ?
+            """,
+            (stock_symbol, exchange, cutoff, as_of_str),
+        ).fetchone()
+
+    count = int(row["cnt"] or 0) if row else 0
+    fs.write_feature(
+        stock_symbol, exchange, "filing_count_7d", float(count), as_of_date, as_of_date
+    )
+
+
+def compute_catalyst_proximity_features(
+    db_path: str,
+    fs: FeatureStore,
+    stock_symbol: str,
+    exchange: str,
+    as_of_date: date,
+) -> None:
+    """Compute days to the nearest upcoming corporate action catalyst.
+
+    Sources the corporate_actions table for dividend, split, bonus, and rights
+    ex-dates / record-dates.  Quarterly-results catalysts are captured separately
+    by the filing sentiment pipeline.
+
+    Feature is NOT written when no upcoming action exists; the swing signal
+    generator treats a missing days_to_next_catalyst as 0.0 (no proximity bonus).
+
+    Writes:
+        days_to_next_catalyst — calendar days to nearest upcoming action (float >= 0)
+    """
+    as_of_str = as_of_date.isoformat()
+
+    with _conn(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT MIN(COALESCE(ex_date, record_date)) AS next_date
+            FROM corporate_actions
+            WHERE stock_symbol = ? AND exchange = ?
+              AND action_type IN ('dividend', 'split', 'bonus', 'rights')
+              AND COALESCE(ex_date, record_date) > ?
+            """,
+            (stock_symbol, exchange, as_of_str),
+        ).fetchone()
+
+    if row and row["next_date"]:
+        days_out = float((date.fromisoformat(row["next_date"]) - as_of_date).days)
+        fs.write_feature(
+            stock_symbol, exchange, "days_to_next_catalyst", days_out, as_of_date, as_of_date
+        )
