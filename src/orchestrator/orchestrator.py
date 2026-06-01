@@ -197,6 +197,7 @@ def main() -> None:
     run_migrations(db_path, migrations_dir)
 
     brokers = _build_brokers()
+    intraday_runner = _build_intraday_runner(db_path, brokers)
 
     orc = Orchestrator(
         db_path=db_path,
@@ -204,6 +205,7 @@ def main() -> None:
         backup_dir=backup_dir,
         poll_interval=poll_interval,
         brokers=brokers,
+        intraday_runner=intraday_runner,
     )
     log_boot_sequence(db_path, poll_interval)
     orc.start()
@@ -252,6 +254,45 @@ def _build_brokers() -> list:
         )
 
     return brokers
+
+
+def _build_intraday_runner(db_path: str, brokers: list) -> object | None:
+    """Wire OrderManager → PositionManager → IntradayPipeline.
+
+    Returns None on any import/construction failure so the orchestrator can
+    still run without intraday trading (data pipeline and swing GTT unaffected).
+    """
+    log = logging.getLogger(__name__)
+    try:
+        import sqlite3
+
+        from src.executor.brokers.kite_broker import KiteBroker
+        from src.executor.gtt_manager import GttManager
+        from src.executor.intraday import IntradayPipeline
+        from src.executor.models import BrokerName
+        from src.executor.order_manager import OrderManager
+        from src.executor.position_manager import PositionManager
+
+        kite = next((b for b in brokers if isinstance(b, KiteBroker)), None)
+        if kite is None:
+            log.warning("intraday_runner: no KiteBroker available — intraday cycle will be a no-op")
+            return None
+
+        brokers_dict = {BrokerName.KITE: kite}
+        ltp_cache: dict[str, float] = {}
+        db = sqlite3.connect(db_path, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+
+        gtt = GttManager(db=db, brokers=brokers_dict)
+        om = OrderManager(db=db, brokers=brokers_dict, ltp_cache=ltp_cache)
+        pm = PositionManager(db=db, gtt_manager=gtt, order_manager=om)
+        runner = IntradayPipeline(order_manager=om, position_manager=pm, db=db)
+
+        log.info("intraday_runner: IntradayPipeline wired — broker=kite")
+        return runner
+    except Exception as exc:
+        log.warning("intraday_runner: construction failed — %s", exc)
+        return None
 
 
 if __name__ == "__main__":

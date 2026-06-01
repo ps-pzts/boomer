@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -42,10 +43,12 @@ class IntradayPipeline:
         order_manager: object,
         position_manager: object,
         signal_runner: object | None = None,
+        db: sqlite3.Connection | None = None,
     ) -> None:
         self._om = order_manager
         self._pm = position_manager
         self._signal_runner = signal_runner
+        self._db = db
         self._cycle_lock = threading.Lock()
         self._last_signal_time: dict[str, datetime] = {}
         self._cycle_count = 0
@@ -160,11 +163,89 @@ class IntradayPipeline:
         return market_open <= now <= entry_cutoff
 
     def _run_intraday_signals(self, now: datetime) -> None:
-        if self._signal_runner is None:
-            logger.debug("No signal runner configured — intraday cycle is monitoring only")
+        # Execute morning-batch recs that are queued and still within validity window.
+        self._execute_queued_recs(now)
+        if self._signal_runner is not None:
+            # Live signal runner: injects live features and re-scores in real time.
+            self._signal_runner.run_intraday(as_of=now)
+
+    def _execute_queued_recs(self, now: datetime) -> None:
+        """Place limit orders for queued intraday recs still within 30-min signal validity."""
+        if self._db is None:
             return
-        # Signal runner injected by orchestrator; calls Stages 0→5 for intraday track
-        self._signal_runner.run_intraday(as_of=now)
+
+        from executor.order_manager import OrderManager
+
+        rows = self._db.execute(
+            "SELECT * FROM recommendations"
+            " WHERE status='queued_for_execution' AND track='intraday'"
+        ).fetchall()
+
+        om: OrderManager = self._om  # type: ignore[assignment]
+        for row in rows:
+            rec_id = row["recommendation_id"]
+            symbol = row["stock_symbol"]
+            try:
+                generated_at = datetime.fromisoformat(row["generated_at"])
+                if generated_at.tzinfo is None:
+                    generated_at = generated_at.replace(tzinfo=IST)
+
+                if not self.is_signal_still_valid(symbol, generated_at):
+                    self._db.execute(
+                        "UPDATE recommendations SET status='rejected', decided_at=?"
+                        " WHERE recommendation_id=?",
+                        (now.isoformat(), rec_id),
+                    )
+                    self._db.commit()
+                    logger.info("intraday_rec_expired symbol=%s rec_id=%s", symbol, rec_id)
+                    continue
+
+                if self.is_in_cooldown(symbol):
+                    logger.debug("intraday_rec_cooldown symbol=%s rec_id=%s", symbol, rec_id)
+                    continue
+
+                direction = row["direction"]
+                if direction == "long":
+                    side = OrderSide.BUY
+                    limit_price = float(row["entry_zone_high"])
+                else:
+                    side = OrderSide.SELL
+                    limit_price = float(row["entry_zone_low"])
+
+                qty = int(row["position_size_shares"])
+                if qty < 1 or limit_price <= 0:
+                    continue
+
+                req = OrderRequest(
+                    symbol=symbol,
+                    exchange=row["exchange"] or "NSE",
+                    side=side,
+                    order_type=OrderType.LIMIT,
+                    quantity=qty,
+                    price=limit_price,
+                    product=ProductType.MIS,
+                    tag="intraday_rec",
+                    recommendation_id=rec_id,
+                )
+                order_id = om.submit(req, "intraday")
+
+                now_str = now.isoformat()
+                self._db.execute(
+                    "UPDATE recommendations SET status='submitted_to_broker',"
+                    " decided_at=?, submitted_at=?"
+                    " WHERE recommendation_id=?",
+                    (now_str, now_str, rec_id),
+                )
+                self._db.commit()
+                self.record_signal_acted(symbol)
+                logger.info(
+                    "intraday_order_placed symbol=%s rec_id=%s order_id=%s qty=%d price=%.2f",
+                    symbol, rec_id, order_id, qty, limit_price,
+                )
+            except Exception as exc:
+                logger.error(
+                    "intraday_rec_failed symbol=%s rec_id=%s error=%s", symbol, rec_id, exc
+                )
 
     def _monitor_positions(self) -> None:
         from executor.position_manager import PositionManager

@@ -51,8 +51,9 @@ class TaskDefinition:
     dependencies: list[str]
     timeout_seconds: int
     retry_policy: RetryPolicy
-    run_on_holiday: bool = False  # backup-type tasks run even on holidays
+    run_on_holiday: bool = False    # backup-type tasks run even on holidays
     trailing_stop_task: bool = False  # runs in paused mode (trailing stops)
+    recurring: bool = False         # fires every matching cron tick, not just once per day
 
     def description(self) -> str:
         return f"{self.task_id} [{self.schedule}]"

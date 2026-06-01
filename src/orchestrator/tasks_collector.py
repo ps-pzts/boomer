@@ -50,15 +50,29 @@ def _nightly_eod_collector(
 
 
 def _early_morning_data_check(run_date: str, run_id: int, db_path: str, **_: object) -> None:
-    """Verify yesterday's prices are present."""
+    """Verify that recent EOD prices are present.
+
+    Bhavcopy for today is only available after market close (~6 PM IST), so we
+    check for the most recent trade_date in the DB and require it to be within
+    the last 5 calendar days.  This correctly passes on Monday mornings when
+    Friday's prices are the most recent available.
+    """
     import sqlite3
+    from datetime import date, timedelta
 
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
-    row = conn.execute(
-        "SELECT COUNT(*) as n FROM prices WHERE trade_date=?", (run_date,)
-    ).fetchone()
+    row = conn.execute("SELECT MAX(trade_date) as latest, COUNT(*) as n FROM prices").fetchone()
     conn.close()
-    if row["n"] == 0:
-        raise RuntimeError(f"No prices for trade_date={run_date}. EOD collector may have failed.")
-    logger.info("data_check passed: %d price rows for %s", row["n"], run_date)
+
+    if row["n"] == 0 or row["latest"] is None:
+        raise RuntimeError("No price data at all — EOD collector may have never run.")
+
+    latest = date.fromisoformat(row["latest"])
+    cutoff = date.fromisoformat(run_date) - timedelta(days=5)
+    if latest < cutoff:
+        raise RuntimeError(
+            f"Most recent prices are from {latest} — more than 5 days old. "
+            "EOD collector may have failed."
+        )
+    logger.info("data_check passed: latest price date=%s rows=%d", latest, row["n"])

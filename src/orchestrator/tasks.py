@@ -128,6 +128,7 @@ def build_task_registry(
             dependencies=[],
             timeout_seconds=180,
             retry_policy=RetryPolicy(max_attempts=1),  # no retry — next cycle in 30 min
+            recurring=True,
         ),
         "position_review": TaskDefinition(
             task_id="position_review",
@@ -137,6 +138,7 @@ def build_task_registry(
             timeout_seconds=120,
             retry_policy=RetryPolicy(max_attempts=1),
             trailing_stop_task=True,  # runs even in paused mode
+            recurring=True,
         ),
         "intraday_squareoff": TaskDefinition(
             task_id="intraday_squareoff",

@@ -97,18 +97,19 @@ def _save_signal(db_conn: object, signal: object) -> None:
 
 
 def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: object) -> None:
-    """Compute features for all NSE EQ/BE instruments as of run_date."""
+    """Compute features for all NSE EQ/BE instruments as of run_date.
+
+    Runs the full SWING_COMPUTERS and INTRADAY_COMPUTERS batch registries for every
+    symbol.  run_track_computers() is idempotent — running shared computers (e.g.
+    price_features) twice is safe; FeatureStore supersedes old rows.
+    """
     import datetime as _dt
     import sqlite3
 
     from src.brain.feature_store import FeatureStore
-    from src.brain.features.computers import (
-        compute_earnings_quality_features,
-        compute_filing_sentiment_features,
-        compute_price_features,
-        compute_promoter_features,
-        compute_smart_money_features,
-    )
+    from src.brain.features.runner import run_track_computers
+    from src.brain.features.track_intraday import INTRADAY_COMPUTERS
+    from src.brain.features.track_swing import SWING_COMPUTERS
 
     as_of_date = _dt.date.fromisoformat(run_date)
     fs = FeatureStore(db_path)
@@ -125,17 +126,22 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
     ]
     conn.close()
 
+    succeeded = 0
+    failed = 0
     for sym in symbols:
         try:
-            compute_price_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_promoter_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_smart_money_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_filing_sentiment_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_earnings_quality_features(db_path, fs, sym, "NSE", as_of_date)
+            run_track_computers(SWING_COMPUTERS, db_path, fs, sym, "NSE", as_of_date)
+            run_track_computers(INTRADAY_COMPUTERS, db_path, fs, sym, "NSE", as_of_date)
+            succeeded += 1
         except Exception as exc:
+            # Essential-computer failure (e.g. price_features missing) — skip symbol.
             logger.warning("feature_compute_failed symbol=%s error=%s", sym, exc)
+            failed += 1
 
-    logger.info("morning_batch_features completed symbols=%d run_date=%s", len(symbols), run_date)
+    logger.info(
+        "morning_batch_features completed symbols=%d succeeded=%d failed=%d run_date=%s",
+        len(symbols), succeeded, failed, run_date,
+    )
 
 
 def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object) -> None:

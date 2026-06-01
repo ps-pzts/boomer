@@ -114,10 +114,12 @@ class Scheduler:
         if not cron_matches(task.schedule, now):
             return False, "cron_no_match"
 
-        # Don't re-run a successful task for the same run_date
-        existing = self._run_store.latest_for_date(task.task_id, run_date)
-        if existing and existing.status == TaskStatus.SUCCESS:
-            return False, "already_succeeded"
+        # One-shot tasks: don't re-run if already succeeded today.
+        # Recurring tasks fire on every matching cron tick — skip this guard.
+        if not task.recurring:
+            existing = self._run_store.latest_for_date(task.task_id, run_date)
+            if existing and existing.status == TaskStatus.SUCCESS:
+                return False, "already_succeeded"
 
         dep_ok, dep_reason = dependency_met(task, run_date, self._run_store)
         if not dep_ok:

@@ -6,11 +6,11 @@
 
 ---
 
-## Status: All phases complete — nightly self-healing + full service restart
+## Status: All phases complete — intraday execution wiring complete
 
-**Current phase:** Phase 5 complete. Nightly health check (01:45 IST) added; restart_guard now cycles all three services; bot gets its own systemd unit. 444 tests pass, lint clean.
+**Current phase:** Phase 5 complete. Four intraday wiring gaps fixed; intraday recs now flow from morning batch → IntradayPipeline → live orders. 491 tests pass, lint clean.
 
-**Last updated:** 2026-05-24
+**Last updated:** 2026-06-01
 
 ---
 
@@ -18,6 +18,12 @@
 
 | Area | Item | Notes |
 |------|------|-------|
+| Bug | Intraday recs dispatched as GTTs | `swing_gtt_dispatch` lacked a track filter — intraday `queued_for_execution` recs were being placed as year-long OCO-GTT orders. Fixed: added `AND track IN ('swing', 'long_term')` to the query. |
+| Feat | Intraday order execution wired | `IntradayPipeline` now accepts a `db` connection and has `_execute_queued_recs()`: on each 30-min cycle it reads queued intraday recs, checks 30-min signal validity and per-stock cooldown, then places `LIMIT/MIS` orders via `OrderManager`. Expired recs transition to `rejected`. |
+| Bug | `_build_intraday_runner` not passing DB to pipeline | The `sqlite3.Connection` was created inside `_build_intraday_runner` but never forwarded to `IntradayPipeline`. Added `db=db` to the constructor call. |
+| Bug | `morning_batch_features` ran 5 of 14 computers | Swing track was missing `technical_pattern_score`, `filing_count`, `catalyst_proximity`, `sector_relative_strength`, `price_mode_classifier`. Intraday was missing `fo_features`, `beta_features`, `overnight_news`. Replaced manual list with `run_track_computers(SWING_COMPUTERS)` + `run_track_computers(INTRADAY_COMPUTERS)` — stays in sync with track registries automatically. |
+| Fix | Recurring task support | `TaskDefinition` now has `recurring: bool = False`; `Scheduler.should_run()` skips the `already_succeeded` guard for recurring tasks so `intraday_cycle` and `position_review` fire every matching cron tick. |
+| Fix | `_early_morning_data_check` false-fail on Mondays | Previous check required prices for today's date — always fails pre-market since bhavcopy isn't available until ~6 PM. Fixed to check that the most recent price date is within 5 calendar days of run_date. |
 | Design | Phase 1 — Capital & Risk | Finalized with 9 loopholes documented |
 | Design | Phase 2 — Collector | Finalized with Screener.in, FinBERT, NSE bhavcopy, dual-broker instruments |
 | Design | Phase 3 — Brain | Finalized with 15 loopholes, signal cooldown table, walk-forward Sharpe ≥ 1.3 |

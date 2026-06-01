@@ -64,7 +64,7 @@ def _intraday_cycle(
     if intraday_runner is None:
         logger.warning("intraday_cycle: no runner injected, skipping")
         return
-    intraday_runner.run_cycle(run_date=run_date)  # type: ignore[attr-defined]
+    intraday_runner.run_cycle()  # type: ignore[attr-defined]
     logger.info("intraday_cycle completed run_date=%s", run_date)
 
 
@@ -223,6 +223,7 @@ def _swing_gtt_dispatch(
 
     pending = conn.execute(
         "SELECT * FROM recommendations WHERE status='queued_for_execution'"
+        " AND track IN ('swing', 'long_term')"
     ).fetchall()
 
     now_ist = datetime.now(IST)
