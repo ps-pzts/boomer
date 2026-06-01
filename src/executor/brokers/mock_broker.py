@@ -163,6 +163,7 @@ class MockBroker(Broker):
             "sl_limit_price": request.sl_limit_price,
             "target_trigger_price": request.target_trigger_price,
             "target_limit_price": request.target_limit_price,
+            "parent_order_id": request.parent_order_id,
             "status": GttStatus.GTT_ACTIVE,
             "triggered_order_id": None,
         }
