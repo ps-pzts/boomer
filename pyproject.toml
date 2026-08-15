@@ -22,6 +22,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["simulate.py"]  # legacy demo script, not part of the src package
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

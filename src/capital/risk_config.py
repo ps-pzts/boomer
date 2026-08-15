@@ -11,6 +11,34 @@ from capital.models import RiskConfig, Track
 
 IST = ZoneInfo("Asia/Kolkata")
 
+# Single source of truth for Phase 1 design-specified defaults.
+# seed_defaults() inserts these as version 1. To change a live value,
+# create a new version via update_live_backtest_ratio() or a manual INSERT.
+# MIN_RR and ATR_K are co-located design thresholds — see capital/models.py.
+RISK_CONFIG_DEFAULTS: dict[str, object] = {
+    "risk_per_intraday_trade_pct": Decimal("0.005"),
+    "risk_per_swing_trade_pct": Decimal("0.010"),
+    "risk_per_long_term_trade_pct": Decimal("0.010"),
+    "intraday_daily_loss_limit_pct": Decimal("0.020"),
+    "swing_weekly_loss_limit_pct": Decimal("0.040"),
+    "portfolio_daily_loss_limit_pct": Decimal("0.020"),
+    "portfolio_weekly_loss_limit_pct": Decimal("0.040"),
+    "portfolio_max_drawdown_pct": Decimal("0.080"),
+    "single_stock_cap_pct": Decimal("0.050"),
+    "sector_cap_pct": Decimal("0.250"),
+    "correlation_cluster_cap_pct": Decimal("0.350"),
+    "intraday_consecutive_loss_count": 3,
+    "swing_30d_loss_count": 4,
+    "nifty_intraday_pause_pct": Decimal("0.030"),
+    "live_backtest_ratio_long_term": Decimal("0.70"),
+    "live_backtest_ratio_swing": Decimal("0.70"),
+    "live_backtest_ratio_intraday": Decimal("0.70"),
+    "sentiment_confidence_threshold": Decimal("0.60"),
+    "min_stock_price": Decimal("100"),
+    "min_avg_daily_volume": 500000,
+    "min_avg_daily_turnover_cr": Decimal("5.0"),
+}
+
 
 def _row_to_risk_config(row: sqlite3.Row) -> RiskConfig:
     return RiskConfig(
@@ -80,6 +108,7 @@ class RiskConfigStore:
 
             config_id = str(uuid.uuid4())
             now = datetime.now(IST).replace(tzinfo=None).isoformat()
+            d = RISK_CONFIG_DEFAULTS
             conn.execute(
                 """
                 INSERT INTO risk_config (
@@ -99,19 +128,43 @@ class RiskConfigStore:
                     created_at
                 ) VALUES (
                     ?, 1, ?,
-                    0.005, 0.010, 0.010,
-                    0.020, 0.040,
-                    0.020, 0.040, 0.080,
-                    0.050, 0.250, 0.350,
-                    3, 4,
-                    0.030,
-                    0.70, 0.70, 0.70,
-                    0.60,
-                    100, 500000, 5.0,
+                    ?, ?, ?,
+                    ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?,
+                    ?,
+                    ?, ?, ?,
+                    ?,
+                    ?, ?, ?,
                     ?
                 )
                 """,
-                (config_id, effective_from.isoformat(), now),
+                (
+                    config_id, effective_from.isoformat(),
+                    float(d["risk_per_intraday_trade_pct"]),
+                    float(d["risk_per_swing_trade_pct"]),
+                    float(d["risk_per_long_term_trade_pct"]),
+                    float(d["intraday_daily_loss_limit_pct"]),
+                    float(d["swing_weekly_loss_limit_pct"]),
+                    float(d["portfolio_daily_loss_limit_pct"]),
+                    float(d["portfolio_weekly_loss_limit_pct"]),
+                    float(d["portfolio_max_drawdown_pct"]),
+                    float(d["single_stock_cap_pct"]),
+                    float(d["sector_cap_pct"]),
+                    float(d["correlation_cluster_cap_pct"]),
+                    d["intraday_consecutive_loss_count"],
+                    d["swing_30d_loss_count"],
+                    float(d["nifty_intraday_pause_pct"]),
+                    float(d["live_backtest_ratio_long_term"]),
+                    float(d["live_backtest_ratio_swing"]),
+                    float(d["live_backtest_ratio_intraday"]),
+                    float(d["sentiment_confidence_threshold"]),
+                    float(d["min_stock_price"]),
+                    d["min_avg_daily_volume"],
+                    float(d["min_avg_daily_turnover_cr"]),
+                    now,
+                ),
             )
         return self.load_version(1)
 

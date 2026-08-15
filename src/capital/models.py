@@ -58,6 +58,12 @@ def allocation_for_capital(total_capital: Decimal) -> dict[Track, Decimal]:
     return INITIAL_ALLOCATION
 
 
+# Design-specified trade-decision thresholds. These are intentionally
+# module constants (not in RiskConfig) because they are structural rules
+# from the design doc, not operator-tunable parameters.
+# For tunable risk parameters (position sizing, loss limits, etc.) see
+# RISK_CONFIG_DEFAULTS in capital/risk_config.py.
+
 # RR minimums per track
 MIN_RR: dict[Track, Decimal] = {
     Track.INTRADAY: Decimal("1.5"),
