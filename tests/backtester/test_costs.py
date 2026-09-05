@@ -109,11 +109,9 @@ class TestCostModelIntraday:
         assert bps == 0.0
 
 
-class TestCostModelFyersSaving:
-    """
-    Fyers ₹0 delivery brokerage saves ₹40 per round trip vs Kite ₹20/order.
-    At ₹5,000 position: 0.8% savings per trade.
-    """
+class TestCostModelDeliveryVsIntraday:
+    """Kite (Zerodha) charges ₹0 brokerage on equity delivery, vs a ₹20/order
+    (or 0.03%) cap on intraday — delivery's cost is driven by STT, not brokerage."""
 
     def test_delivery_cheaper_than_intraday_at_same_value(self):
         cm = CostModel()

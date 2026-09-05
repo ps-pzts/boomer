@@ -2,7 +2,7 @@
 Instrument master fetcher (Category C — on-demand, weekly refresh).
 
 Fetches Kite Connect instruments CSV and populates the instruments table.
-The CSV maps ISIN → NSE symbol → Kite instrument token → Fyers symbol.
+The CSV maps ISIN → NSE symbol → Kite instrument token.
 All collector joins from BSE data → NSE prices → broker tokens go through this table.
 
 URL: https://api.kite.trade/instruments (public, no auth required for CSV download).
@@ -83,7 +83,6 @@ def _parse_kite_instruments_csv(
             token = None
 
         series = instr_type
-        fyers_symbol = f"NSE:{symbol}-EQ"
 
         try:
             existing = db.execute("SELECT isin FROM instruments WHERE isin = ?", (isin,)).fetchone()
@@ -93,10 +92,10 @@ def _parse_kite_instruments_csv(
                     UPDATE instruments SET
                         nse_symbol=?, company_name=?,
                         kite_instrument_token=?, kite_tradingsymbol=?,
-                        fyers_symbol=?, series=?, last_refreshed=?
+                        series=?, last_refreshed=?
                     WHERE isin=?
                     """,
-                    (symbol, name, token, symbol, fyers_symbol, series, refreshed_at, isin),
+                    (symbol, name, token, symbol, series, refreshed_at, isin),
                 )
                 updated += 1
             else:
@@ -105,8 +104,8 @@ def _parse_kite_instruments_csv(
                     INSERT INTO instruments
                         (isin, nse_symbol, bse_code, company_name,
                          kite_instrument_token, kite_tradingsymbol,
-                         fyers_symbol, series, face_value, last_refreshed)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         series, face_value, last_refreshed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         isin,
@@ -115,7 +114,6 @@ def _parse_kite_instruments_csv(
                         name,
                         token,
                         symbol,
-                        fyers_symbol,
                         series,
                         None,
                         refreshed_at,

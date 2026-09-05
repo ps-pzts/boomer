@@ -83,8 +83,8 @@ class OrderValidity(StrEnum):
 
 
 class ProductType(StrEnum):
-    MIS = "mis"  # intraday (Kite)
-    CNC = "cnc"  # delivery (Fyers)
+    MIS = "mis"  # intraday
+    CNC = "cnc"  # delivery
 
 
 class GttType(StrEnum):
@@ -94,7 +94,6 @@ class GttType(StrEnum):
 
 class BrokerName(StrEnum):
     KITE = "kite"
-    FYERS = "fyers"
     MOCK = "mock"
     PAPER = "paper"
 

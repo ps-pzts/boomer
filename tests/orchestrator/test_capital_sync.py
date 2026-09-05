@@ -1,8 +1,8 @@
 """Tests for capital_sync.sync_eod_capital.
 
 Worked example (verified by hand):
-  Kite mock cash:   ₹50,000
-  Fyers mock cash:  ₹30,000
+  Broker A mock cash: ₹50,000
+  Broker B mock cash: ₹30,000
   Open swing position: 10 shares × ₹200 entry = ₹2,000 deployed
   total_cash   = 80,000
   total_capital = 82,000
@@ -76,9 +76,9 @@ class TestSyncEodCapital:
         from src.capital.state import CapitalStateManager
         from src.orchestrator.capital_sync import sync_eod_capital
 
-        kite = MockBroker(initial_cash=50_000.0)
-        fyers = MockBroker(initial_cash=30_000.0)
-        sync_eod_capital(str(db_path), [kite, fyers], "2026-05-11")
+        broker_a = MockBroker(initial_cash=50_000.0)
+        broker_b = MockBroker(initial_cash=30_000.0)
+        sync_eod_capital(str(db_path), [broker_a, broker_b], "2026-05-11")
 
         mgr = CapitalStateManager(db_path)
         ledger = mgr.latest_ledger()

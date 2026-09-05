@@ -51,7 +51,7 @@ def _pre_market_executor_setup(
         else:
             logger.info(
                 "pre_market_executor_setup: no TOTP credentials configured — "
-                "update .env with KITE_TOTP_SECRET / FYERS_TOTP_SECRET for automated login"
+                "update .env with KITE_TOTP_SECRET for automated login"
             )
     except Exception as exc:
         logger.error("pre_market_executor_setup: auto_login error — %s", exc)

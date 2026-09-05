@@ -1,5 +1,12 @@
 # Phase 4 — Executor + Backtesting + Intraday Continuous + Stage 4b
 
+> **2026-09-06 — Single-broker note:** this document originally specified a dual-broker
+> architecture (Kite for intraday, Fyers for delivery). Fyers has been removed entirely —
+> Kite is now the sole broker for all tracks. See the superseded note in "Component 1 —
+> Broker abstraction" below and `designs/design-evolution.md` for why. Passages further
+> in this document that still describe Fyers-specific mechanics are historical context,
+> not current behavior.
+
 This phase covers the four interrelated components that make "the trading day in motion" work:
 
 - **Executor (System 3)** — places orders, manages lifecycle, reconciles with broker, handles failures
@@ -52,20 +59,19 @@ Broker interface contract:
   list_gtts() → list of active GTTs
 ```
 
-**v1 implementations — dual broker:**
+**v1 implementations — single broker (superseded dual-broker design):**
+
+> **2026-09-06 — Superseded:** this section originally specified a dual-broker split (Kite for intraday, Fyers for delivery), justified by a claimed ₹0-vs-₹20 delivery brokerage saving. That saving was never real — Kite (Zerodha) has always charged ₹0 brokerage on equity delivery too, the same as Fyers. Fyers auto-login was also blocked in practice (MPIN issue) and every track was already routed to Kite in the actual `OrderManager` code before this doc was updated. FyersBroker and all Fyers-specific code have been removed; Kite is the single broker. See `designs/design-evolution.md` for the full history. The table and routing description below reflect the current single-broker reality.
 
 | Broker | Handles | Reason |
 |--------|---------|--------|
-| `KiteBroker` | All intraday (MIS) orders | Proven reliability for intraday; required for tick feed |
-| `FyersBroker` | All delivery (CNC) orders — swing and long-term | ₹0 delivery brokerage vs ₹20/order on Kite |
+| `KiteBroker` | All orders — intraday (MIS) and delivery (CNC) | Zero brokerage on delivery same as intraday's tick-feed reliability; single broker removes cross-broker reconciliation and dual token-refresh surface |
 | `MockBroker` | Backtesting and tests | Historical price replay, no real orders |
 | `PaperBroker` | Paper trading | Fakes fills using realistic models |
 
-Both `KiteBroker` and `FyersBroker` are v1 implementations, not deferred. Every order carries a `broker_id` field. The executor routes: `track == intraday → kite_broker`; `track in (swing, long_term) → fyers_broker`. At the ₹2.5L milestone, this routing can be reviewed or changed without architectural work.
+Every order carries a `broker_id` field for forward compatibility, but all tracks route to `kite_broker`. Routing is a one-entry configuration table, not conditional logic.
 
-**Fyers specifics:** Fyers API Python client (`fyers-apiv3`) uses OAuth2 daily token refresh. Authentication at 9:00 AM IST, same as Kite. Fyers supports GTC (Good Till Cancelled) orders for delivery, which map to GTT semantics in the abstraction. Fyers brokerage: ₹0 for equity delivery, ₹20 for intraday.
-
-**PaperBroker price dependency:** `PaperBroker` simulates order fills but requires a live price feed to determine whether a resting order fills. This feed comes from `KiteBroker`'s tick subscription (Kite is always running for intraday even if Fyers handles delivery orders):
+**PaperBroker price dependency:** `PaperBroker` simulates order fills but requires a live price feed to determine whether a resting order fills. This feed comes from `KiteBroker`'s tick subscription:
 
 ```python
 paper_broker = PaperBroker(price_source=kite_broker)
@@ -207,11 +213,11 @@ Executor's view of positions must match broker's view across **two brokers** and
 - Mismatches → `reconciliation_alerts` table
 
 **End of day:**
-- Full reconciliation across both brokers (positions, holdings, cash, margin)
+- Full reconciliation of positions, holdings, cash, and margin on Kite
 - Mismatches go to `reconciliation_alerts` table
 - Tomorrow's run can't start until reconciliation alerts cleared
 
-The single biggest source of catastrophic bot failures is "bot's mental model of what it owns is wrong." Two brokers doubles the surface area for drift — the reconciliation loop must cover both.
+The single biggest source of catastrophic bot failures is "bot's mental model of what it owns is wrong." The reconciliation loop checks both MIS positions and CNC holdings every cycle.
 
 ### Pre-trade safety checks (executor's own layer)
 
@@ -220,7 +226,7 @@ Defence in depth on top of Phase 1 risk checks:
 1. **Order price sanity** — within 5% of current LTP
 2. **Quantity sanity** — > 0, integer, within liquidity bounds
 3. **Duplicate detection** — identical order or GTT in last 30 seconds?
-4. **Funds available** — routed broker has the cash (check Kite for intraday, Fyers for delivery)
+4. **Funds available** — Kite has the cash for the order
 5. **Symbol valid** — exists, tradable today (not suspended)
 6. **Market hours** — for intraday, market open and not in pre-open auction
 7. **Circuit limit** — order price not at upper/lower circuit
@@ -232,15 +238,12 @@ A check that runs twice catches more bugs than one that runs once.
 
 ### Broker failure handling
 
-Rules apply per-broker independently. A Fyers outage doesn't stop Kite intraday operations and vice versa.
-
 - **API timeout:** wait 10s, poll for order status. Don't retry placement (could duplicate).
-- **Auth failure:** re-authenticate once. Twice fails → alert and pause *that broker's track only*. Kite failing doesn't halt delivery orders; Fyers failing doesn't halt intraday.
+- **Auth failure:** re-authenticate once. Twice fails → alert and pause all trading until resolved.
 - **Rate limit:** exponential backoff with jitter, cap at 5 minutes.
 - **Order rejected:** parse rejection reason. Some recoverable (price away from market), some not (margin insufficient).
-- **Connection lost mid-day:** stop placing new orders on that broker. Existing orders and GTTs continue at broker. On reconnect, reconcile aggressively.
+- **Connection lost mid-day:** stop placing new orders. Existing orders and GTTs continue at the broker. On reconnect, reconcile aggressively.
 - **GTT rejected by broker:** mark GTT as `ERROR`, alert immediately. A rejected GTT means an entry or stop-loss is unprotected. Operator must decide to re-place or cancel.
-- **Fyers auth fails at market open:** intraday continues on Kite. Swing/long-term entries are blocked for the day. Existing delivery positions have their GTT OCO stops at Fyers — those continue independently of the API session.
 
 Each failure type writes to `executor_errors`. Pattern of repeated errors triggers escalation.
 
@@ -656,7 +659,7 @@ A swing trade that's working may deserve to become long-term. If a swing positio
 
 ## Stop conditions for Phase 4 (all met)
 
-- Executor: dual broker (KiteBroker for intraday, FyersBroker for delivery) — both v1 implementations
+- Executor: single broker (KiteBroker for both intraday and delivery) — ~~dual broker with FyersBroker~~ superseded 2026-09-06, see note at top of doc
 - Executor: broker abstraction interface defined with GTT methods
 - Executor: GTT order lifecycle and `gtt_orders` table defined
 - Executor: GTT OCO for delivery stop-loss + target; GTT single-leg for entry orders
@@ -666,9 +669,9 @@ A swing trade that's working may deserve to become long-term. If a swing positio
 - Executor: reconciliation every 60s (regular orders) + daily 6 AM (GTT status) + EOD (full)
 - Executor: pre-trade safety checks specified (includes GTT duplicate check)
 - Executor: intraday square-off triggered by orchestrator only (no duplicate self-trigger)
-- Executor: failure handling per broker, independent per broker
+- Executor: failure handling pauses all trading on repeated auth failure
 - Backtesting: same-code principle with MockBroker
-- Backtesting: cost model updated for Fyers ₹0 delivery brokerage
+- Backtesting: cost model reflects Kite's ₹0 delivery brokerage (~~originally attributed to Fyers~~ corrected 2026-09-06)
 - Backtesting: walk-forward validation as deployment gate; tiered approach for filing-based signals
 - Backtesting: walk-forward Sharpe threshold raised to 1.3 (survivorship bias adjustment)
 - Backtesting: holdout integrity discipline (5-run cap)

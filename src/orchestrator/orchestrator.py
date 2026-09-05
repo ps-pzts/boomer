@@ -234,23 +234,6 @@ def _build_brokers() -> list:
             "broker_not_configured broker=kite — set KITE_API_KEY + KITE_ACCESS_TOKEN in .env"
         )
 
-    fyers_id = os.environ.get("FYERS_CLIENT_ID", "")
-    fyers_token = os.environ.get("FYERS_ACCESS_TOKEN", "")
-    if fyers_id and fyers_token:
-        try:
-            from src.executor.brokers.fyers_broker import FyersBroker
-
-            fyers = FyersBroker()
-            fyers.authenticate()
-            brokers.append(fyers)
-            logging.getLogger(__name__).info("broker_connected broker=fyers")
-        except Exception as exc:
-            logging.getLogger(__name__).warning("broker_connect_failed broker=fyers error=%s", exc)
-    else:
-        logging.getLogger(__name__).warning(
-            "broker_not_configured broker=fyers — set FYERS_CLIENT_ID + FYERS_ACCESS_TOKEN in .env"
-        )
-
     return brokers
 
 

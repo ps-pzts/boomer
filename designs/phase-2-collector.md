@@ -252,7 +252,7 @@ Fetched only when needed.
 - Index constituents — refresh quarterly
 - Index constituents history — backfilled from NSE methodology archives, then maintained quarterly
 - Quarterly financials (Screener.in HTML) — per company after quarterly results filing; 1 req/5s, 2–6 AM IST only
-- Instrument master (Kite + Fyers instrument CSV) — weekly refresh; maps instrument tokens, ISINs, symbols across brokers
+- Instrument master (Kite instrument CSV) — weekly refresh; maps instrument tokens, ISINs, symbols
 
 ### Category D — Live streaming sources
 
@@ -490,7 +490,7 @@ Rate: 1 request per 5 seconds, 2–6 AM IST only. Trigger: scrape within 48 hour
 
 ### `instruments` table (SQLite)
 
-Cross-broker, cross-exchange instrument master. Resolves identifier fragmentation: BSE uses scrip codes, NSE uses symbols, Kite uses numeric tokens, Fyers uses `NSE:SYMBOL-EQ` format.
+Cross-broker, cross-exchange instrument master. Resolves identifier fragmentation: BSE uses scrip codes, NSE uses symbols, Kite uses numeric tokens.
 
 | Field | Purpose |
 |-------|---------|
@@ -500,7 +500,7 @@ Cross-broker, cross-exchange instrument master. Resolves identifier fragmentatio
 | `company_name` | Canonical name |
 | `kite_instrument_token` | Kite numeric token |
 | `kite_tradingsymbol` | Kite trading symbol |
-| `fyers_symbol` | Fyers format: `NSE:SYMBOL-EQ` |
+| `fyers_symbol` | Legacy column, no longer populated — Fyers was removed 2026-09-06 (see `designs/design-evolution.md`); kept in schema rather than dropped via migration |
 | `series` | `EQ`, `BE`, etc. |
 | `face_value` | Per share |
 | `last_refreshed` | When this row was last updated |

@@ -10,13 +10,13 @@ A question is removed from this list when a decision is made and recorded in the
 
 ### Q0-1: SEBI algo trading registration
 
-**Context:** SEBI's 2022 circular on algorithmic trading requires retail investors using broker APIs for automated trading to have their strategies registered and approved by their broker. Zerodha and Fyers both have registration processes for algo trading via Kite Connect / Fyers API.
+**Context:** SEBI's 2022 circular on algorithmic trading requires retail investors using broker APIs for automated trading to have their strategies registered and approved by their broker. Zerodha has a registration process for algo trading via Kite Connect. (Fyers is no longer part of this system — see `designs/design-evolution.md` for the single-broker reversal — so only Zerodha registration applies.)
 
-**Question:** Has the operator completed algo trader registration with Zerodha and Fyers? What are the specific compliance requirements for this system's use case?
+**Question:** Has the operator completed algo trader registration with Zerodha? What are the specific compliance requirements for this system's use case?
 
 **Why it blocks:** Operating an automated trading system without completing broker registration is a regulatory violation. Account suspension is the likely consequence. This must be verified before placing any real orders.
 
-**Action needed:** Contact Zerodha support for Kite Connect algo registration requirements. Contact Fyers for their equivalent process. Document the registration status in the runbook.
+**Action needed:** Contact Zerodha support for Kite Connect algo registration requirements. Document the registration status in the runbook.
 
 ---
 
@@ -45,15 +45,11 @@ A question is removed from this list when a decision is made and recorded in the
 
 ---
 
-### Q0-4: Fyers API vs Kite as primary tick-feed broker
+### ~~Q0-4: Fyers API vs Kite as primary tick-feed broker~~ — MOOT 2026-09-06
 
-**Context:** The design uses Kite's WebSocket tick feed for live price data (intraday signals, PaperBroker fills, live capital view LTP). Fyers also has a WebSocket feed. Currently, Kite is kept as the sole tick-feed provider because all three implementations (PaperBroker, intraday, live capital view) depend on it.
+**Context:** The design uses Kite's WebSocket tick feed for live price data (intraday signals, PaperBroker fills, live capital view LTP).
 
-**Question:** If Fyers is handling delivery orders, do we need Kite running at all times just for the tick feed? Or should Fyers be the tick-feed provider with Kite as secondary?
-
-**Implication:** If Kite session expires on a non-intraday day, does the tick feed (and thus the live capital view) fail even though no Kite orders are being placed?
-
-**Recommended decision:** Keep Kite as the single tick-feed provider for v1. Kite's feed is more established. Accept that a valid Kite session is always required even when no intraday orders are placed. Document this dependency explicitly.
+**Resolution:** Moot — Fyers has been removed entirely; Kite is the single broker and the single tick-feed provider. A valid Kite session is always required, including on days with no intraday orders, since PaperBroker and the live capital view both depend on it. See `designs/design-evolution.md` for the single-broker reversal.
 
 ---
 
@@ -234,13 +230,11 @@ CREATE INDEX idx_features_stock_valid
 
 ---
 
-### Q4-3: GTT reconciliation — Fyers GTC order mapping
+### ~~Q4-3: GTT reconciliation — Fyers GTC order mapping~~ — MOOT 2026-09-06
 
-**Context:** Fyers doesn't use the term "GTT" — they use "GTC" (Good Till Cancelled) or "Super Order." The broker abstraction maps these to the same GTT interface.
+**Context:** Fyers doesn't use the term "GTT" — they use "GTC" (Good Till Cancelled) or "Super Order." The broker abstraction mapped these to the same GTT interface.
 
-**Question:** Does Fyers' GTC/Super Order support the same single-leg and OCO semantics as Kite's GTT? Are there differences in how modify/cancel work?
-
-**Action needed:** Test Fyers API GTC order placement and OCO support in a paper trading environment before relying on it for live delivery stops. Document any behavioral differences in FyersBroker implementation notes.
+**Resolution:** Moot — this was never actually validated (Fyers auto-login was blocked, so live delivery orders never ran through FyersBroker in practice) and is now moot since Fyers has been removed entirely. Kite is the single broker for all tracks, including delivery.
 
 ---
 
@@ -268,15 +262,15 @@ CREATE INDEX idx_features_stock_valid
 
 ---
 
-### ~~Q5-3: Fyers token daily refresh~~ — RESOLVED 2026-05-10
+### ~~Q5-3: Fyers token daily refresh~~ — MOOT 2026-09-06
 
-**Decision:** Fyers token refresh documented as a manual daily step in the runbook (pre-market checklist). If refresh fails, `pre_market_executor_setup` emits a CRITICAL alert. Full automation deferred to post-live testing of Fyers refresh token flow.
+**Decision (2026-05-10, now moot):** Fyers token refresh was documented as a manual daily step in the runbook. Fyers has since been removed entirely — Kite token refresh is fully automated via `auto_login.py` and requires no manual step.
 
 ---
 
-### ~~Q5-4: Dashboard deployment update — Fyers credentials~~ — RESOLVED 2026-05-10
+### ~~Q5-4: Dashboard deployment update — Fyers credentials~~ — MOOT 2026-09-06
 
-**Decision:** `FYERS_APP_ID`, `FYERS_SECRET`, and `FYERS_ACCESS_TOKEN` added to `secrets.env` alongside Kite credentials. Same encrypted-env-file model. Documented in runbook.
+**Decision (2026-05-10, now moot):** `FYERS_APP_ID`, `FYERS_SECRET`, and `FYERS_ACCESS_TOKEN` were added to `secrets.env` alongside Kite credentials. Fyers has since been removed entirely — only Kite credentials remain in `secrets.env`.
 
 ---
 

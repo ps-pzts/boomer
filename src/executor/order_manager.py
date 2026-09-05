@@ -23,15 +23,6 @@ logger = logging.getLogger(__name__)
 
 IST = ZoneInfo("Asia/Kolkata")
 
-# Routing table: track → broker_id
-# All tracks routed to Kite until Fyers trading is validated.
-# Fyers is connected for historical/live data only.
-_TRACK_BROKER: dict[str, BrokerName] = {
-    "intraday": BrokerName.KITE,
-    "swing": BrokerName.KITE,
-    "long_term": BrokerName.KITE,
-}
-
 _DUPLICATE_WINDOW_SECONDS = 30
 _PRICE_SANITY_PCT = 0.05  # order must be within 5% of LTP
 
@@ -41,7 +32,7 @@ class OrderManager:
     Converts approved TradePlans into orders, enforces the state machine,
     applies 8 pre-trade safety checks, and persists to the orders table.
 
-    Routing rule: intraday → KiteBroker; swing/long_term → FyersBroker.
+    All tracks route to KiteBroker — single-broker architecture.
     The executor uses only the abstract Broker interface — no broker-specific
     logic leaks out of the brokers/ package.
     """
@@ -66,7 +57,7 @@ class OrderManager:
         Returns order_id (our internal UUID).
         Raises PreTradeCheckError if any check fails.
         """
-        broker = self._broker_for(track)
+        broker = self._broker_for()
         ltp = self._ltp.get(request.symbol)
         self._pre_trade_checks(request, broker, ltp, track)
 
@@ -315,11 +306,10 @@ class OrderManager:
         )
         self._db.commit()
 
-    def _broker_for(self, track: str) -> Broker:
-        broker_id = _TRACK_BROKER.get(track, BrokerName.FYERS)
-        broker = self._brokers.get(broker_id)
+    def _broker_for(self) -> Broker:
+        broker = self._brokers.get(BrokerName.KITE)
         if broker is None:
-            raise RuntimeError(f"No broker registered for {broker_id}")
+            raise RuntimeError(f"No broker registered for {BrokerName.KITE}")
         return broker
 
     @staticmethod

@@ -6,11 +6,11 @@
 
 ---
 
-## Status: All phases complete — nightly self-healing + full service restart
+## Status: All phases complete — single-broker (Kite-only) architecture
 
-**Current phase:** Phase 5 complete. Nightly health check (01:45 IST) added; restart_guard now cycles all three services; bot gets its own systemd unit. 444 tests pass, lint clean.
+**Current phase:** Phase 5 complete. Fyers removed entirely — Kite is the sole broker for all tracks (intraday and delivery). Nightly health check (01:45 IST); restart_guard cycles all three services; bot has its own systemd unit.
 
-**Last updated:** 2026-05-24
+**Last updated:** 2026-09-06
 
 ---
 
@@ -21,7 +21,7 @@
 | Design | Phase 1 — Capital & Risk | Finalized with 9 loopholes documented |
 | Design | Phase 2 — Collector | Finalized with Screener.in, FinBERT, NSE bhavcopy, dual-broker instruments |
 | Design | Phase 3 — Brain | Finalized with 15 loopholes, signal cooldown table, walk-forward Sharpe ≥ 1.3 |
-| Design | Phase 4 — Executor & Backtesting | Finalized with GTT architecture, dual-broker (Kite intraday + Fyers delivery) |
+| Design | Phase 4 — Executor & Backtesting | Finalized with GTT architecture; originally dual-broker (Kite intraday + Fyers delivery), reversed 2026-09-06 to single-broker (Kite only) |
 | Design | Phase 5 — Orchestrator & Ops | Finalized with forward-only migrations, 3AM restart guard, dual-alert layer |
 | Design | open-questions.md | 24 open questions organized by phase |
 | Design | design-evolution.md | Narrative history: 18 issues + 7 hard blockers resolved |
@@ -33,6 +33,7 @@
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
 | Ops | Bot systemd unit | New `ops/systemd/boomer-bot.service` — runs `python -m src.alerts.telegram_bot`, same shape as orchestrator/dashboard units. |
 | Bug | GTT last_price silent fallback | `KiteBroker.place_gtt()` used `get_ltp() or sl_trigger_price` as the Kite `last_price` field. When `get_ltp()` returned `None` (no market data subscription, empty tick cache), the fallback set `last_price = sl_trigger_price = trigger_values[0]`, causing Kite to reject with "Trigger cannot be created with one of the trigger values equal to the last price." Fix: `get_ltp()` extended with a Tier 2 fallback to `holdings()` + `positions()` (base plan); `place_gtt()` now raises `RuntimeError` explicitly when LTP is unavailable instead of silently using a trigger price. |
+| Refactor | Fyers removed — Kite is the single broker | `FyersBroker`, `fyers_auto_login()`, `scripts/fyers_login.py`, the `fyers-apiv3` dependency, and every Fyers-specific branch (GTT int-status parsing in `gtt_manager.py`, dual-broker reconciliation split, CI/CD env vars) removed. `OrderManager._TRACK_BROKER`'s dangerous fallback (`.get(track, BrokerName.FYERS)` — an unknown track would have tried to route to a broker key no longer in the `brokers` dict) fixed to route everything to Kite. `reconciliation.py.reconcile_intraday()` restructured to check both `list_positions()` (MIS) and `list_holdings()` (CNC) on Kite instead of branching on broker identity, since Kite now also handles delivery. The original design rationale (Fyers ₹0 delivery brokerage vs Kite's ₹20/order) was factually wrong — Kite has always charged ₹0 on equity delivery too, same as Fyers — so there was no real cost saving being given up. Fyers auto-login was also blocked in practice (MPIN issue) and every track was already routed to Kite in `OrderManager` before this cleanup made it official. `instruments.fyers_symbol` column left in schema (unpopulated going forward) rather than dropped via migration. See `designs/design-evolution.md` for full history. |
 
 ---
 
@@ -85,6 +86,22 @@ Key ones resolved in Phase 4 implementation:
 ---
 
 ## Change log
+
+### 2026-09-06 — Refactor: remove Fyers, single-broker (Kite-only) architecture
+
+- **Why:** Fyers was already dead weight in practice — auto-login blocked on an unresolved MPIN issue, every track already routed to Kite in `OrderManager._TRACK_BROKER`, and the original cost-arbitrage rationale (Fyers ₹0 delivery brokerage vs Kite ₹20/order) was factually wrong: Kite (Zerodha) has always charged ₹0 brokerage on equity delivery too. There was no saving being given up.
+- Deleted `src/executor/brokers/fyers_broker.py`, `scripts/fyers_login.py`, `fyers_auto_login()` and its ~14 tests, the `fyers-apiv3` dependency.
+- `src/executor/order_manager.py`: removed the dormant `_TRACK_BROKER` routing table; fixed `_broker_for()`'s fallback default from `BrokerName.FYERS` (would have raised `RuntimeError: No broker registered for fyers` for any unrecognized track once Fyers was gone) to always route to `BrokerName.KITE`.
+- `src/executor/gtt_manager.py`: removed `_normalise_gtt_status()`'s `isinstance(status, int)` branch and its local `fyers_broker` import — that branch existed only to parse Fyers' integer GTT status codes.
+- `src/executor/reconciliation.py`: `reconcile_intraday()` restructured from `if broker_id == KITE: list_positions() else: list_holdings()` to always check both on every broker, since Kite now also carries delivery (CNC) positions that used to be Fyers'.
+- `src/executor/models.py`: removed `BrokerName.FYERS` enum member.
+- `src/orchestrator/orchestrator.py`: removed the Fyers block from `_build_brokers()`.
+- `src/collector/fetchers/instruments.py`: stopped computing/writing `fyers_symbol`; column left in schema (unpopulated) rather than dropped via migration — no CHECK constraint or enum depended on it, purely denormalized data.
+- `src/backtester/costs.py`: `_delivery_cost()`'s `brokerage = 0.0` value is unchanged (it was already correct) — only the misleading comment attributing it to Fyers was fixed.
+- Design docs updated to reflect single-broker reality: `designs/phase-4-executor-and-backtesting.md` (superseded-note + broker table + failure-handling sections), `designs/design-evolution.md` (reversal documented under the original "Dual broker in v1" entry), `designs/open-questions.md` (Q0-4, Q4-3, Q5-3, Q5-4 marked moot; Q0-1 SEBI registration scoped to Zerodha only), `designs/phase-2-collector.md` (instruments table doc updated).
+- CI/CD (`ci.yml`, `cd.yml`), `dev.sh`, `ops/runbook.md`: removed all `FYERS_*` env var references.
+- Tests: `test_gtt_manager.py`, `test_position_manager.py`, `test_order_manager.py` — `BrokerName.FYERS` (used only as an incidental dict key, always backed by `MockBroker`) replaced with `BrokerName.KITE`. `test_capital_sync.py` — renamed a `fyers` variable used purely as a second mock broker instance. `test_costs.py` — renamed `TestCostModelFyersSaving` (false premise) to `TestCostModelDeliveryVsIntraday` with a corrected docstring.
+- 444 tests pass, lint clean.
 
 ### 2026-05-12 — End-to-end pipeline run: full signal→recommendation→GTT flow verified
 

@@ -25,11 +25,9 @@ class ReconciliationLoop:
     Keeps the bot's internal view of positions consistent with broker reality.
 
     Three cadences (per design doc):
-    - Intraday (60s): compare live positions for both Kite (MIS) and Fyers (CNC today)
+    - Intraday (60s): compare live MIS positions and CNC holdings on Kite
     - Daily 6 AM: GTT status sync (handled by GttManager.daily_reconcile)
-    - EOD: full position + cash reconciliation across both brokers
-
-    Two brokers double the drift surface area — each reconciliation covers both.
+    - EOD: full position + cash reconciliation
     """
 
     def __init__(
@@ -44,7 +42,7 @@ class ReconciliationLoop:
 
     def reconcile_intraday(self) -> list[str]:
         """
-        Compare bot's open positions against both broker live views.
+        Compare bot's open positions (MIS + CNC) against the broker's live view.
         Returns list of alert_ids raised.
         """
         alerts: list[str] = []
@@ -52,10 +50,7 @@ class ReconciliationLoop:
             if broker_id in (BrokerName.MOCK, BrokerName.PAPER):
                 continue
             try:
-                if broker_id == BrokerName.KITE:
-                    broker_positions = broker.list_positions()
-                else:
-                    broker_positions = broker.list_holdings()
+                broker_positions = broker.list_positions() + broker.list_holdings()
                 alerts.extend(self._compare(broker_id, broker_positions, track_filter=None))
             except Exception as exc:
                 logger.error("Reconciliation failed for %s: %s", broker_id, exc)
