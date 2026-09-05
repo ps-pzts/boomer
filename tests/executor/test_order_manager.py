@@ -35,7 +35,7 @@ def _make_om(ltp: dict | None = None) -> tuple[OrderManager, MockBroker]:
     ltp_cache = ltp or {}
     om = OrderManager(
         db=db,
-        brokers={BrokerName.MOCK: broker, BrokerName.KITE: broker, BrokerName.FYERS: broker},
+        brokers={BrokerName.MOCK: broker, BrokerName.KITE: broker},
         ltp_cache=ltp_cache,
     )
     return om, broker

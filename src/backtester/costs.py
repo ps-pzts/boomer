@@ -128,7 +128,7 @@ class CostModel:
         )
 
     def _delivery_cost(self, buy_value: float, sell_value: float) -> TradeCost:
-        brokerage = 0.0  # Fyers ₹0 delivery brokerage
+        brokerage = 0.0  # Kite (Zerodha) charges ₹0 brokerage on equity delivery
 
         stt = (buy_value + sell_value) * self.STT_DELIVERY_PCT
 

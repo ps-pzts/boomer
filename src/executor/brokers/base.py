@@ -19,7 +19,7 @@ class Broker(ABC):
 
     The rest of the executor uses ONLY this interface.
     No code outside executor/brokers/ imports or calls a broker SDK directly.
-    Routing (Kite vs Fyers vs Mock vs Paper) is in OrderManager — not here.
+    Broker selection (Kite vs Mock vs Paper) is in OrderManager — not here.
     """
 
     @property

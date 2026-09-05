@@ -52,14 +52,9 @@ DASHBOARD_PORT=8000
 
 # Broker credentials — fill these in to enable EOD capital sync
 # Get KITE_API_KEY + KITE_API_SECRET from https://developers.kite.trade
-# Get FYERS_CLIENT_ID + FYERS_SECRET_KEY from https://myapi.fyers.in
 KITE_API_KEY=
 KITE_API_SECRET=
 KITE_ACCESS_TOKEN=
-FYERS_CLIENT_ID=
-FYERS_SECRET_KEY=
-FYERS_REDIRECT_URI=https://127.0.0.1
-FYERS_ACCESS_TOKEN=
 
 # Alerts — leave blank to log instead of sending
 TELEGRAM_BOT_TOKEN=

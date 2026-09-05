@@ -307,10 +307,6 @@ class GttManager:
     @staticmethod
     def _normalise_gtt_status(broker_record: dict) -> GttStatus:
         status = broker_record.get("status", "")
-        if isinstance(status, int):
-            from executor.brokers.fyers_broker import _FYERS_GTT_STATUS_MAP
-
-            return _FYERS_GTT_STATUS_MAP.get(status, GttStatus.GTT_ACTIVE)
         status_str = str(status).lower()
         if "triggered" in status_str or "complete" in status_str:
             return GttStatus.GTT_TRIGGERED

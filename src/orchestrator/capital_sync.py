@@ -20,7 +20,7 @@ def sync_eod_capital(db_path: str, brokers: list, run_date: str) -> None:
 
     Args:
         db_path:  Path to the SQLite database.
-        brokers:  List of authenticated Broker instances (Kite, Fyers, or both).
+        brokers:  List of authenticated Broker instances (Kite).
         run_date: ISO date string (YYYY-MM-DD) for this EOD run.
     """
     from capital.state import CapitalStateManager

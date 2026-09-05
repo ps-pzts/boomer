@@ -27,7 +27,7 @@ _BOOT_AGENTS: list[tuple[str, str]] = [
     ("SHIELD", "Capital & risk — circuit breakers armed"),
     ("HAWKEYE", "Collector grid — watching NSE + BSE data sources"),
     ("JARVIS", "Brain framework — signal & recommendation engine ready"),
-    ("WAR MACHINE", "Executor — Kite (intraday) + Fyers (delivery) standing by"),
+    ("WAR MACHINE", "Executor — Kite standing by"),
     ("BLACK WIDOW", "Alert system — Telegram + email channels active"),
 ]
 

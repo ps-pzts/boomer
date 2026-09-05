@@ -1,4 +1,4 @@
-"""Tests for src/executor/auto_login.py — automated broker TOTP login."""
+"""Tests for src/executor/auto_login.py — automated Kite TOTP login."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import pytest
 from executor.auto_login import (
     _kite_extract_request_token,
     _write_env_token,
-    fyers_auto_login,
     kite_auto_login,
     refresh_all_broker_tokens,
 )
@@ -42,9 +41,9 @@ def test_write_env_token_noop_if_no_file(tmp_path):
 
 def test_write_env_token_handles_empty_value(tmp_path):
     env = tmp_path / ".env"
-    env.write_text("FYERS_ACCESS_TOKEN=oldtoken\n")
-    _write_env_token(env, "FYERS_ACCESS_TOKEN", "")
-    assert "FYERS_ACCESS_TOKEN=" in env.read_text()
+    env.write_text("KITE_ACCESS_TOKEN=oldtoken\n")
+    _write_env_token(env, "KITE_ACCESS_TOKEN", "")
+    assert "KITE_ACCESS_TOKEN=" in env.read_text()
 
 
 # ── kite_auto_login ───────────────────────────────────────────────────────────
@@ -96,102 +95,23 @@ def test_kite_auto_login_bad_password(mock_totp, mock_session_cls):
         kite_auto_login("k", "s", "u", "wrong", "totp")
 
 
-# ── fyers_auto_login ──────────────────────────────────────────────────────────
-
-
-@patch("executor.auto_login.requests.get")
-@patch("executor.auto_login.requests.post")
-@patch("executor.auto_login.pyotp.TOTP")
-def test_fyers_auto_login_success(mock_totp, mock_post, mock_get):
-    mock_totp.return_value.now.return_value = "654321"
-    mock_post.side_effect = [
-        _make_response({"s": "ok", "request_key": "rk1"}),
-        _make_response({"s": "ok", "request_key": "rk2"}),
-        _make_response({"s": "ok", "data": {"token": "session_tok"}}),
-    ]
-    mock_get.return_value = _make_response(
-        {}, headers={"Location": "https://127.0.0.1/?auth_code=auth_xyz&state=None"}
-    )
-
-    mock_sess = MagicMock()
-    mock_sess.generate_authcode.return_value = "https://auth.fyers.in/..."
-    mock_sess.generate_token.return_value = {"access_token": "fyers_token"}
-
-    with patch("fyers_apiv3.fyersModel.SessionModel", return_value=mock_sess):
-        token = fyers_auto_login(
-            "APPID-100", "secret", "https://127.0.0.1", "user1", "mypassword", "TOTP"
-        )
-
-    assert token == "fyers_token"
-    mock_sess.set_token.assert_called_once_with("auth_xyz")
-    # app_id stripped of suffix
-    first_call_kwargs = mock_post.call_args_list[0]
-    assert first_call_kwargs[1]["json"]["app_id"] == "APPID"
-    # verify MPIN is sent with identity_type=pin
-    third_call = mock_post.call_args_list[2]
-    assert third_call[1]["json"]["identity_type"] == "pin"
-    assert third_call[1]["json"]["pin"] == "mypassword"
-
-
-@patch("executor.auto_login.requests.post")
-@patch("executor.auto_login.pyotp.TOTP")
-def test_fyers_auto_login_bad_otp(mock_totp, mock_post):
-    mock_totp.return_value.now.return_value = "000000"
-    mock_post.side_effect = [
-        _make_response({"s": "ok", "request_key": "rk1"}),
-        _make_response({"s": "error", "message": "Invalid OTP"}),
-    ]
-
-    with pytest.raises(RuntimeError, match="verify-otp failed"):
-        fyers_auto_login("APP-100", "s", "https://127.0.0.1", "u", "password", "totp")
-
-
-@patch("executor.auto_login.requests.get")
-@patch("executor.auto_login.requests.post")
-@patch("executor.auto_login.pyotp.TOTP")
-def test_fyers_auto_login_code_param_fallback(mock_totp, mock_post, mock_get):
-    """Some Fyers redirect URLs use 'code' instead of 'auth_code'."""
-    mock_totp.return_value.now.return_value = "123456"
-    mock_post.side_effect = [
-        _make_response({"s": "ok", "request_key": "rk1"}),
-        _make_response({"s": "ok", "request_key": "rk2"}),
-        _make_response({"s": "ok", "data": {"token": "sess_tok"}}),
-    ]
-    mock_get.return_value = _make_response(
-        {}, headers={"Location": "https://127.0.0.1/?code=code_fallback&state=None"}
-    )
-    mock_sess = MagicMock()
-    mock_sess.generate_authcode.return_value = "https://auth.fyers.in/..."
-    mock_sess.generate_token.return_value = {"access_token": "token_ok"}
-
-    with patch("fyers_apiv3.fyersModel.SessionModel", return_value=mock_sess):
-        token = fyers_auto_login("APP-100", "s", "https://127.0.0.1", "u", "mypassword", "totp")
-
-    assert token == "token_ok"
-    mock_sess.set_token.assert_called_once_with("code_fallback")
-
-
 # ── refresh_all_broker_tokens ─────────────────────────────────────────────────
 
 
-def test_refresh_skips_when_totp_secrets_absent(tmp_path, monkeypatch):
+def test_refresh_skips_when_totp_secret_absent(tmp_path, monkeypatch):
     monkeypatch.delenv("KITE_TOTP_SECRET", raising=False)
-    monkeypatch.delenv("FYERS_TOTP_SECRET", raising=False)
     with patch("executor.auto_login._ENV_PATH", tmp_path / ".env"):
         updated = refresh_all_broker_tokens()
     assert updated == {}
 
 
 @patch("executor.auto_login.kite_auto_login", return_value="new_kite_token")
-@patch("executor.auto_login.fyers_auto_login")
-def test_refresh_updates_env_and_env_file(mock_fyers, mock_kite, tmp_path, monkeypatch):
+def test_refresh_updates_env_and_env_file(mock_kite, tmp_path, monkeypatch):
     monkeypatch.setenv("KITE_API_KEY", "key")
     monkeypatch.setenv("KITE_API_SECRET", "secret")
     monkeypatch.setenv("KITE_USER_ID", "user")
     monkeypatch.setenv("KITE_PASSWORD", "pass")
     monkeypatch.setenv("KITE_TOTP_SECRET", "totp")
-    monkeypatch.delenv("FYERS_TOTP_SECRET", raising=False)
-    monkeypatch.delenv("FYERS_PIN", raising=False)
 
     env_file = tmp_path / ".env"
     env_file.write_text("KITE_ACCESS_TOKEN=old_token\n")
@@ -202,7 +122,6 @@ def test_refresh_updates_env_and_env_file(mock_fyers, mock_kite, tmp_path, monke
     assert updated == {"kite": "new_kite_token"}
     assert os.environ["KITE_ACCESS_TOKEN"] == "new_kite_token"
     assert "KITE_ACCESS_TOKEN=new_kite_token" in env_file.read_text()
-    mock_fyers.assert_not_called()
 
 
 @patch("executor.auto_login.kite_auto_login", side_effect=RuntimeError("login failed"))
@@ -212,8 +131,6 @@ def test_refresh_logs_error_does_not_raise(mock_kite, tmp_path, monkeypatch):
     monkeypatch.setenv("KITE_USER_ID", "user")
     monkeypatch.setenv("KITE_PASSWORD", "pass")
     monkeypatch.setenv("KITE_TOTP_SECRET", "totp")
-    monkeypatch.delenv("FYERS_TOTP_SECRET", raising=False)
-    monkeypatch.delenv("FYERS_PIN", raising=False)
 
     with patch("executor.auto_login._ENV_PATH", tmp_path / ".env"):
         updated = refresh_all_broker_tokens()  # should not raise

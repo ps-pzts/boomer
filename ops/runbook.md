@@ -32,9 +32,6 @@ BOOMER_BACKUP_DIR=/var/lib/boomer/backups
 KITE_API_KEY=...
 KITE_API_SECRET=...
 KITE_ACCESS_TOKEN=...
-FYERS_APP_ID=...
-FYERS_SECRET=...
-FYERS_ACCESS_TOKEN=...
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ALERT_SMTP_HOST=smtp.gmail.com
@@ -103,7 +100,7 @@ dashboard.yourdomain.com {
 
 ### "Broker API is down"
 1. Set bot_mode to `paused` via dashboard
-2. Confirm all open positions have broker-side GTT stops (check Kite/Fyers app directly)
+2. Confirm all open positions have broker-side GTT stops (check Kite app directly)
 3. Wait for broker to restore. Check status pages.
 4. Once restored, refresh tokens if expired, resume `auto`
 5. If broker is down at open and you have intraday positions: manually close via broker app
@@ -111,7 +108,7 @@ dashboard.yourdomain.com {
 ### "Reconciliation failed"
 1. Open System Health view — check reconciliation_alerts table (error details in task_runs)
 2. Common causes:
-   - Kite/Fyers position format change → check executor logs for parsing errors
+   - Kite position format change → check executor logs for parsing errors
    - Partial fill left order in unexpected state → manually resolve via broker app, then update orders table
    - Network timeout during reconciliation → usually self-heals on next cycle
 3. Bot will not start tomorrow until EOD reconciliation succeeds (by design)
@@ -200,7 +197,7 @@ Rebuild bot from scratch on a different VM using only the backup:
 6. Record outcome in a note in this runbook
 
 ### Credential rotation
-- Kite/Fyers tokens: expire daily (handled by pre_market_executor_setup task)
+- Kite tokens: expire daily (handled by pre_market_executor_setup task)
 - Kite API key: rotate if compromised. Update secrets.env, restart executor
 - Telegram bot token: rotate via BotFather if compromised
 - SMTP credentials: rotate if compromised. Update secrets.env, restart services
@@ -225,11 +222,10 @@ Rebuild bot from scratch on a different VM using only the backup:
 ## Broker contacts
 
 **Zerodha (Kite):** support.zerodha.com | +91-80-40402020
-**Fyers:** support.fyers.in
 
 Keep your account number and registered mobile number handy.
 If you need to manually close all positions and can't access the dashboard:
-1. Log into Kite / Fyers web app directly
+1. Log into Kite web app directly
 2. Portfolio → Positions → Exit all
 
 ---

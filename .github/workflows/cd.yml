@@ -55,8 +55,6 @@ jobs:
         env:
           KITE_API_KEY: ""
           KITE_ACCESS_TOKEN: ""
-          FYERS_CLIENT_ID: ""
-          FYERS_ACCESS_TOKEN: ""
           TELEGRAM_BOT_TOKEN: ""
           TELEGRAM_CHAT_ID: ""
 

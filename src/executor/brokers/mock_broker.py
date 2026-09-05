@@ -28,7 +28,7 @@ class MockBroker(Broker):
     set_price_bar(). No real network calls are ever made.
 
     Same-code principle: backtester uses this broker; live trading uses
-    KiteBroker or FyersBroker — the executor code is identical.
+    KiteBroker — the executor code is identical.
     """
 
     def __init__(self, initial_cash: float = 100_000.0) -> None:

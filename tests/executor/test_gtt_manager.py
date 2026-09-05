@@ -38,7 +38,7 @@ def _make_position(
         exchange="NSE",
         track="swing",
         bucket_id="swing_bucket",
-        broker_id=BrokerName.FYERS,
+        broker_id=BrokerName.KITE,
         quantity=10,
         average_entry_price=2500.0,
         current_price=2500.0,
@@ -65,7 +65,7 @@ class TestGttManagerPlacement:
     def test_place_single_gtt_creates_record(self):
         db = _make_db()
         broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.FYERS: broker, BrokerName.MOCK: broker})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
         pos = _make_position()
         req = GttRequest(
             symbol="RELIANCE",
@@ -84,7 +84,7 @@ class TestGttManagerPlacement:
     def test_place_oco_gtt_creates_record(self):
         db = _make_db()
         broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.FYERS: broker, BrokerName.MOCK: broker})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
         pos = _make_position()
         req = GttRequest(
             symbol="RELIANCE",
@@ -106,7 +106,7 @@ class TestGttManagerPlacement:
     def test_duplicate_gtt_raises(self):
         db = _make_db()
         broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.FYERS: broker, BrokerName.MOCK: broker})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
         pos = _make_position()
         req = GttRequest(
             symbol="RELIANCE",
@@ -125,7 +125,7 @@ class TestGttManagerTrailingStop:
     def test_trail_stop_moves_up_when_price_gains_2atr(self):
         db = _make_db()
         broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.FYERS: broker, BrokerName.MOCK: broker})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
         pos = _make_position(atr=20.0)
 
         # Place OCO GTT
@@ -155,7 +155,7 @@ class TestGttManagerTrailingStop:
     def test_trail_stop_does_not_move_when_gain_less_than_2atr(self):
         db = _make_db()
         broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.FYERS: broker, BrokerName.MOCK: broker})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
         pos = _make_position(atr=20.0)
 
         req = GttRequest(
@@ -184,7 +184,7 @@ class TestGttManagerDailyReconcile:
     def test_reconcile_marks_triggered_gtt(self):
         db = _make_db()
         broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.FYERS: broker, BrokerName.MOCK: broker})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
 
         # Place a GTT and then simulate it triggering via the broker
         from executor.models import PriceBar

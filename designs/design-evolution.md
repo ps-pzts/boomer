@@ -224,11 +224,13 @@ Standard Kite equity orders expire at market close. The original design assumed 
 - The executor's `gtt_orders` table tracks GTT lifecycle separately from regular orders.
 - GTT reconciliation is daily (6 AM pre-market), not per-minute.
 
-### Dual broker in v1: Kite (intraday) + Fyers (delivery) (Phase 4)
+### Dual broker in v1: Kite (intraday) + Fyers (delivery) (Phase 4) — later reversed
 
-The broker abstraction was always designed for multi-broker. Both KiteBroker and FyersBroker are now v1 implementations, not deferred. Routing: intraday MIS orders → Kite; swing/long-term CNC orders and GTTs → Fyers.
+The broker abstraction was always designed for multi-broker. Both KiteBroker and FyersBroker were made v1 implementations, not deferred. Routing: intraday MIS orders → Kite; swing/long-term CNC orders and GTTs → Fyers.
 
-Rationale: Fyers charges ₹0 for equity delivery (vs ₹20/order on Kite). At ₹50,000 capital with typical swing position sizes of ₹2,500–5,000, this saves 0.8–1.6% per delivery round trip. Fyers supports GTT/GTC orders natively. Kite is kept for intraday because of its tick feed reliability and established MIS infrastructure.
+Rationale at the time: Fyers charges ₹0 for equity delivery (vs ₹20/order on Kite). At ₹50,000 capital with typical swing position sizes of ₹2,500–5,000, this saves 0.8–1.6% per delivery round trip. Fyers supports GTT/GTC orders natively. Kite is kept for intraday because of its tick feed reliability and established MIS infrastructure.
+
+**Reversed 2026-09-06 — the cost-arbitrage premise was wrong.** Kite (Zerodha) has always charged ₹0 brokerage on equity delivery too — the same as Fyers. There was never a ₹40-per-round-trip saving to be had; the design doc's "₹20/order on Kite" figure conflated Kite's intraday brokerage with delivery, which Zerodha has never charged for. On top of that, Fyers' TOTP auto-login was blocked in practice (MPIN propagation issue) and was never resolved — every track had already been routed to Kite in the actual `OrderManager` code (`_TRACK_BROKER` mapped intraday/swing/long_term all to `BrokerName.KITE`) well before this reversal made it official in the design. FyersBroker, its auto-login flow, its CLI login script, and all Fyers-specific branches (GTT status parsing, dual-broker reconciliation split, CI/CD env vars) were removed. Kite is now the single broker for all tracks. The secondary fault-isolation rationale ("a Fyers outage doesn't stop Kite") no longer applies with one broker — auth failure now pauses all trading until resolved, which is simpler to reason about even if marginally less resilient to a single-broker outage.
 
 ### FinBERT for local filing sentiment (Phase 2)
 
