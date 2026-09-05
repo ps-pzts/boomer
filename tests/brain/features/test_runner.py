@@ -128,18 +128,6 @@ def test_intraday_registry_importable():
     assert all(isinstance(c, FeatureComputer) for c in INTRADAY_COMPUTERS)
 
 
-def test_swing_registry_importable():
-    from brain.features.track_swing import SWING_COMPUTERS
-    assert len(SWING_COMPUTERS) > 0
-    assert all(isinstance(c, FeatureComputer) for c in SWING_COMPUTERS)
-
-
-def test_long_term_registry_importable():
-    from brain.features.track_long_term import LONG_TERM_COMPUTERS
-    assert len(LONG_TERM_COMPUTERS) > 0
-    assert all(isinstance(c, FeatureComputer) for c in LONG_TERM_COMPUTERS)
-
-
 def test_live_only_computers_have_none_fn():
     from brain.features.track_intraday import INTRADAY_COMPUTERS
     for c in INTRADAY_COMPUTERS:
@@ -147,7 +135,7 @@ def test_live_only_computers_have_none_fn():
             assert c.fn is None, f"{c.writes} is requires_live but fn is not None"
 
 
-def test_swing_price_features_is_first():
-    from brain.features.track_swing import SWING_COMPUTERS
-    first = SWING_COMPUTERS[0]
-    assert "price_close" in first.writes, "price_features must be first in swing registry"
+def test_intraday_price_features_is_first():
+    from brain.features.track_intraday import INTRADAY_COMPUTERS
+    first = INTRADAY_COMPUTERS[0]
+    assert "price_close" in first.writes, "price_features must be first in intraday registry"

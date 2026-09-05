@@ -31,12 +31,6 @@ SIGNAL_DEAD_CONSECUTIVE_DAYS = 3
 # Drawdown threshold: position in drawdown for >50% of expected hold with no progress
 DRAWDOWN_STALE_HOLD_FRACTION = 0.5
 
-EXPECTED_HOLD_DAYS: dict[str, int] = {
-    "long_term": 180,
-    "swing": 30,
-    "intraday": 1,
-}
-
 
 @dataclass(frozen=True)
 class PositionRecord:
@@ -52,11 +46,11 @@ class PositionRecord:
     original_stop: Decimal
     signal_id: str  # source signal
     original_signal_confidence: float  # at entry
-    # For long-term: days since primary signal was last refreshed above 0.5
+    # Unused since the swing/long_term tracks were removed — kept for now in case
+    # a future track needs thesis-freshness/hold-duration inputs again.
     thesis_signal_last_refreshed_days: int = 0
-    # For swing: days since entry
     days_held: int = 0
-    # For intraday: minutes until 15:15 forced exit
+    # Minutes until 15:15 forced exit — drives health_score()'s time/thesis factor.
     minutes_to_squareoff: float = 60.0
 
 
@@ -104,28 +98,10 @@ class PositionReviewer:
         else:
             signal_component = 0.0
 
-        # Time/thesis factor (15 pts)
-        if position.track == "intraday":
-            mins_left = position.minutes_to_squareoff
-            # Linear penalty: full points at >60 min, 0 at ≤0 min
-            time_component = max(0.0, min(15.0, (mins_left / 60.0) * 15.0))
-        elif position.track == "swing":
-            expected = EXPECTED_HOLD_DAYS["swing"]
-            progress = position.days_held / expected if expected else 1.0
-            # Penalty starts after 70% of expected hold with no P&L progress
-            if progress > 0.7 and pnl <= 0:
-                time_component = max(0.0, 15.0 * (1.0 - progress))
-            else:
-                time_component = 15.0
-        else:
-            # Long-term: thesis freshness (days since primary signal last refreshed)
-            refresh_days = position.thesis_signal_last_refreshed_days
-            if refresh_days > 90:
-                time_component = 0.0
-            elif refresh_days > 45:
-                time_component = 7.5
-            else:
-                time_component = 15.0
+        # Time/thesis factor (15 pts): linear penalty toward forced square-off.
+        # Full points at >60 min left, 0 at <=0 min.
+        mins_left = position.minutes_to_squareoff
+        time_component = max(0.0, min(15.0, (mins_left / 60.0) * 15.0))
 
         # Regime component (15 pts)
         fav = favourable_regimes or frozenset({"bull_calm", "bull_volatile"})
@@ -171,11 +147,6 @@ class PositionReviewer:
             return True, "auditor_change_detected"
         if pledging_increase:
             return True, "pledging_increase_detected"
-
-        promoter_sold = float(features.get("promoter_holding_pct_change_90d", 0.0)) < -0.5
-        lt_confident = position.track == "long_term" and position.original_signal_confidence > 0.5
-        if lt_confident and promoter_sold:
-            return True, "promoter_selling_after_long_entry"
 
         return False, ""
 
@@ -223,7 +194,6 @@ class PositionReviewer:
                 target_price=Decimal("0"),
                 position_size_shares=0,
                 entry_strategy_id=None,
-                requires_human=False,  # risk-mgmt exits bypass human approval
                 status=RecommendationStatus.GENERATED,
                 decision_reason=f"red_flag_filing:{filing_category}",
                 operator_modified=False,

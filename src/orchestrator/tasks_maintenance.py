@@ -88,9 +88,6 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
         queued = conn.execute(
             "SELECT COUNT(*) FROM recommendations WHERE status='queued_for_execution'"
         ).fetchone()[0]
-        awaiting = conn.execute(
-            "SELECT COUNT(*) FROM recommendations WHERE status='awaiting_human'"
-        ).fetchone()[0]
         tripped = [
             r[0] for r in conn.execute(
                 "SELECT DISTINCT breaker_name FROM circuit_breaker_events"
@@ -102,10 +99,6 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
 
     now_str = datetime.now(IST).strftime("%H:%M IST")
     cb_line = f"\n⚡ <b>Circuit breakers:</b> {', '.join(tripped)}" if tripped else ""
-    approval_line = (
-        f"\n⏳ <b>{awaiting} rec(s) awaiting your approval</b> — send /approve"
-        if awaiting else ""
-    )
 
     from alerts.telegram import send_telegram
     send_telegram(
@@ -113,12 +106,11 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
         f"✅ <b>Boomer — morning check-in</b> ({now_str})\n"
         f"Orchestrator is running. Today is {run_date}.\n"
         f"🚀 Queued for GTT at 09:25: {queued}"
-        f"{approval_line}"
         f"{cb_line}"
     )
     logger.info(
-        "morning_heartbeat sent run_date=%s queued=%d awaiting=%d",
-        run_date, queued, awaiting,
+        "morning_heartbeat sent run_date=%s queued=%d",
+        run_date, queued,
     )
 
 

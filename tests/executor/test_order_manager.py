@@ -109,26 +109,26 @@ class TestPreTradeChecks:
             product=ProductType.MIS,
         )
         with pytest.raises(PreTradeCheckError, match="Symbol"):
-            om._pre_trade_checks(req, broker, ltp=None, track="swing")
+            om._pre_trade_checks(req, broker, ltp=None, track="other")
 
     def test_price_beyond_5pct_of_ltp_rejected(self):
         om, broker = _make_om(ltp={"RELIANCE": 2500.0})
         req = _intraday_req(price=2700.0)  # 8% above LTP
         with pytest.raises(PreTradeCheckError, match="deviates"):
-            om._pre_trade_checks(req, broker, ltp=2500.0, track="swing")
+            om._pre_trade_checks(req, broker, ltp=2500.0, track="other")
 
     def test_price_within_5pct_passes(self):
         om, broker = _make_om(ltp={"RELIANCE": 2500.0})
         req = _intraday_req(price=2550.0)  # 2% above LTP — OK
         # Should not raise
-        om._pre_trade_checks(req, broker, ltp=2500.0, track="swing")
+        om._pre_trade_checks(req, broker, ltp=2500.0, track="other")
 
     def test_extreme_price_rejected(self):
         # Sanity check fires first (5% < circuit 20%), blocking extreme prices.
         om, broker = _make_om()
         req = _intraday_req(price=1200.0)  # 20% above ltp=1000
         with pytest.raises(PreTradeCheckError, match="deviates"):
-            om._pre_trade_checks(req, broker, ltp=1000.0, track="swing")
+            om._pre_trade_checks(req, broker, ltp=1000.0, track="other")
 
     def test_duplicate_idempotency_key_rejected(self):
         om, broker = _make_om()
@@ -152,7 +152,7 @@ class TestPreTradeChecks:
         db.commit()
         req = _intraday_req()
         with pytest.raises(PreTradeCheckError, match="Duplicate"):
-            om._pre_trade_checks(req, broker, ltp=None, track="swing")
+            om._pre_trade_checks(req, broker, ltp=None, track="other")
 
 
 class TestOrderManagerIdempotency:

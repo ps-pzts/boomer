@@ -32,11 +32,8 @@ def config(db: Path) -> RiskConfig:
 def _eval(config: RiskConfig, **overrides):
     defaults = dict(
         intraday_realised_pnl_today=Decimal("0"),
-        intraday_bucket_capital=Decimal("2500"),
+        intraday_bucket_capital=Decimal("50000"),
         intraday_consecutive_losses_today=0,
-        swing_realised_pnl_this_week=Decimal("0"),
-        swing_bucket_capital=Decimal("7500"),
-        swing_losing_trades_30d=0,
         portfolio_realised_pnl_today=Decimal("0"),
         total_capital=Decimal("50000"),
         portfolio_realised_pnl_this_week=Decimal("0"),
@@ -54,16 +51,13 @@ def _eval(config: RiskConfig, **overrides):
 def test_all_clear_by_default(config: RiskConfig) -> None:
     state = _eval(config)
     assert not state.track_blocked(Track.INTRADAY)
-    assert not state.track_blocked(Track.SWING)
-    assert not state.track_blocked(Track.LONG_TERM)
 
 
 def test_intraday_daily_loss_trips_at_2pct(config: RiskConfig) -> None:
-    # 2% of ₹2,500 bucket = ₹50 loss
-    state = _eval(config, intraday_realised_pnl_today=Decimal("-50"))
+    # 2% of ₹50,000 bucket = ₹1,000 loss
+    state = _eval(config, intraday_realised_pnl_today=Decimal("-1000"))
     assert state.intraday_daily_loss == BreakerStatus.TRIPPED
     assert state.track_blocked(Track.INTRADAY)
-    assert not state.track_blocked(Track.SWING)
 
 
 def test_intraday_consecutive_losses(config: RiskConfig) -> None:
@@ -83,25 +77,10 @@ def test_intraday_not_blocked_at_1429(config: RiskConfig) -> None:
     assert state.intraday_late_entry == BreakerStatus.CLEAR
 
 
-def test_swing_weekly_loss_at_4pct(config: RiskConfig) -> None:
-    # 4% of ₹7,500 swing bucket = ₹300 loss
-    state = _eval(config, swing_realised_pnl_this_week=Decimal("-300"))
-    assert state.swing_weekly_loss == BreakerStatus.TRIPPED
-    assert state.track_blocked(Track.SWING)
-    assert not state.track_blocked(Track.INTRADAY)
-
-
-def test_swing_30d_loss_count(config: RiskConfig) -> None:
-    state = _eval(config, swing_losing_trades_30d=4)
-    assert state.swing_30d_loss_count == BreakerStatus.TRIPPED
-
-
 def test_portfolio_daily_loss_blocks_all_tracks(config: RiskConfig) -> None:
     # 2% of ₹50,000 = ₹1,000 portfolio loss
     state = _eval(config, portfolio_realised_pnl_today=Decimal("-1000"))
     assert state.portfolio_daily_loss == BreakerStatus.TRIPPED
-    assert state.track_blocked(Track.LONG_TERM)
-    assert state.track_blocked(Track.SWING)
     assert state.track_blocked(Track.INTRADAY)
 
 
@@ -109,7 +88,7 @@ def test_portfolio_max_drawdown_8pct(config: RiskConfig) -> None:
     state = _eval(config, live_drawdown_pct=Decimal("0.08"))
     assert state.portfolio_max_drawdown == BreakerStatus.TRIPPED
     assert state.requires_manual_resume()
-    assert state.track_blocked(Track.LONG_TERM)
+    assert state.track_blocked(Track.INTRADAY)
 
 
 def test_black_swan_nifty_minus_3pct(config: RiskConfig) -> None:
@@ -128,11 +107,11 @@ def test_black_swan_manual_trip(config: RiskConfig) -> None:
     assert state.black_swan == BreakerStatus.TRIPPED
 
 
-def test_long_term_unaffected_by_intraday_breakers(config: RiskConfig) -> None:
-    # Intraday losses should not block long-term entries
-    state = _eval(
-        config,
-        intraday_realised_pnl_today=Decimal("-50"),
-        intraday_consecutive_losses_today=3,
-    )
-    assert not state.track_blocked(Track.LONG_TERM)
+def test_any_tripped_true_when_one_breaker_tripped(config: RiskConfig) -> None:
+    state = _eval(config, black_swan_manually_tripped=True)
+    assert state.any_tripped()
+
+
+def test_any_tripped_false_when_all_clear(config: RiskConfig) -> None:
+    state = _eval(config)
+    assert not state.any_tripped()

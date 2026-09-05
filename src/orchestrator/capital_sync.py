@@ -54,8 +54,6 @@ def sync_eod_capital(db_path: str, brokers: list, run_date: str) -> None:
             ).fetchone()
             return Decimal(str(row["v"]))
 
-        lt_deployed = _deployed("long_term")
-        sw_deployed = _deployed("swing")
         id_deployed = _deployed("intraday")
 
         pnl_row = conn.execute(
@@ -67,7 +65,7 @@ def sync_eod_capital(db_path: str, brokers: list, run_date: str) -> None:
         conn.close()
 
     # ── 3. Write capital ledger ───────────────────────────────────────────────
-    total_capital = total_cash + lt_deployed + sw_deployed + id_deployed
+    total_capital = total_cash + id_deployed
     mgr = CapitalStateManager(db_path)
     as_of = date.fromisoformat(run_date)
 
@@ -86,8 +84,6 @@ def sync_eod_capital(db_path: str, brokers: list, run_date: str) -> None:
         as_of=as_of,
         total_capital=total_capital,
         total_cash=total_cash,
-        long_term_deployed=lt_deployed,
-        swing_deployed=sw_deployed,
         intraday_deployed=id_deployed,
         prev_eod_pnl_net=today_pnl,
     )

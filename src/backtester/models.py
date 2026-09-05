@@ -14,7 +14,7 @@ class EntryDecision:
     sl_price: float
     target_price: float
     product: ProductType
-    track: str            # "swing" | "intraday" | "long_term"
+    track: str            # "intraday"
     confidence: float
     strategy_id: str
 
@@ -25,7 +25,7 @@ class BacktestConfig:
     start_date: date
     end_date: date
     initial_capital: float
-    tracks: list[str] = field(default_factory=lambda: ["long_term", "swing", "intraday"])
+    tracks: list[str] = field(default_factory=lambda: ["intraday"])
     universe: str = "nifty500_current"
 
     # Position sizing limits

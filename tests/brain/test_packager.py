@@ -25,7 +25,7 @@ _NOW = datetime(2024, 6, 1, 8, 0, tzinfo=IST)
 _MIGRATIONS = Path(__file__).parents[2] / "migrations"
 
 
-def _make_plan(track="long_term"):
+def _make_plan(track="intraday"):
     return TradePlan(
         plan_id=str(uuid.uuid4()),
         signal_id=str(uuid.uuid4()),
@@ -43,7 +43,7 @@ def _make_plan(track="long_term"):
         expected_value_per_share=Decimal("20"),
         decision="proceed",
         skip_reason=None,
-        entry_strategy_id=EntryStrategy.LT1,
+        entry_strategy_id=EntryStrategy.ID1,
         created_at=_NOW,
     )
 
@@ -77,20 +77,13 @@ def store(tmp_path):
 
 
 class TestPackager:
-    def test_long_term_requires_human(self, packager):
-        plan = _make_plan("long_term")
+    def test_package_generates_status(self, packager):
+        plan = _make_plan("intraday")
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
-        assert rec.requires_human is True
-        assert rec.status == RecommendationStatus.AWAITING_HUMAN
-
-    def test_swing_does_not_require_human(self, packager):
-        plan = _make_plan("swing")
-        rec = packager.package(plan, None, _make_signal(plan), position_size_shares=15)
-        assert rec.requires_human is False
         assert rec.status == RecommendationStatus.GENERATED
 
     def test_apm_decide_approves_passing(self, packager):
-        plan = _make_plan("swing")
+        plan = _make_plan("intraday")
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         rec = packager.apm_decide(rec, circuit_check_fn=lambda r: (True, "all clear"))
         assert rec.status == RecommendationStatus.APPROVED_BY_APM
@@ -104,14 +97,8 @@ class TestPackager:
         assert rec.status == RecommendationStatus.REJECTED_BY_APM
         assert "daily loss limit" in rec.decision_reason
 
-    def test_apm_decide_raises_for_human_routed(self, packager):
-        plan = _make_plan("long_term")
-        rec = packager.package(plan, None, _make_signal(plan), position_size_shares=5)
-        with pytest.raises(ValueError):
-            packager.apm_decide(rec, circuit_check_fn=lambda r: (True, ""))
-
     def test_apply_modification_preserves_original(self, packager):
-        plan = _make_plan("long_term")
+        plan = _make_plan("intraday")
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         packager.apply_modification(
             rec, Decimal("3790"), Decimal("3830"), Decimal("3680"), Decimal("4050"), 12
@@ -127,63 +114,63 @@ _OUTCOME_DATE = datetime(2024, 6, 1, 9, 0, tzinfo=IST)
 
 class TestRecommendationStore:
     def test_save_and_cooldown_approved(self, packager, store):
-        plan = _make_plan("swing")
+        plan = _make_plan("intraday")
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         store.save(rec)
         store.record_outcome(
             rec.recommendation_id,
             "TCS",
             "NSE",
-            "swing",
+            "intraday",
             RecommendationOutcome.APPROVED_POSITION_OPENED,
             recorded_at=_OUTCOME_DATE,
         )
-        # 7-day cooldown for swing after approved position
-        remaining = store.cooldown_days_remaining("TCS", "NSE", "swing", date(2024, 6, 1))
-        assert remaining == 7
+        # 1-day cooldown for intraday after approved position
+        remaining = store.cooldown_days_remaining("TCS", "NSE", "intraday", date(2024, 6, 1))
+        assert remaining == 1
 
     def test_no_cooldown_after_rejected_by_operator(self, packager, store):
-        plan = _make_plan("long_term")
+        plan = _make_plan("intraday")
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=5)
         store.save(rec)
         store.record_outcome(
             rec.recommendation_id,
             "TCS",
             "NSE",
-            "long_term",
+            "intraday",
             RecommendationOutcome.REJECTED_BY_OPERATOR,
             recorded_at=_OUTCOME_DATE,
         )
-        remaining = store.cooldown_days_remaining("TCS", "NSE", "long_term", date(2024, 6, 1))
+        remaining = store.cooldown_days_remaining("TCS", "NSE", "intraday", date(2024, 6, 1))
         assert remaining == 0
 
     def test_cooldown_expires(self, packager, store):
-        plan = _make_plan("swing")
+        plan = _make_plan("intraday")
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         store.save(rec)
         store.record_outcome(
             rec.recommendation_id,
             "TCS",
             "NSE",
-            "swing",
+            "intraday",
             RecommendationOutcome.APPROVED_POSITION_OPENED,
             recorded_at=_OUTCOME_DATE,
         )
-        # After 7 days, cooldown expires
-        remaining = store.cooldown_days_remaining("TCS", "NSE", "swing", date(2024, 6, 8))
+        # After 1 day, cooldown expires
+        remaining = store.cooldown_days_remaining("TCS", "NSE", "intraday", date(2024, 6, 2))
         assert remaining == 0
 
     def test_is_in_cooldown(self, packager, store):
-        plan = _make_plan("swing")
+        plan = _make_plan("intraday")
         rec = packager.package(plan, None, _make_signal(plan), position_size_shares=10)
         store.save(rec)
         store.record_outcome(
             rec.recommendation_id,
             "TCS",
             "NSE",
-            "swing",
+            "intraday",
             RecommendationOutcome.APPROVED_POSITION_OPENED,
             recorded_at=_OUTCOME_DATE,
         )
-        assert store.is_in_cooldown("TCS", "NSE", "swing", date(2024, 6, 3)) is True
-        assert store.is_in_cooldown("TCS", "NSE", "swing", date(2024, 6, 9)) is False
+        assert store.is_in_cooldown("TCS", "NSE", "intraday", date(2024, 6, 1)) is True
+        assert store.is_in_cooldown("TCS", "NSE", "intraday", date(2024, 6, 2)) is False

@@ -23,11 +23,11 @@ from .tasks_brain import (
 )
 from .tasks_collector import _early_morning_data_check, _nightly_eod_collector
 from .tasks_executor import (
+    _gtt_dispatch,
     _intraday_cycle,
     _intraday_squareoff,
     _position_review,
     _pre_market_executor_setup,
-    _swing_gtt_dispatch,
 )
 from .tasks_maintenance import (
     _eod_reconciliation,
@@ -113,9 +113,9 @@ def build_task_registry(
             timeout_seconds=300,
             retry_policy=RetryPolicy(max_attempts=1),
         ),
-        "swing_gtt_dispatch": TaskDefinition(
-            task_id="swing_gtt_dispatch",
-            fn=_wrap(_swing_gtt_dispatch, broker_deps),  # type: ignore[arg-type]
+        "gtt_dispatch": TaskDefinition(
+            task_id="gtt_dispatch",
+            fn=_wrap(_gtt_dispatch, broker_deps),  # type: ignore[arg-type]
             schedule="25 9 * * 1-5",  # 09:25 IST — after broker tokens refreshed
             dependencies=["pre_market_executor_setup"],
             timeout_seconds=300,

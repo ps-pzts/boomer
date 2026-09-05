@@ -63,28 +63,12 @@
   </div>
 </section>
 
-<!-- Per-track quick view -->
+<!-- Track quick view -->
 <section class="track-grid">
-  <div class="track-card">
-    <h3>Long-Term</h3>
-    <div class="track-stat">{{ snap.lt_open }} open</div>
-  </div>
-  <div class="track-card">
-    <h3>Swing</h3>
-    <div class="track-stat">{{ snap.swing_open }} open</div>
-  </div>
   <div class="track-card">
     <h3>Intraday</h3>
     <div class="track-stat">{{ snap.intraday_open }} open</div>
   </div>
 </section>
-
-<!-- Approvals waiting -->
-{% if snap.approvals_waiting > 0 %}
-<div class="approvals-nudge">
-  <strong>{{ snap.approvals_waiting }}</strong> recommendation(s) waiting for approval.
-  <a href="/approvals" class="btn btn-outline">Review now →</a>
-</div>
-{% endif %}
 
 {% endblock %}

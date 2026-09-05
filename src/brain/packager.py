@@ -1,8 +1,7 @@
 """Stage 5 — Recommendation packager and APM gate.
 
-Routing rules (design doc):
-  - Long-term: requires_human=True → status = awaiting_human
-  - Swing/intraday: APM auto-decides via circuit-breaker check tree
+All recommendations route through APM, which auto-decides via the
+circuit-breaker check tree.
 """
 
 from __future__ import annotations
@@ -26,7 +25,6 @@ from brain.models import (
     TradePlan,
     cooldown_days_for,
 )
-from capital.models import Track
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -41,9 +39,7 @@ class RecommendationPackager:
         position_size_shares: int,
         portfolio_impact: dict[str, Any] | None = None,
     ) -> Recommendation:
-        """Package a trade plan as a recommendation with correct routing."""
-        requires_human = plan.track == Track.LONG_TERM
-
+        """Package a trade plan as a recommendation."""
         entry_low = entry_plan.entry_price if entry_plan else plan.entry_zone_low
         entry_high = entry_plan.entry_price if entry_plan else plan.entry_zone_high
 
@@ -61,12 +57,7 @@ class RecommendationPackager:
             target_price=plan.target_price,
             position_size_shares=position_size_shares,
             entry_strategy_id=entry_plan.strategy if entry_plan else plan.entry_strategy_id,
-            requires_human=requires_human,
-            status=(
-                RecommendationStatus.AWAITING_HUMAN
-                if requires_human
-                else RecommendationStatus.GENERATED
-            ),
+            status=RecommendationStatus.GENERATED,
             decision_reason=None,
             operator_modified=False,
             original_params=None,
@@ -80,14 +71,11 @@ class RecommendationPackager:
         recommendation: Recommendation,
         circuit_check_fn: Callable[[Recommendation], tuple[bool, str]],
     ) -> Recommendation:
-        """Run APM circuit-breaker check tree for swing/intraday recommendations.
+        """Run APM circuit-breaker check tree.
 
         Args:
             circuit_check_fn: callable that returns (passed, reason).
         """
-        if recommendation.requires_human:
-            raise ValueError("apm_decide called on a human-routed recommendation")
-
         passed, reason = circuit_check_fn(recommendation)
         recommendation.status = (
             RecommendationStatus.APPROVED_BY_APM if passed else RecommendationStatus.REJECTED_BY_APM
@@ -162,13 +150,13 @@ class RecommendationStore:
                     stock_symbol, exchange, track, direction,
                     entry_zone_low, entry_zone_high, stop_loss_price, target_price,
                     position_size_shares, entry_strategy_id,
-                    requires_human, status, decision_reason,
+                    status, decision_reason,
                     operator_modified, original_params, portfolio_impact,
                     generated_at, decided_at, queued_at, submitted_at,
                     filled_at, closed_at, outcome_recorded_at,
                     realised_pnl, actual_hold_days, intent
                 ) VALUES (
-                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                    ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                 )
                 """,
                 (
@@ -185,7 +173,6 @@ class RecommendationStore:
                     str(rec.target_price),
                     rec.position_size_shares,
                     rec.entry_strategy_id.value if rec.entry_strategy_id else None,
-                    1 if rec.requires_human else 0,
                     rec.status.value,
                     rec.decision_reason,
                     1 if rec.operator_modified else 0,

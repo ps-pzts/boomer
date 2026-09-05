@@ -80,11 +80,17 @@ def _make_checker(
     )
 
 
+# Default worked example: intraday bucket = 100% x 50000 = 50000.
+# risk = 0.5% x 50000 = 250. stop_dist = 75 -> shares = floor(250/75) = 3.
+# proposed_value = 3 x 500 = 1500 = 3% of total capital (safely under the 5% single-stock cap,
+# so tests that don't care about concentration don't trip it incidentally — the concentration
+# check runs BEFORE the RR/EV trade-quality check, so any test overriding stop/target needs to
+# keep shares x entry_price under the cap unless it's deliberately testing the cap itself).
 def _make_request(
-    track: Track = Track.SWING,
+    track: Track = Track.INTRADAY,
     entry: Decimal = Decimal("500"),
-    stop: Decimal = Decimal("480"),
-    target: Decimal = Decimal("560"),
+    stop: Decimal = Decimal("425"),
+    target: Decimal = Decimal("650"),
     confidence: Decimal = Decimal("0.65"),
     regime: Regime = Regime.BULL_CALM,
 ) -> TradeRequest:
@@ -102,7 +108,7 @@ def _make_request(
     )
 
 
-def test_valid_swing_trade_approved(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
+def test_valid_intraday_trade_approved(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
     checker = _make_checker(config, ledger)
     req = _make_request()
     perm = checker.check(req)
@@ -133,7 +139,7 @@ def test_max_drawdown_rejects(config: RiskConfig, ledger: CapitalLedgerRow) -> N
     assert perm.failed_check == "bot_state"
 
 
-def test_intraday_circuit_breaker_blocks_intraday_only(
+def test_intraday_circuit_breaker_blocks_intraday(
     config: RiskConfig, ledger: CapitalLedgerRow
 ) -> None:
     from capital.circuit_breakers import BreakerStatus
@@ -143,14 +149,14 @@ def test_intraday_circuit_breaker_blocks_intraday_only(
     )
     checker = _make_checker(config, ledger, breakers=breakers)
     assert not checker.check(_make_request(track=Track.INTRADAY)).approved
-    assert checker.check(_make_request(track=Track.SWING)).approved
 
 
 def test_rr_below_minimum_rejected(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
     checker = _make_checker(config, ledger)
-    # RR = (530 - 500) / (500 - 480) = 1.5; swing minimum is 1.5 → passes
-    # RR = (510 - 500) / (500 - 480) = 0.5 → fails
-    req = _make_request(entry=Decimal("500"), stop=Decimal("480"), target=Decimal("510"))
+    # stop_dist=60 -> shares=floor(250/60)=4, value=2000 (4% of 50000) stays under the 5%
+    # single-stock cap so this test hits the RR check, not concentration, as intended.
+    # RR = (520 - 500) / (500 - 440) = 20/60 = 0.33 < 1.5 minimum -> fails
+    req = _make_request(entry=Decimal("500"), stop=Decimal("440"), target=Decimal("520"))
     perm = checker.check(req)
     assert not perm.approved
     assert perm.failed_check == "trade_quality_rr"
@@ -173,31 +179,30 @@ def test_stop_above_entry_rejected(config: RiskConfig, ledger: CapitalLedgerRow)
 
 
 def test_position_size_uses_risk_pct(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
-    """Worked example: swing bucket = ₹7,500, risk 1%, stop dist = ₹20 → 3 shares."""
+    """Worked example: intraday bucket = ₹50,000, risk 0.5%, stop dist = ₹75 → 3 shares."""
     checker = _make_checker(config, ledger)
-    # swing bucket = 15% × 50000 = 7500; risk_pct = 1% → risk = 75; stop dist = 20 → 3 shares
+    # intraday bucket = 100% × 50000 = 50000; risk_pct = 0.5% → risk = 250; stop 75 → 3 shares
     req = _make_request(
-        track=Track.SWING,
         entry=Decimal("500"),
-        stop=Decimal("480"),  # stop dist = 20
-        target=Decimal("560"),  # RR = 60/20 = 3.0 ✓
+        stop=Decimal("425"),  # stop dist = 75
+        target=Decimal("650"),  # RR = 150/75 = 2.0 ✓
         confidence=Decimal("0.65"),
     )
     perm = checker.check(req)
     assert perm.approved
-    assert perm.position_size_shares == 3  # floor(75/20) = 3
+    assert perm.position_size_shares == 3  # floor(250/75) = 3
 
 
 def test_regime_reduces_position_size(config: RiskConfig, ledger: CapitalLedgerRow) -> None:
     """Regime scale reduces position size.
 
-    Swing bucket = 15% × 50000 = 7500. Risk = 1% × 7500 = 75. Stop dist = 20 → 3 shares.
+    Intraday bucket = 100% × 50000 = 50000. Risk = 0.5% × 50000 = 250. Stop dist = 75 → 3 shares.
     Bull_calm (100%) → 3 shares. Bull_volatile (70%) → floor(3 × 0.70) = 2 shares.
     """
     req = _make_request(
         entry=Decimal("500"),
-        stop=Decimal("480"),  # stop dist = 20, typical 2×ATR for swing
-        target=Decimal("560"),  # RR = 60/20 = 3.0 ✓
+        stop=Decimal("425"),  # stop dist = 75
+        target=Decimal("650"),  # RR = 150/75 = 2.0 ✓
     )
     checker = _make_checker(config, ledger)
     perm_calm = checker.check(dataclasses.replace(req, current_regime=Regime.BULL_CALM))
@@ -210,15 +215,16 @@ def test_regime_reduces_position_size(config: RiskConfig, ledger: CapitalLedgerR
 def test_single_stock_concentration_breach_rejected(
     config: RiskConfig, ledger: CapitalLedgerRow
 ) -> None:
-    # Existing + pending already at 4.9% of total; proposed would push past 5%
-    existing = Decimal("50000") * Decimal("0.049")  # ₹2,450
+    # Default request proposes 3 shares × ₹500 = ₹1,500 (3% of 50000).
+    # Existing position pushes combined exposure past the 5% (₹2,500) cap.
+    existing = Decimal("1100")
     req = TradeRequest(
         stock_symbol="RELIANCE",
         exchange="NSE",
-        track=Track.SWING,
+        track=Track.INTRADAY,
         entry_price=Decimal("500"),
-        stop_loss_price=Decimal("480"),
-        target_price=Decimal("560"),
+        stop_loss_price=Decimal("425"),
+        target_price=Decimal("650"),
         signal_confidence=Decimal("0.65"),
         sector="Energy",
         current_regime=Regime.BULL_CALM,

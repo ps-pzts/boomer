@@ -1,11 +1,7 @@
-"""Boomer dashboard — single FastAPI file with 5 views.
+"""Boomer dashboard — single FastAPI file with 4 views.
 
 Views:
   GET  /             → today.html (landing)
-  GET  /approvals    → approvals.html
-  POST /approvals/{rec_id}/approve
-  POST /approvals/{rec_id}/reject
-  POST /approvals/{rec_id}/modify
   GET  /positions    → positions.html
   GET  /capital      → capital_risk.html
   GET  /system       → system_health.html
@@ -44,7 +40,6 @@ from ..banner import log_dashboard_online
 from .queries import (
     get_capital_view,
     get_open_positions,
-    get_pending_recommendations,
     get_recent_errors,
     get_recent_task_runs,
     get_today_snapshot,
@@ -124,90 +119,7 @@ async def today(request: Request, _: AuthDep) -> HTMLResponse:
     return templates.TemplateResponse(request, "today.html", {"snap": snap})
 
 
-# ─── View 2: Approvals ─────────────────────────────────────────────────────────
-
-
-def _approve_rec(rec_id: str) -> bool:
-    """Human approves a long-term recommendation.
-
-    Transitions: awaiting_human → approved_by_apm → queued_for_execution.
-    The swing_gtt_dispatch orchestrator task picks up queued_for_execution
-    at 09:25 IST and places the OCO-GTT on the broker.
-    Returns True if a row was actually updated.
-    """
-    conn = _write_conn()
-    try:
-        now = datetime.datetime.now(IST).isoformat()
-        cur = conn.execute(
-            "UPDATE recommendations"
-            " SET status='queued_for_execution', decided_at=?"
-            " WHERE recommendation_id=? AND status='awaiting_human'",
-            (now, rec_id),
-        )
-        conn.commit()
-        return cur.rowcount > 0
-    finally:
-        conn.close()
-
-
-def _reject_rec(rec_id: str, reason: str) -> bool:
-    conn = _write_conn()
-    try:
-        cur = conn.execute(
-            "UPDATE recommendations SET status='rejected_by_apm', decision_reason=?"
-            " WHERE recommendation_id=? AND status='awaiting_human'",
-            (reason or "operator_rejected", rec_id),
-        )
-        conn.commit()
-        return cur.rowcount > 0
-    finally:
-        conn.close()
-
-
-@app.get("/approvals", response_class=HTMLResponse)
-async def approvals(request: Request, _: AuthDep) -> HTMLResponse:
-    recs = get_pending_recommendations(DB_PATH)
-    return templates.TemplateResponse(request, "approvals.html", {"recs": recs})
-
-
-@app.post("/approvals/{rec_id}/approve")
-async def approve_recommendation(rec_id: str, _: AuthDep) -> RedirectResponse:
-    _approve_rec(rec_id)
-    return RedirectResponse("/approvals", status_code=303)
-
-
-@app.post("/approvals/{rec_id}/reject")
-async def reject_recommendation(
-    rec_id: str, reason: Annotated[str, Form()], _: AuthDep
-) -> RedirectResponse:
-    _reject_rec(rec_id, reason)
-    return RedirectResponse("/approvals", status_code=303)
-
-
-@app.post("/approvals/{rec_id}/validate")
-async def validate_modification(rec_id: str, request: Request, _: AuthDep) -> dict:
-    """HTMX endpoint: re-run Stage 3+4 checks with modified params. Debounced 400ms client-side."""
-    body = await request.json()
-    entry_low = float(body.get("entry_low", 0))
-    entry_high = float(body.get("entry_high", 0))
-    stop_loss = float(body.get("stop_loss", 0))
-    target = float(body.get("target", 0))
-    position_size_rupees = float(body.get("position_size_rupees", 0))
-
-    gates: dict[str, bool] = {}
-    if entry_low > 0 and target > entry_low and stop_loss < entry_low:
-        rr = (target - entry_low) / (entry_low - stop_loss) if (entry_low - stop_loss) > 0 else 0
-        gates["rr_gate"] = rr >= 1.5
-        gates["price_sanity"] = entry_high >= entry_low
-    else:
-        gates["rr_gate"] = False
-        gates["price_sanity"] = False
-    gates["size_nonzero"] = position_size_rupees > 0
-    all_pass = all(gates.values())
-    return {"gates": gates, "all_pass": all_pass}
-
-
-# ─── View 3: Positions ─────────────────────────────────────────────────────────
+# ─── View 2: Positions ─────────────────────────────────────────────────────────
 
 
 @app.get("/positions", response_class=HTMLResponse)
@@ -230,7 +142,7 @@ async def positions(request: Request, _: AuthDep, page: int = 1) -> HTMLResponse
     )
 
 
-# ─── View 4: Capital & Risk ────────────────────────────────────────────────────
+# ─── View 3: Capital & Risk ────────────────────────────────────────────────────
 
 
 @app.get("/capital", response_class=HTMLResponse)
@@ -239,7 +151,7 @@ async def capital_risk(request: Request, _: AuthDep) -> HTMLResponse:
     return templates.TemplateResponse(request, "capital_risk.html", {"capital": view})
 
 
-# ─── View 5: System Health ────────────────────────────────────────────────────
+# ─── View 4: System Health ────────────────────────────────────────────────────
 
 
 @app.get("/system", response_class=HTMLResponse)

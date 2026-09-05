@@ -15,7 +15,6 @@ class Direction(StrEnum):
 
 class RecommendationStatus(StrEnum):
     GENERATED = "generated"
-    AWAITING_HUMAN = "awaiting_human"
     APPROVED_BY_APM = "approved_by_apm"
     REJECTED_BY_APM = "rejected_by_apm"
     QUEUED_FOR_EXECUTION = "queued_for_execution"
@@ -38,12 +37,6 @@ class RecommendationOutcome(StrEnum):
 
 
 class EntryStrategy(StrEnum):
-    LT1 = "LT1"  # staged accumulation
-    LT2 = "LT2"  # DMA pullback
-    LT3 = "LT3"  # valuation-anchored
-    SW1 = "SW1"  # breakout with volume
-    SW2 = "SW2"  # pullback to support
-    SW3 = "SW3"  # catalyst event
     ID1 = "ID1"  # opening range breakout
     ID2 = "ID2"  # VWAP pullback
     ID3 = "ID3"  # gap fade/ride
@@ -146,7 +139,6 @@ class Recommendation:
     target_price: Decimal
     position_size_shares: int
     entry_strategy_id: EntryStrategy | None
-    requires_human: bool
     status: RecommendationStatus
     decision_reason: str | None
     operator_modified: bool
@@ -183,26 +175,10 @@ class PositionHealthScore:
 
 # Cooldown days per outcome and track (Loophole 3)
 COOLDOWN_DAYS: dict[RecommendationOutcome, dict[str, int]] = {
-    RecommendationOutcome.APPROVED_POSITION_OPENED: {
-        "swing": 7,
-        "long_term": 30,
-        "intraday": 1,
-    },
-    RecommendationOutcome.REJECTED_BY_OPERATOR: {
-        "swing": 0,
-        "long_term": 0,
-        "intraday": 0,
-    },
-    RecommendationOutcome.EXPIRED: {
-        "swing": 3,
-        "long_term": 7,
-        "intraday": 0,
-    },
-    RecommendationOutcome.REJECTED_BY_APM: {
-        "swing": 2,
-        "long_term": 7,
-        "intraday": 0,
-    },
+    RecommendationOutcome.APPROVED_POSITION_OPENED: {"intraday": 1},
+    RecommendationOutcome.REJECTED_BY_OPERATOR: {"intraday": 0},
+    RecommendationOutcome.EXPIRED: {"intraday": 0},
+    RecommendationOutcome.REJECTED_BY_APM: {"intraday": 0},
 }
 
 

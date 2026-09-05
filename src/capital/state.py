@@ -34,11 +34,7 @@ def _row_to_ledger(row: sqlite3.Row) -> CapitalLedgerRow:
         as_of_date=date.fromisoformat(row["as_of_date"]),
         total_capital=_to_decimal(row["total_capital"]),
         total_cash=_to_decimal(row["total_cash"]),
-        long_term_allocated_pct=_to_decimal(row["long_term_allocated_pct"]),
-        swing_allocated_pct=_to_decimal(row["swing_allocated_pct"]),
         intraday_allocated_pct=_to_decimal(row["intraday_allocated_pct"]),
-        long_term_deployed=_to_decimal(row["long_term_deployed"]),
-        swing_deployed=_to_decimal(row["swing_deployed"]),
         intraday_deployed=_to_decimal(row["intraday_deployed"]),
         high_water_mark=_to_decimal(row["high_water_mark"]),
         eod_drawdown_pct=_to_decimal(row["eod_drawdown_pct"]),
@@ -136,19 +132,17 @@ class CapitalStateManager:
                 INSERT INTO capital_ledger (
                     ledger_id, as_of_date,
                     total_capital, total_cash,
-                    long_term_allocated_pct, swing_allocated_pct, intraday_allocated_pct,
-                    long_term_deployed, swing_deployed, intraday_deployed,
+                    intraday_allocated_pct,
+                    intraday_deployed,
                     high_water_mark, eod_drawdown_pct, consecutive_loss_days,
                     peak_date, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 0, 0, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 0, ?, 0, 0, ?, ?)
                 """,
                 (
                     ledger_id,
                     as_of.isoformat(),
                     float(starting_capital),
                     float(starting_capital),
-                    float(alloc[Track.LONG_TERM]),
-                    float(alloc[Track.SWING]),
                     float(alloc[Track.INTRADAY]),
                     float(starting_capital),
                     as_of.isoformat(),
@@ -162,8 +156,6 @@ class CapitalStateManager:
         as_of: date,
         total_capital: Decimal,
         total_cash: Decimal,
-        long_term_deployed: Decimal,
-        swing_deployed: Decimal,
         intraday_deployed: Decimal,
         prev_eod_pnl_net: Decimal,
     ) -> CapitalLedgerRow:
@@ -193,22 +185,18 @@ class CapitalStateManager:
                 INSERT OR REPLACE INTO capital_ledger (
                     ledger_id, as_of_date,
                     total_capital, total_cash,
-                    long_term_allocated_pct, swing_allocated_pct, intraday_allocated_pct,
-                    long_term_deployed, swing_deployed, intraday_deployed,
+                    intraday_allocated_pct,
+                    intraday_deployed,
                     high_water_mark, eod_drawdown_pct, consecutive_loss_days,
                     peak_date, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     ledger_id,
                     as_of.isoformat(),
                     float(total_capital),
                     float(total_cash),
-                    float(alloc[Track.LONG_TERM]),
-                    float(alloc[Track.SWING]),
                     float(alloc[Track.INTRADAY]),
-                    float(long_term_deployed),
-                    float(swing_deployed),
                     float(intraday_deployed),
                     float(new_hwm),
                     float(drawdown),

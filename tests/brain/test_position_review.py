@@ -21,7 +21,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 def _make_position(
-    track="long_term",
+    track="intraday",
     entry=Decimal("1000"),
     current=Decimal("1100"),
     days_held=10,
@@ -56,12 +56,12 @@ def reviewer():
 
 class TestHealthScore:
     def test_healthy_position_scores_above_50(self, reviewer):
-        pos = _make_position("long_term", entry=Decimal("1000"), current=Decimal("1100"))
+        pos = _make_position("intraday", entry=Decimal("1000"), current=Decimal("1100"))
         sig = SignalRecord(
             signal_id=str(uuid.uuid4()),
             stock_symbol="HDFC",
             exchange="NSE",
-            track="long_term",
+            track="intraday",
             direction=Direction.LONG,
             raw_score=0.6,
             confidence=0.65,
@@ -95,12 +95,12 @@ class TestHealthScore:
         assert score.total_score >= 0.0
 
     def test_exit_recommended_below_20(self, reviewer):
-        # Position in loss, no signal, bear regime → should be <20
+        # Position in loss, no signal, bear regime, at square-off → should be <20
         pos = _make_position(
-            track="long_term",
+            track="intraday",
             entry=Decimal("1000"),
             current=Decimal("850"),  # 15% loss
-            thesis_refresh_days=120,  # stale thesis
+            minutes_to_squareoff=0.0,  # no time left
         )
         score = reviewer.health_score(pos, None, "bear")
         if score.total_score < 20:
@@ -124,7 +124,7 @@ class TestThesisBroken:
             signal_id=str(uuid.uuid4()),
             stock_symbol="HDFC",
             exchange="NSE",
-            track="long_term",
+            track="intraday",
             direction=Direction.SHORT,
             raw_score=-0.5,
             confidence=0.6,
@@ -149,7 +149,7 @@ class TestThesisBroken:
             signal_id=str(uuid.uuid4()),
             stock_symbol="HDFC",
             exchange="NSE",
-            track="long_term",
+            track="intraday",
             direction=Direction.LONG,
             raw_score=0.6,
             confidence=0.65,
@@ -172,7 +172,6 @@ class TestMaterialFilingHandler:
         )
         assert len(recs) == 1
         assert "fraud_disclosure" in recs[0].decision_reason
-        assert recs[0].requires_human is False  # risk-mgmt bypasses human
 
     def test_non_red_flag_no_exit(self, reviewer):
         pos = _make_position()

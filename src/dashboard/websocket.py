@@ -66,7 +66,6 @@ async def live_pusher(db_path: str, interval_seconds: int = 5) -> None:
                     "bot_mode": snap.bot_mode,
                     "total_pnl": snap.total_pnl,
                     "trades_placed": snap.trades_placed,
-                    "approvals_waiting": snap.approvals_waiting,
                     "circuit_breakers_tripped": snap.circuit_breakers_tripped,
                     "missed_critical_alerts": snap.missed_critical_alerts,
                 }

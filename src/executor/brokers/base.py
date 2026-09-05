@@ -69,7 +69,7 @@ class Broker(ABC):
     def on_tick(self, symbols: list[str], callback: Callable[[str, float], None]) -> None:
         """Subscribe to price tick feed. callback(symbol, ltp)."""
 
-    # ── GTT methods (delivery/swing only) ────────────────────────────────────
+    # ── GTT methods ───────────────────────────────────────────────────────────
 
     @abstractmethod
     def place_gtt(self, request: GttRequest) -> str:

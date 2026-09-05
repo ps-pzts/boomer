@@ -40,7 +40,7 @@ def _make_config(**overrides) -> BacktestConfig:
         start_date=date(2024, 1, 2),
         end_date=date(2024, 1, 12),  # ~8 trading days (excludes Jan 6-7 weekend)
         initial_capital=100_000.0,
-        tracks=["swing"],
+        tracks=["intraday"],
     )
     defaults.update(overrides)
     return BacktestConfig(**defaults)
@@ -105,7 +105,7 @@ def _always_enter_decider(symbol, sim_date, features, bar) -> EntryDecision:
         sl_price=90.0,             # stop 10% below
         target_price=120.0,        # target 20% above
         product=ProductType.CNC,
-        track="swing",
+        track="intraday",
         confidence=0.8,
         strategy_id="test_strategy",
     )
@@ -120,7 +120,7 @@ class TestEntryLogic:
         db = _make_db()
         sim = BacktestSimulation(
             db=db,
-            config=_make_config(max_open_positions=2, tracks=["swing"]),
+            config=_make_config(max_open_positions=2, tracks=["intraday"]),
             price_loader=_flat_price_loader,
             feature_loader=_empty_feature_loader,
             universe=["RELIANCE", "TCS"],
@@ -148,7 +148,7 @@ class TestEntryLogic:
         db = _make_db()
         sim = BacktestSimulation(
             db=db,
-            config=_make_config(max_open_positions=1, tracks=["swing"]),
+            config=_make_config(max_open_positions=1, tracks=["intraday"]),
             price_loader=_flat_price_loader,
             feature_loader=_empty_feature_loader,
             universe=["RELIANCE", "TCS", "INFY"],
@@ -162,7 +162,7 @@ class TestEntryLogic:
         db = _make_db()
         sim = BacktestSimulation(
             db=db,
-            config=_make_config(max_open_positions=1, tracks=["swing"]),
+            config=_make_config(max_open_positions=1, tracks=["intraday"]),
             price_loader=_flat_price_loader,
             feature_loader=_empty_feature_loader,
             universe=["RELIANCE"],
@@ -179,7 +179,7 @@ class TestEntryLogic:
         db = _make_db()
         sim = BacktestSimulation(
             db=db,
-            config=_make_config(max_open_positions=5, tracks=["swing"]),
+            config=_make_config(max_open_positions=5, tracks=["intraday"]),
             price_loader=_flat_price_loader,
             feature_loader=_empty_feature_loader,
             universe=["RELIANCE"],
@@ -235,7 +235,7 @@ class TestGttExitLogic:
                 start_date=date(2024, 1, 2),
                 end_date=date(2024, 1, 12),
                 max_open_positions=1,
-                tracks=["swing"],
+                tracks=["intraday"],
             ),
             price_loader=loader,
             feature_loader=_empty_feature_loader,
@@ -258,7 +258,7 @@ class TestGttExitLogic:
                 start_date=date(2024, 1, 2),
                 end_date=date(2024, 1, 12),
                 max_open_positions=1,
-                tracks=["swing"],
+                tracks=["intraday"],
             ),
             price_loader=loader,
             feature_loader=_empty_feature_loader,
@@ -281,7 +281,7 @@ class TestGttExitLogic:
                 start_date=date(2024, 1, 2),
                 end_date=date(2024, 1, 12),
                 max_open_positions=1,
-                tracks=["swing"],
+                tracks=["intraday"],
             ),
             price_loader=loader,
             feature_loader=_empty_feature_loader,
@@ -305,14 +305,14 @@ class TestCashAccounting:
             if len(captured) == 1:  # only enter on very first call
                 return EntryDecision(
                     entry_price=0.0, sl_price=90.0, target_price=120.0,
-                    product=ProductType.CNC, track="swing",
+                    product=ProductType.CNC, track="intraday",
                     confidence=0.8, strategy_id="s",
                 )
             return None
 
         sim = BacktestSimulation(
             db=db,
-            config=_make_config(max_open_positions=1, tracks=["swing"]),
+            config=_make_config(max_open_positions=1, tracks=["intraday"]),
             price_loader=_flat_price_loader,
             feature_loader=_empty_feature_loader,
             universe=["RELIANCE"],
@@ -332,7 +332,7 @@ class TestCashAccounting:
                 start_date=date(2024, 1, 2),
                 end_date=date(2024, 1, 12),
                 max_open_positions=1,
-                tracks=["swing"],
+                tracks=["intraday"],
             ),
             price_loader=loader,
             feature_loader=_empty_feature_loader,
@@ -416,7 +416,7 @@ class TestBacktestAcceptance:
         )
         failures, passes = sim._check_acceptance(
             sharpe=0.5, max_dd=5.0,
-            trades_by_track={"long_term": 200, "swing": 200, "intraday": 200},
+            trades_by_track={"intraday": 600},
             expectancy=0.5, win_rate=0.6, avg_win=2.0, avg_loss=1.0,
         )
         assert not passes
@@ -430,7 +430,7 @@ class TestBacktestAcceptance:
         )
         failures, passes = sim._check_acceptance(
             sharpe=1.5, max_dd=10.0,
-            trades_by_track={"long_term": 150, "swing": 150, "intraday": 150},
+            trades_by_track={"intraday": 450},
             expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
         )
         assert passes
@@ -444,7 +444,7 @@ class TestBacktestAcceptance:
         )
         failures, passes = sim._check_acceptance(
             sharpe=1.5, max_dd=10.0,
-            trades_by_track={"swing": 50},  # < 100 minimum
+            trades_by_track={"intraday": 50},  # < 100 minimum
             expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
         )
         assert not passes
@@ -459,7 +459,7 @@ class TestBacktestAcceptance:
         # OOS Sharpe 0.5 is < 50% of IS Sharpe 2.0 → fail
         failures, passes = sim._check_acceptance(
             sharpe=0.5, max_dd=5.0,
-            trades_by_track={"swing": 200},
+            trades_by_track={"intraday": 200},
             expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
             in_sample_sharpe=2.0,
         )
@@ -475,7 +475,7 @@ class TestBacktestAcceptance:
         # OOS Sharpe 1.4 >= 50% of IS Sharpe 2.0 → OOS check passes
         failures, passes = sim._check_acceptance(
             sharpe=1.4, max_dd=5.0,
-            trades_by_track={"swing": 200},
+            trades_by_track={"intraday": 200},
             expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
             in_sample_sharpe=2.0,
         )
@@ -491,7 +491,7 @@ class TestBacktestAcceptance:
         # Pass all non-OOS criteria; no in_sample_sharpe → OOS check is not evaluated
         failures, passes = sim._check_acceptance(
             sharpe=1.4, max_dd=5.0,
-            trades_by_track={"swing": 200},
+            trades_by_track={"intraday": 200},
             expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
         )
         assert passes
@@ -505,7 +505,7 @@ class TestBacktestAcceptance:
         )
         failures, passes = sim._check_acceptance(
             sharpe=1.5, max_dd=20.0,  # > 15% threshold
-            trades_by_track={"swing": 200},
+            trades_by_track={"intraday": 200},
             expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
         )
         assert not passes

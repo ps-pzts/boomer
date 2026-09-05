@@ -17,10 +17,7 @@ IST = ZoneInfo("Asia/Kolkata")
 # MIN_RR and ATR_K are co-located design thresholds — see capital/models.py.
 RISK_CONFIG_DEFAULTS: dict[str, object] = {
     "risk_per_intraday_trade_pct": Decimal("0.005"),
-    "risk_per_swing_trade_pct": Decimal("0.010"),
-    "risk_per_long_term_trade_pct": Decimal("0.010"),
     "intraday_daily_loss_limit_pct": Decimal("0.020"),
-    "swing_weekly_loss_limit_pct": Decimal("0.040"),
     "portfolio_daily_loss_limit_pct": Decimal("0.020"),
     "portfolio_weekly_loss_limit_pct": Decimal("0.040"),
     "portfolio_max_drawdown_pct": Decimal("0.080"),
@@ -28,10 +25,7 @@ RISK_CONFIG_DEFAULTS: dict[str, object] = {
     "sector_cap_pct": Decimal("0.250"),
     "correlation_cluster_cap_pct": Decimal("0.350"),
     "intraday_consecutive_loss_count": 3,
-    "swing_30d_loss_count": 4,
     "nifty_intraday_pause_pct": Decimal("0.030"),
-    "live_backtest_ratio_long_term": Decimal("0.70"),
-    "live_backtest_ratio_swing": Decimal("0.70"),
     "live_backtest_ratio_intraday": Decimal("0.70"),
     "sentiment_confidence_threshold": Decimal("0.60"),
     "min_stock_price": Decimal("100"),
@@ -46,10 +40,7 @@ def _row_to_risk_config(row: sqlite3.Row) -> RiskConfig:
         version=row["version"],
         effective_from=date.fromisoformat(row["effective_from"]),
         risk_per_intraday_trade_pct=Decimal(str(row["risk_per_intraday_trade_pct"])),
-        risk_per_swing_trade_pct=Decimal(str(row["risk_per_swing_trade_pct"])),
-        risk_per_long_term_trade_pct=Decimal(str(row["risk_per_long_term_trade_pct"])),
         intraday_daily_loss_limit_pct=Decimal(str(row["intraday_daily_loss_limit_pct"])),
-        swing_weekly_loss_limit_pct=Decimal(str(row["swing_weekly_loss_limit_pct"])),
         portfolio_daily_loss_limit_pct=Decimal(str(row["portfolio_daily_loss_limit_pct"])),
         portfolio_weekly_loss_limit_pct=Decimal(str(row["portfolio_weekly_loss_limit_pct"])),
         portfolio_max_drawdown_pct=Decimal(str(row["portfolio_max_drawdown_pct"])),
@@ -57,10 +48,7 @@ def _row_to_risk_config(row: sqlite3.Row) -> RiskConfig:
         sector_cap_pct=Decimal(str(row["sector_cap_pct"])),
         correlation_cluster_cap_pct=Decimal(str(row["correlation_cluster_cap_pct"])),
         intraday_consecutive_loss_count=int(row["intraday_consecutive_loss_count"]),
-        swing_30d_loss_count=int(row["swing_30d_loss_count"]),
         nifty_intraday_pause_pct=Decimal(str(row["nifty_intraday_pause_pct"])),
-        live_backtest_ratio_long_term=Decimal(str(row["live_backtest_ratio_long_term"])),
-        live_backtest_ratio_swing=Decimal(str(row["live_backtest_ratio_swing"])),
         live_backtest_ratio_intraday=Decimal(str(row["live_backtest_ratio_intraday"])),
         sentiment_confidence_threshold=Decimal(str(row["sentiment_confidence_threshold"])),
         min_stock_price=Decimal(str(row["min_stock_price"])),
@@ -113,28 +101,27 @@ class RiskConfigStore:
                 """
                 INSERT INTO risk_config (
                     config_id, version, effective_from,
-                    risk_per_intraday_trade_pct, risk_per_swing_trade_pct,
-                    risk_per_long_term_trade_pct,
-                    intraday_daily_loss_limit_pct, swing_weekly_loss_limit_pct,
+                    risk_per_intraday_trade_pct,
+                    intraday_daily_loss_limit_pct,
                     portfolio_daily_loss_limit_pct, portfolio_weekly_loss_limit_pct,
                     portfolio_max_drawdown_pct,
                     single_stock_cap_pct, sector_cap_pct, correlation_cluster_cap_pct,
-                    intraday_consecutive_loss_count, swing_30d_loss_count,
+                    intraday_consecutive_loss_count,
                     nifty_intraday_pause_pct,
-                    live_backtest_ratio_long_term, live_backtest_ratio_swing,
                     live_backtest_ratio_intraday,
                     sentiment_confidence_threshold,
                     min_stock_price, min_avg_daily_volume, min_avg_daily_turnover_cr,
                     created_at
                 ) VALUES (
                     ?, 1, ?,
-                    ?, ?, ?,
-                    ?, ?,
-                    ?, ?, ?,
-                    ?, ?, ?,
+                    ?,
+                    ?,
                     ?, ?,
                     ?,
                     ?, ?, ?,
+                    ?,
+                    ?,
+                    ?,
                     ?,
                     ?, ?, ?,
                     ?
@@ -143,10 +130,7 @@ class RiskConfigStore:
                 (
                     config_id, effective_from.isoformat(),
                     float(d["risk_per_intraday_trade_pct"]),
-                    float(d["risk_per_swing_trade_pct"]),
-                    float(d["risk_per_long_term_trade_pct"]),
                     float(d["intraday_daily_loss_limit_pct"]),
-                    float(d["swing_weekly_loss_limit_pct"]),
                     float(d["portfolio_daily_loss_limit_pct"]),
                     float(d["portfolio_weekly_loss_limit_pct"]),
                     float(d["portfolio_max_drawdown_pct"]),
@@ -154,10 +138,7 @@ class RiskConfigStore:
                     float(d["sector_cap_pct"]),
                     float(d["correlation_cluster_cap_pct"]),
                     d["intraday_consecutive_loss_count"],
-                    d["swing_30d_loss_count"],
                     float(d["nifty_intraday_pause_pct"]),
-                    float(d["live_backtest_ratio_long_term"]),
-                    float(d["live_backtest_ratio_swing"]),
                     float(d["live_backtest_ratio_intraday"]),
                     float(d["sentiment_confidence_threshold"]),
                     float(d["min_stock_price"]),
@@ -171,22 +152,11 @@ class RiskConfigStore:
     def update_live_backtest_ratio(
         self, track: Track, new_ratio: Decimal, effective_from: date
     ) -> RiskConfig:
-        """Create a new config version with an updated per-track haircut ratio.
+        """Create a new config version with an updated confidence haircut ratio.
 
-        Called after 60 days of live trading per track once actual win rates are measured.
+        Called after 60 days of live trading once actual win rates are measured.
         """
         current = self.load_current()
-        field_map = {
-            Track.LONG_TERM: "live_backtest_ratio_long_term",
-            Track.SWING: "live_backtest_ratio_swing",
-            Track.INTRADAY: "live_backtest_ratio_intraday",
-        }
-        updated = {
-            "live_backtest_ratio_long_term": current.live_backtest_ratio_long_term,
-            "live_backtest_ratio_swing": current.live_backtest_ratio_swing,
-            "live_backtest_ratio_intraday": current.live_backtest_ratio_intraday,
-        }
-        updated[field_map[track]] = new_ratio
 
         with self._conn() as conn:
             config_id = str(uuid.uuid4())
@@ -194,28 +164,39 @@ class RiskConfigStore:
             now = datetime.now(IST).replace(tzinfo=None).isoformat()
             conn.execute(
                 """
-                INSERT INTO risk_config SELECT
-                    ?, ?, ?,
-                    risk_per_intraday_trade_pct, risk_per_swing_trade_pct,
-                    risk_per_long_term_trade_pct,
-                    intraday_daily_loss_limit_pct, swing_weekly_loss_limit_pct,
+                INSERT INTO risk_config (
+                    config_id, version, effective_from,
+                    risk_per_intraday_trade_pct,
+                    intraday_daily_loss_limit_pct,
                     portfolio_daily_loss_limit_pct, portfolio_weekly_loss_limit_pct,
                     portfolio_max_drawdown_pct,
                     single_stock_cap_pct, sector_cap_pct, correlation_cluster_cap_pct,
-                    intraday_consecutive_loss_count, swing_30d_loss_count,
+                    intraday_consecutive_loss_count,
                     nifty_intraday_pause_pct,
-                    ?, ?, ?,
+                    live_backtest_ratio_intraday,
                     sentiment_confidence_threshold,
-                    ?
+                    created_at,
+                    min_stock_price, min_avg_daily_volume, min_avg_daily_turnover_cr
+                ) SELECT
+                    ?, ?, ?,
+                    risk_per_intraday_trade_pct,
+                    intraday_daily_loss_limit_pct,
+                    portfolio_daily_loss_limit_pct, portfolio_weekly_loss_limit_pct,
+                    portfolio_max_drawdown_pct,
+                    single_stock_cap_pct, sector_cap_pct, correlation_cluster_cap_pct,
+                    intraday_consecutive_loss_count,
+                    nifty_intraday_pause_pct,
+                    ?,
+                    sentiment_confidence_threshold,
+                    ?,
+                    min_stock_price, min_avg_daily_volume, min_avg_daily_turnover_cr
                 FROM risk_config WHERE version = ?
                 """,
                 (
                     config_id,
                     new_version,
                     effective_from.isoformat(),
-                    float(updated["live_backtest_ratio_long_term"]),
-                    float(updated["live_backtest_ratio_swing"]),
-                    float(updated["live_backtest_ratio_intraday"]),
+                    float(new_ratio),
                     now,
                     current.version,
                 ),

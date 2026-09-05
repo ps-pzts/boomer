@@ -8,12 +8,8 @@ from typing import Any
 
 from brain.models import ContributingSignal, Direction, SignalRecord
 
-# Liquidity gates (avg_traded_value_20d in rupees) per track
-LIQUIDITY_GATE: dict[str, float] = {
-    "long_term": 5_00_00_000,  # ₹5 cr
-    "swing": 2_00_00_000,  # ₹2 cr
-    "intraday": 10_00_00_000,  # ₹10 cr
-}
+# Liquidity gate (avg_traded_value_20d in rupees)
+LIQUIDITY_GATE: dict[str, float] = {"intraday": 10_00_00_000}  # ₹10 cr
 
 
 class BaseSignalGenerator(ABC):
@@ -104,8 +100,7 @@ class BaseSignalGenerator(ABC):
             agreement_component = 0.3 * (aligned / total)
 
         days_since = features.get("days_since_max_observed", 0.0)
-        # Characteristic decay: 30 days for long_term signals
-        decay_constant = {"long_term": 30.0, "swing": 7.0, "intraday": 0.5}.get(self.track, 30.0)
+        decay_constant = 0.5  # intraday signals decay fast
         freshness = math.exp(-float(days_since) / decay_constant)
         freshness_component = 0.2 * freshness
 

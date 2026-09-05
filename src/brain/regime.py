@@ -86,7 +86,7 @@ class RegimeDetector:
 
         If Nifty drops more than 1.5% from the previous close during market hours,
         the effective intraday regime becomes bear for the remainder of the session.
-        Long-term and swing morning-batch decisions are NOT affected.
+        Morning-batch decisions are NOT affected.
         """
         if nifty_intraday_change_pct <= INTRADAY_DOWNGRADE_PCT:
             return Regime.BEAR

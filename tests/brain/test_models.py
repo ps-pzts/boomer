@@ -7,32 +7,25 @@ from brain.models import (
 )
 
 
-def test_cooldown_approved_position_opened_swing():
-    # Design doc Loophole 3: approved + position opened → 7 days swing cooldown
-    assert cooldown_days_for(RecommendationOutcome.APPROVED_POSITION_OPENED, "swing") == 7
-
-
-def test_cooldown_approved_position_opened_long_term():
-    assert cooldown_days_for(RecommendationOutcome.APPROVED_POSITION_OPENED, "long_term") == 30
+def test_cooldown_approved_position_opened_intraday():
+    assert cooldown_days_for(RecommendationOutcome.APPROVED_POSITION_OPENED, "intraday") == 1
 
 
 def test_cooldown_rejected_by_operator_is_zero():
     # Rejected = immediate reset; operator disagrees with signal, not signal validity
-    assert cooldown_days_for(RecommendationOutcome.REJECTED_BY_OPERATOR, "swing") == 0
-    assert cooldown_days_for(RecommendationOutcome.REJECTED_BY_OPERATOR, "long_term") == 0
+    assert cooldown_days_for(RecommendationOutcome.REJECTED_BY_OPERATOR, "intraday") == 0
 
 
-def test_cooldown_expired_swing():
-    assert cooldown_days_for(RecommendationOutcome.EXPIRED, "swing") == 3
-
-
-def test_cooldown_expired_long_term():
-    assert cooldown_days_for(RecommendationOutcome.EXPIRED, "long_term") == 7
+def test_cooldown_expired_intraday():
+    assert cooldown_days_for(RecommendationOutcome.EXPIRED, "intraday") == 0
 
 
 def test_cooldown_rejected_by_apm():
-    assert cooldown_days_for(RecommendationOutcome.REJECTED_BY_APM, "swing") == 2
-    assert cooldown_days_for(RecommendationOutcome.REJECTED_BY_APM, "long_term") == 7
+    assert cooldown_days_for(RecommendationOutcome.REJECTED_BY_APM, "intraday") == 0
+
+
+def test_cooldown_unknown_track_defaults_to_zero():
+    assert cooldown_days_for(RecommendationOutcome.APPROVED_POSITION_OPENED, "unknown") == 0
 
 
 def test_red_flag_categories_contains_expected():

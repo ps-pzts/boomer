@@ -16,10 +16,7 @@ class TodaySnapshot:
     signals_generated: int
     trades_placed: int
     positions_opened: int
-    lt_open: int
-    swing_open: int
     intraday_open: int
-    approvals_waiting: int
     bot_mode: str
     circuit_breakers_tripped: list[str]
     missed_critical_alerts: int
@@ -43,36 +40,10 @@ class PositionRow:
 
 
 @dataclass
-class RecommendationRow:
-    rec_id: str
-    symbol: str
-    exchange: str
-    track: str
-    current_price: float
-    entry_low: float
-    entry_high: float
-    stop_loss: float
-    target: float
-    position_size_shares: int
-    position_size_rupees: float
-    signal_score: float
-    confidence: float
-    ev: float
-    rr: float
-    sector: str
-    valid_until: str
-    status: str
-
-
-@dataclass
 class CapitalView:
     total_capital: float
     hwm: float
     drawdown_pct: float
-    lt_allocated: float
-    lt_deployed: float
-    swing_allocated: float
-    swing_deployed: float
     intraday_allocated: float
     intraday_deployed: float
 
@@ -120,18 +91,8 @@ def get_today_snapshot(db_path: str, run_date: str) -> TodaySnapshot:
             "SELECT COUNT(*) as n FROM positions WHERE DATE(entry_at)=?", (run_date,)
         ).fetchone()
 
-        lt_row = conn.execute(
-            "SELECT COUNT(*) as n FROM positions WHERE is_open=1 AND track='long_term'"
-        ).fetchone()
-        sw_row = conn.execute(
-            "SELECT COUNT(*) as n FROM positions WHERE is_open=1 AND track='swing'"
-        ).fetchone()
         id_row = conn.execute(
             "SELECT COUNT(*) as n FROM positions WHERE is_open=1 AND track='intraday'"
-        ).fetchone()
-
-        approvals_row = conn.execute(
-            "SELECT COUNT(*) as n FROM recommendations WHERE status='awaiting_human'"
         ).fetchone()
 
         missed_row = conn.execute(
@@ -153,77 +114,11 @@ def get_today_snapshot(db_path: str, run_date: str) -> TodaySnapshot:
         signals_generated=signals_row["n"],
         trades_placed=trades_row["n"],
         positions_opened=pos_opened_row["n"],
-        lt_open=lt_row["n"],
-        swing_open=sw_row["n"],
         intraday_open=id_row["n"],
-        approvals_waiting=approvals_row["n"],
         bot_mode=bot_mode,
         circuit_breakers_tripped=tripped,
         missed_critical_alerts=missed_row["n"],
     )
-
-
-def get_pending_recommendations(db_path: str, limit: int = 50) -> list[RecommendationRow]:
-    conn = _conn(db_path)
-    try:
-        rows = conn.execute(
-            """SELECT r.recommendation_id as rec_id,
-                      r.stock_symbol as symbol,
-                      r.exchange,
-                      r.track,
-                      r.status,
-                      r.generated_at as valid_until,
-                      COALESCE(tp.entry_zone_low,  r.entry_zone_low)  as entry_low,
-                      COALESCE(tp.entry_zone_high, r.entry_zone_high) as entry_high,
-                      COALESCE(tp.stop_loss_price, r.stop_loss_price) as stop_loss,
-                      COALESCE(tp.target_price,    r.target_price)    as target,
-                      r.position_size_shares,
-                      s.raw_score as signal_score,
-                      s.confidence,
-                      COALESCE(tp.expected_value_per_share, 0) as ev,
-                      COALESCE(tp.reward_to_risk, 0)           as rr,
-                      COALESCE(sc.sector,'Unknown') as sector,
-                      COALESCE(
-                          (SELECT close FROM prices
-                           WHERE stock_symbol=r.stock_symbol
-                             AND exchange=r.exchange
-                           ORDER BY trade_date DESC LIMIT 1), 0
-                      ) as current_price
-               FROM recommendations r
-               LEFT JOIN trade_plans tp ON tp.plan_id = r.plan_id
-               JOIN signals s ON s.signal_id = r.signal_id
-               LEFT JOIN sector_classifications sc ON sc.symbol = r.stock_symbol
-               WHERE r.status = 'awaiting_human'
-               ORDER BY s.confidence DESC
-               LIMIT ?""",
-            (limit,),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    return [
-        RecommendationRow(
-            rec_id=r["rec_id"],
-            symbol=r["symbol"],
-            exchange=r["exchange"],
-            track=r["track"],
-            current_price=float(r["current_price"]),
-            entry_low=r["entry_low"],
-            entry_high=r["entry_high"],
-            stop_loss=r["stop_loss"],
-            target=r["target"],
-            position_size_shares=r["position_size_shares"],
-            position_size_rupees=float(r["position_size_shares"]) * float(r["current_price"]),
-            signal_score=r["signal_score"],
-            confidence=r["confidence"],
-            ev=r["ev"],
-            rr=r["rr"],
-            sector=r["sector"],
-            valid_until=r["valid_until"],
-            status=r["status"],
-        )
-        for r in rows
-    ]
 
 
 def get_open_positions(db_path: str) -> list[PositionRow]:
@@ -285,22 +180,16 @@ def get_capital_view(db_path: str) -> CapitalView:
     finally:
         conn.close()
     if row is None:
-        return CapitalView(0, 0, 0, 0, 0, 0, 0, 0, 0)
+        return CapitalView(0, 0, 0, 0, 0)
     hwm = float(row["high_water_mark"] or 0)
     total = float(row["total_capital"] or 0)
     dd = ((hwm - total) / hwm * 100) if hwm > 0 else 0.0
-    # Allocated amounts derived from pct × total capital
-    lt_alloc = total * float(row["long_term_allocated_pct"] or 0) / 100
-    sw_alloc = total * float(row["swing_allocated_pct"] or 0) / 100
-    id_alloc = total * float(row["intraday_allocated_pct"] or 0) / 100
+    # allocated_pct is a fraction (0.0-1.0), not a percentage — no /100 needed.
+    id_alloc = total * float(row["intraday_allocated_pct"] or 0)
     return CapitalView(
         total_capital=total,
         hwm=hwm,
         drawdown_pct=dd,
-        lt_allocated=lt_alloc,
-        lt_deployed=float(row["long_term_deployed"] or 0),
-        swing_allocated=sw_alloc,
-        swing_deployed=float(row["swing_deployed"] or 0),
         intraday_allocated=id_alloc,
         intraday_deployed=float(row["intraday_deployed"] or 0),
     )
