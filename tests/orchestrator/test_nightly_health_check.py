@@ -122,7 +122,6 @@ class TestNightlyHealthCheckStuckTasks:
 class TestNightlyHealthCheckDiskSpace:
     def test_low_disk_reported_as_issue(self, db_path: str) -> None:
         """If disk_usage reports < 20 % free, the issue is included in the report."""
-        import shutil
 
         # Fake a disk that is 5% free
         from collections import namedtuple
