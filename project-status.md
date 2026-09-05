@@ -10,7 +10,7 @@
 
 **Current phase:** Phase 5 complete. Nightly health check (01:45 IST) added; restart_guard now cycles all three services; bot gets its own systemd unit. 444 tests pass, lint clean.
 
-**Last updated:** 2026-05-24
+**Last updated:** 2026-09-05
 
 ---
 
@@ -33,6 +33,8 @@
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
 | Ops | Bot systemd unit | New `ops/systemd/boomer-bot.service` — runs `python -m src.alerts.telegram_bot`, same shape as orchestrator/dashboard units. |
 | Bug | GTT last_price silent fallback | `KiteBroker.place_gtt()` used `get_ltp() or sl_trigger_price` as the Kite `last_price` field. When `get_ltp()` returned `None` (no market data subscription, empty tick cache), the fallback set `last_price = sl_trigger_price = trigger_values[0]`, causing Kite to reject with "Trigger cannot be created with one of the trigger values equal to the last price." Fix: `get_ltp()` extended with a Tier 2 fallback to `holdings()` + `positions()` (base plan); `place_gtt()` now raises `RuntimeError` explicitly when LTP is unavailable instead of silently using a trigger price. |
+| Bug | KiteTicker never subscribed | `_start_ticker_if_needed()` connected the WebSocket but never called `subscribe()`/`set_mode()` — zero ticks ever arrived, silently. `_on_ticks_received` also keyed on `tradingsymbol`, a field absent from real Kite tick payloads. Fix: `_on_ticker_connect` subscribes all known instrument tokens in `MODE_QUOTE` once the handshake completes; ticks are matched via `instrument_token` through a `_token_to_symbol` map. Root cause of a related race: `self._ticker` is truthy immediately after construction but `connect(threaded=True)` is async, so a second `on_tick()` call before the handshake completed would call `subscribe()` on a dead socket and raise uncaught. Fix: added `_ticker_connected` flag — new tokens are deferred to `_on_ticker_connect` until the handshake actually completes; `_on_ticker_close` resets state for future reconnects. Also fixed: `_resolve_instrument_token`'s instrument cache was keyed globally (comment claimed per-exchange busting that didn't exist) — now keyed by exchange. Known gap (not yet fixed): nothing in `orchestrator._build_brokers()` or executor wiring calls `.on_tick()` yet, so this fix has no production caller today — `get_ltp()`'s REST-tier fallback is what actually serves LTP in the running system. Also: mid-day re-authentication (Loophole 6, phase-4 design doc) refreshes `self._kite` but never reconnects `self._ticker`, so a mid-day session death would silently stop the tick feed until the next full process restart — not addressed here, flagged for a future fix. 19 tests added to `test_kite_broker.py` covering subscription timing, tick mapping, and per-exchange caching. |
+| Bug | Risk config defaults had two homes | `RiskConfigStore.seed_defaults()` embedded 21 bare numbers inline in a SQL string with no names, while `capital/models.py` held related-but-separate thresholds (`MIN_RR`, `ATR_K`) as named module constants — no single place to see "what are the defaults." Fix: added `RISK_CONFIG_DEFAULTS` named dict in `risk_config.py` as the source of truth for `seed_defaults()`; cross-reference comment added in `models.py` near `MIN_RR`/`ATR_K` (kept separate — they're structural design constants, not operator-tunable, so not moved into `RiskConfig`). |
 
 ---
 
@@ -85,6 +87,15 @@ Key ones resolved in Phase 4 implementation:
 ---
 
 ## Change log
+
+### 2026-09-05 — Bug: KiteTicker subscription race + per-exchange instrument cache
+
+- Follow-up to the merged KiteTicker subscription fix (PR #22, which added `subscribe()`/`set_mode()` wiring but shipped with no regression tests and had not yet updated this file — both addressed here).
+- Root cause of a latent race: `self._ticker` is truthy immediately after `KiteTicker(...)` construction, but `connect(threaded=True)` completes the WebSocket handshake asynchronously. A second `on_tick()` call in that window hit the "ticker already running" branch and called `subscribe()` on a socket that doesn't exist yet inside the SDK, raising uncaught out of `on_tick()`.
+- Fix: added `_ticker_connected` flag, set `True` only in `_on_ticker_connect` (fires on initial connect and every auto-reconnect). New tokens found while not yet connected are left in `_token_to_symbol` and picked up automatically once the handshake completes. Added `_on_ticker_close` to reset state on disconnect.
+- Fix: `_resolve_instrument_token`'s instrument cache was a single global dict despite a comment claiming per-exchange busting — now keyed by exchange (`dict[str, dict[str, int]]`), closing a latent bug that would have silently mis-resolved or failed lookups for a second exchange (only NSE is used today, so dormant in practice).
+- Added 19 tests to `tests/executor/brokers/test_kite_broker.py`: ticker subscription timing (deferred-until-connected, immediate-once-connected, close resets state), tick→symbol mapping via `instrument_token`, zero-price tick filtering, and per-exchange cache isolation.
+- Flagged, not fixed here (documented in `project-status.md` "What's done" bug row and left for a follow-up): (1) nothing in `orchestrator._build_brokers()` or executor task wiring calls `.on_tick()` yet, so the tick feed has no production caller — `get_ltp()`'s REST-tier fallback serves all LTP in the running system today; (2) mid-day re-authentication (Loophole 6, phase-4 design doc) refreshes the REST client but never reconnects the WebSocket ticker, so a mid-day session death would silently stop ticks until the next full process restart.
 
 ### 2026-05-12 — End-to-end pipeline run: full signal→recommendation→GTT flow verified
 

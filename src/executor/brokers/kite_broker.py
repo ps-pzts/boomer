@@ -83,7 +83,8 @@ class KiteBroker(Broker):
         self._LTP_STALENESS_SECONDS = 300  # Q4-1: 5-minute staleness threshold
         self._token_to_symbol: dict[int, str] = {}  # instrument_token → tradingsymbol
         self._subscribed_tokens: set[int] = set()
-        self._instruments_cache: dict[str, int] | None = None  # NSE symbol → token, session-lived
+        self._instruments_cache: dict[str, dict[str, int]] = {}  # exchange → {symbol: token}
+        self._ticker_connected = False
 
     @property
     def broker_id(self) -> BrokerName:
@@ -328,16 +329,17 @@ class KiteBroker(Broker):
             raise RuntimeError("KiteBroker not authenticated — call authenticate() first")
 
     def _resolve_instrument_token(self, symbol: str, exchange: str) -> int:
-        # Cache the instrument list for the session — it doesn't change intraday.
-        # Cache is NSE-specific; if exchange differs from the cached run, bust it.
-        if self._instruments_cache is None:
+        # Cache the instrument list per exchange for the session — it doesn't change intraday.
+        cache = self._instruments_cache.get(exchange)
+        if cache is None:
             self._ensure_authenticated()
             instruments = self._kite.instruments(exchange=exchange)
-            self._instruments_cache = {
+            cache = {
                 inst["tradingsymbol"]: int(inst["instrument_token"])
                 for inst in instruments
             }
-        token = self._instruments_cache.get(symbol)
+            self._instruments_cache[exchange] = cache
+        token = cache.get(symbol)
         if token is None:
             raise ValueError(f"Instrument not found: {exchange}:{symbol}")
         return token
@@ -352,12 +354,22 @@ class KiteBroker(Broker):
                 logger.warning("KiteTicker: cannot resolve token for %s: %s", symbol, exc)
 
         if self._ticker is not None:
-            # Ticker already running — subscribe any newly resolved tokens immediately.
+            # Ticker already exists, but connect() is async (threaded=True) — the
+            # WebSocket handshake may not have completed yet. Subscribing before
+            # self._ticker.ws exists raises inside the kiteconnect SDK. If we're not
+            # connected yet, leave new tokens in _token_to_symbol: _on_ticker_connect
+            # subscribes everything known once the handshake completes (and again on
+            # every auto-reconnect, which is idempotent).
             new_tokens = [t for t in self._token_to_symbol if t not in self._subscribed_tokens]
-            if new_tokens:
-                self._ticker.subscribe(new_tokens)
-                self._ticker.set_mode(self._ticker.MODE_QUOTE, new_tokens)
-                self._subscribed_tokens.update(new_tokens)
+            if new_tokens and self._ticker_connected:
+                try:
+                    self._ticker.subscribe(new_tokens)
+                    self._ticker.set_mode(self._ticker.MODE_QUOTE, new_tokens)
+                    self._subscribed_tokens.update(new_tokens)
+                except Exception as exc:
+                    logger.error(
+                        "KiteTicker: subscribe failed for %d tokens: %s", len(new_tokens), exc
+                    )
             return
 
         try:
@@ -369,18 +381,32 @@ class KiteBroker(Broker):
             self._ticker.on_ticks = self._on_ticks_received
             self._ticker.on_order_update = self._dispatch_order_update
             self._ticker.on_connect = self._on_ticker_connect
+            self._ticker.on_close = self._on_ticker_close
             self._ticker.connect(threaded=True)
         except Exception as exc:
             logger.error("Failed to start KiteTicker: %s", exc)
 
     def _on_ticker_connect(self, ws: object, response: object) -> None:
-        """Subscribe all resolved instruments once the WebSocket handshake completes."""
+        """Subscribe all known instruments once the WebSocket handshake completes.
+
+        Fires on the initial connect and again on every auto-reconnect, so it
+        re-subscribes everything each time — safe since subscribe() is idempotent.
+        """
+        self._ticker_connected = True
         tokens = list(self._token_to_symbol.keys())
         if tokens:
-            self._ticker.subscribe(tokens)
-            self._ticker.set_mode(self._ticker.MODE_QUOTE, tokens)
-            self._subscribed_tokens.update(tokens)
-            logger.info("KiteTicker: subscribed %d instruments", len(tokens))
+            try:
+                self._ticker.subscribe(tokens)
+                self._ticker.set_mode(self._ticker.MODE_QUOTE, tokens)
+                self._subscribed_tokens.update(tokens)
+                logger.info("KiteTicker: subscribed %d instruments", len(tokens))
+            except Exception as exc:
+                logger.error("KiteTicker: subscribe on connect failed: %s", exc)
+
+    def _on_ticker_close(self, ws: object, code: object, reason: object) -> None:
+        """Reset connected state so pending subscriptions wait for the next connect."""
+        self._ticker_connected = False
+        self._subscribed_tokens.clear()
 
     def _on_ticks_received(self, ws: object, ticks: list[dict]) -> None:
         now = datetime.now(IST)
