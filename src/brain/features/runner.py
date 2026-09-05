@@ -2,8 +2,8 @@
 
 Usage::
 
-    from brain.features.track_swing import SWING_COMPUTERS
-    results = run_track_computers(SWING_COMPUTERS, db_path, fs, "TCS", "NSE", today)
+    from brain.features.track_intraday import INTRADAY_COMPUTERS
+    results = run_track_computers(INTRADAY_COMPUTERS, db_path, fs, "TCS", "NSE", today)
     # results: {"dma_20,high_20d,...": True, "fo_oi_overnight_change_pct,...": False, ...}
 """
 

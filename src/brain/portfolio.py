@@ -15,9 +15,6 @@ from capital.models import RiskConfig
 # Open positions count limits
 MAX_TOTAL_OPEN_POSITIONS = 15
 MAX_INTRADAY_NEW_PER_DAY = 5
-MAX_SWING_NEW_PER_DAY = 3
-MAX_SWING_OPEN_TOTAL = 8
-MAX_LONG_TERM_NEW_PER_WEEK = 1
 
 
 @dataclass(frozen=True)
@@ -45,9 +42,6 @@ class PortfolioCapacityState:
     pending_orders: list[PendingOrderSummary]
     total_capital: Decimal
     intraday_new_today: int
-    swing_new_today: int
-    swing_open_total: int
-    long_term_new_this_week: int
     correlation_matrix: dict[str, dict[str, float]]  # symbol → {symbol: corr}
 
 
@@ -166,12 +160,6 @@ class PortfolioConstructor:
     def _check_track_cap(track: str, state: PortfolioCapacityState, already_approved: int) -> bool:
         if track == "intraday":
             return (state.intraday_new_today + already_approved) < MAX_INTRADAY_NEW_PER_DAY
-        if track == "swing":
-            return (
-                state.swing_new_today + already_approved
-            ) < MAX_SWING_NEW_PER_DAY and state.swing_open_total < MAX_SWING_OPEN_TOTAL
-        if track == "long_term":
-            return (state.long_term_new_this_week + already_approved) < MAX_LONG_TERM_NEW_PER_WEEK
         return True
 
     @staticmethod

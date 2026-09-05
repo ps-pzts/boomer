@@ -41,7 +41,6 @@ class TestGetTodaySnapshot:
         assert snap.signals_generated == 0
         assert snap.trades_placed == 0
         assert snap.positions_opened == 0
-        assert snap.approvals_waiting == 0
         assert snap.missed_critical_alerts == 0
 
     def test_missed_critical_count(self, db_path: Path) -> None:
@@ -81,13 +80,11 @@ class TestGetCapitalView:
         conn.execute(
             """INSERT INTO capital_ledger
                (ledger_id, as_of_date, total_capital, total_cash,
-                long_term_allocated_pct, swing_allocated_pct, intraday_allocated_pct,
-                long_term_deployed, swing_deployed, intraday_deployed,
+                intraday_allocated_pct, intraday_deployed,
                 high_water_mark, eod_drawdown_pct, consecutive_loss_days,
                 peak_date, created_at)
                VALUES ('lid1', '2026-05-11', 1000000, 500000,
-                       70, 20, 10,
-                       500000, 150000, 80000,
+                       1.0, 80000,
                        1100000, 9.09, 0,
                        '2026-05-01', '2026-05-11T10:00:00Z')"""
         )
@@ -98,18 +95,20 @@ class TestGetCapitalView:
         assert view.hwm == 1_100_000.0
         # drawdown = (1.1M - 1M) / 1.1M * 100 ≈ 9.09%
         assert abs(view.drawdown_pct - 9.09) < 0.1
+        # allocated_pct is a fraction (1.0 = 100%), not a percentage
+        assert view.intraday_allocated == 1_000_000.0
+        assert view.intraday_deployed == 80_000.0
 
     def test_no_negative_drawdown_when_at_hwm(self, db_path: Path) -> None:
         conn = sqlite3.connect(str(db_path))
         conn.execute(
             """INSERT INTO capital_ledger
                (ledger_id, as_of_date, total_capital, total_cash,
-                long_term_allocated_pct, swing_allocated_pct, intraday_allocated_pct,
-                long_term_deployed, swing_deployed, intraday_deployed,
+                intraday_allocated_pct, intraday_deployed,
                 high_water_mark, eod_drawdown_pct, consecutive_loss_days,
                 peak_date, created_at)
                VALUES ('lid2', '2026-05-11', 1000000, 1000000,
-                       70, 20, 10, 0, 0, 0,
+                       1.0, 0,
                        1000000, 0.0, 0,
                        '2026-05-11', '2026-05-11T10:00:00Z')"""
         )

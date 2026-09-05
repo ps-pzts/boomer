@@ -32,8 +32,8 @@ def _seed_position(db: sqlite3.Connection, **overrides) -> str:
         position_id="pos-1",
         symbol="RELIANCE",
         exchange="NSE",
-        track="swing",
-        bucket_id="swing_bucket",
+        track="intraday",
+        bucket_id="intraday_bucket",
         broker_id="kite",
         quantity=10,
         average_entry_price=2500.0,
@@ -82,8 +82,8 @@ class TestPositionManagerOpen:
         pos_id = pm.open_position(
             symbol="TCS",
             exchange="NSE",
-            track="long_term",
-            bucket_id="lt_bucket",
+            track="intraday",
+            bucket_id="intraday_bucket",
             broker_id=BrokerName.KITE,
             quantity=5,
             average_entry_price=3000.0,
@@ -144,55 +144,14 @@ class TestPositionManagerUnprotected:
         assert row["unprotected_flag"] == 0
 
 
-class TestPositionManagerGraduation:
-    def test_graduation_requires_swing_track(self):
-        db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
-        pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
-        # Long-term position cannot graduate
-        _seed_position(db, track="long_term")
-        result = pm.graduate_position("pos-1", current_price=2600.0)
-        assert result is False
-
-    def test_graduation_requires_sufficient_gain(self):
-        db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
-        pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
-        _seed_position(db, track="swing", average_entry_price=2500.0, atr_at_entry=20.0)
-        # Only 5 pts gain < 1×ATR
-        result = pm.graduate_position("pos-1", current_price=2505.0)
-        assert result is False
-
-    def test_graduation_success_updates_track(self):
-        db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
-        pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
-        _seed_position(
-            db, track="swing", average_entry_price=2500.0, atr_at_entry=20.0, gtt_oco_id=None
-        )
-
-        # Gain of 50 > 1×ATR=20 → graduation proceeds
-        result = pm.graduate_position("pos-1", current_price=2550.0)
-        assert result is True
-        row = db.execute(
-            "SELECT track, stop_loss_price FROM positions WHERE position_id=?", ("pos-1",)
-        ).fetchone()
-        assert row["track"] == "long_term"
-        # New stop = 2550 - 3×20 = 2490
-        assert row["stop_loss_price"] == pytest.approx(2490.0)
-
-
 class TestPositionManagerLoadOpen:
     def test_load_open_filters_by_track(self):
         db = _make_db()
         gm = GttManager(db=db, brokers={BrokerName.KITE: MockBroker()})
         pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
-        _seed_position(db, position_id="pos-1", track="swing")
+        _seed_position(db, position_id="pos-1", track="unmanaged_legacy")
         _seed_position(db, position_id="pos-2", track="intraday")
 
-        swing_positions = pm.load_open("swing")
-        assert len(swing_positions) == 1
-        assert swing_positions[0].track == "swing"
+        intraday_positions = pm.load_open("intraday")
+        assert len(intraday_positions) == 1
+        assert intraday_positions[0].track == "intraday"

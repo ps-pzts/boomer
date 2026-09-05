@@ -3,7 +3,7 @@
 Worked example (verified by hand):
   Broker A mock cash: ₹50,000
   Broker B mock cash: ₹30,000
-  Open swing position: 10 shares × ₹200 entry = ₹2,000 deployed
+  Open intraday position: 10 shares × ₹200 entry = ₹2,000 deployed
   total_cash   = 80,000
   total_capital = 82,000
 """
@@ -91,7 +91,7 @@ class TestSyncEodCapital:
         from src.capital.state import CapitalStateManager
         from src.orchestrator.capital_sync import sync_eod_capital
 
-        _seed_position(db_path, "swing", qty=10, entry_price=200.0)
+        _seed_position(db_path, "intraday", qty=10, entry_price=200.0)
 
         broker = MockBroker(initial_cash=80_000.0)
         sync_eod_capital(str(db_path), [broker], "2026-05-11")
@@ -100,9 +100,7 @@ class TestSyncEodCapital:
         ledger = mgr.latest_ledger()
         assert ledger is not None
         assert ledger.total_capital == Decimal("82000.0")
-        assert ledger.swing_deployed == Decimal("2000.0")
-        assert ledger.long_term_deployed == Decimal("0")
-        assert ledger.intraday_deployed == Decimal("0")
+        assert ledger.intraday_deployed == Decimal("2000.0")
 
     def test_updates_existing_ledger(self, db_path: Path) -> None:
         from executor.brokers.mock_broker import MockBroker

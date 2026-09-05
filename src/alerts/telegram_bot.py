@@ -2,11 +2,6 @@
 
 Supported commands:
   /status  — snapshot: mode, broker session health, signals, queued GTTs, P&L
-  /approve — list awaiting_human recs with ✅/❌ inline buttons
-
-Inline button callbacks:
-  approve:<rec_id>  — transitions rec awaiting_human → queued_for_execution
-  reject:<rec_id>   — transitions rec awaiting_human → rejected_by_apm
 
 Uses Telegram Bot API (long-polling getUpdates). No SDK; stdlib urllib only.
 Run as a standalone process alongside the orchestrator.
@@ -62,23 +57,6 @@ def _send(token: str, chat_id: str | int, text: str, reply_markup: dict | None =
     _call(token, "sendMessage", payload)
 
 
-def _answer_callback(token: str, callback_id: str, text: str = "") -> None:
-    _call(token, "answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
-
-
-def _edit_message_text(token: str, chat_id: str | int, message_id: int, text: str) -> None:
-    _call(
-        token,
-        "editMessageText",
-        {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "text": text,
-            "parse_mode": "HTML",
-        },
-    )
-
-
 # ── Database helpers ───────────────────────────────────────────────────────────
 
 
@@ -102,9 +80,6 @@ def _get_snapshot(db_path: str) -> dict:
         signals = conn.execute(
             "SELECT COUNT(*) FROM signals WHERE DATE(generated_at)=?", (run_date,)
         ).fetchone()[0]
-        approvals = conn.execute(
-            "SELECT COUNT(*) FROM recommendations WHERE status='awaiting_human'"
-        ).fetchone()[0]
         queued = conn.execute(
             "SELECT COUNT(*) FROM recommendations WHERE status='queued_for_execution'"
         ).fetchone()[0]
@@ -113,11 +88,8 @@ def _get_snapshot(db_path: str) -> dict:
             " WHERE status='submitted_to_broker' AND DATE(submitted_at)=?",
             (run_date,),
         ).fetchone()[0]
-        lt_open = conn.execute(
-            "SELECT COUNT(*) FROM positions WHERE is_open=1 AND track='long_term'"
-        ).fetchone()[0]
-        sw_open = conn.execute(
-            "SELECT COUNT(*) FROM positions WHERE is_open=1 AND track='swing'"
+        intraday_open = conn.execute(
+            "SELECT COUNT(*) FROM positions WHERE is_open=1 AND track='intraday'"
         ).fetchone()[0]
         pnl = conn.execute(
             "SELECT COALESCE(SUM(realised_pnl),0) FROM positions WHERE DATE(entry_at)=?",
@@ -145,76 +117,13 @@ def _get_snapshot(db_path: str) -> dict:
         "mode": mode,
         "run_date": run_date,
         "signals": signals,
-        "approvals": approvals,
         "queued": queued,
         "submitted_today": submitted_today,
-        "lt_open": lt_open,
-        "sw_open": sw_open,
+        "intraday_open": intraday_open,
         "pnl": float(pnl),
         "circuit_breakers": circuit_breakers,
         "broker_refreshed_at": broker_refreshed_at,
     }
-
-
-def _get_pending_recs(db_path: str) -> list[dict]:
-    conn = _db_conn(db_path)
-    try:
-        rows = conn.execute(
-            """SELECT r.recommendation_id, r.stock_symbol, r.exchange, r.track,
-                      r.entry_zone_low, r.entry_zone_high, r.stop_loss_price, r.target_price,
-                      r.position_size_shares,
-                      COALESCE(tp.reward_to_risk, 0) as rr,
-                      COALESCE(tp.expected_value_per_share, 0) as ev,
-                      s.confidence,
-                      COALESCE(sc.sector, 'Unknown') as sector,
-                      COALESCE(
-                          (SELECT close FROM prices
-                           WHERE stock_symbol=r.stock_symbol AND exchange=r.exchange
-                           ORDER BY trade_date DESC LIMIT 1), 0
-                      ) as cmp
-               FROM recommendations r
-               LEFT JOIN trade_plans tp ON tp.plan_id = r.plan_id
-               JOIN signals s ON s.signal_id = r.signal_id
-               LEFT JOIN sector_classifications sc ON sc.symbol = r.stock_symbol
-               WHERE r.status = 'awaiting_human'
-               ORDER BY s.confidence DESC""",
-        ).fetchall()
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
-
-
-def _approve_rec(db_path: str, rec_id: str) -> bool:
-    conn = _db_conn(db_path)
-    try:
-        now = datetime.now(IST).isoformat()
-        cur = conn.execute(
-            "UPDATE recommendations SET status='queued_for_execution', decided_at=?"
-            " WHERE recommendation_id=? AND status='awaiting_human'",
-            (now, rec_id),
-        )
-        conn.commit()
-        return cur.rowcount > 0
-    finally:
-        conn.close()
-
-
-def _reject_rec(db_path: str, rec_id: str) -> bool:
-    conn = _db_conn(db_path)
-    try:
-        sql = (
-            "UPDATE recommendations SET status='rejected_by_apm',"
-            " decision_reason='operator_rejected'"
-            " WHERE recommendation_id=? AND status='awaiting_human'"
-        )
-        cur = conn.execute(
-            sql,
-            (rec_id,),
-        )
-        conn.commit()
-        return cur.rowcount > 0
-    finally:
-        conn.close()
 
 
 # ── Message formatters ─────────────────────────────────────────────────────────
@@ -237,39 +146,14 @@ def _fmt_status(snap: dict) -> str:
         f"{broker_line}\n\n"
         f"<b>Recommendations</b>\n"
         f"  📡 Signals today: {snap['signals']}\n"
-        f"  ⏳ Awaiting approval: <b>{snap['approvals']}</b>\n"
         f"  🚀 Queued for GTT: {snap['queued']}\n"
         f"  ✅ Submitted today: {snap['submitted_today']}\n\n"
         f"<b>Open positions</b>\n"
-        f"  Long-term: {snap['lt_open']}\n"
-        f"  Swing: {snap['sw_open']}\n\n"
+        f"  Intraday: {snap['intraday_open']}\n\n"
         f"💰 Today's P&amp;L: {pnl_sign}₹{snap['pnl']:,.0f}"
         f"{cb}\n\n"
         f"<i>Generated at {generated_at}</i>"
     )
-
-
-def _fmt_rec_card(idx: int, r: dict) -> str:
-    track_short = {"long_term": "LT", "swing": "SW", "intraday": "ID"}.get(r["track"], r["track"])
-    short_id = r["recommendation_id"][:8]
-    return (
-        f"<b>#{idx} {r['stock_symbol']}</b> [{track_short}] — {r['sector']}\n"
-        f"  CMP ₹{r['cmp']:.0f} | Entry ₹{r['entry_zone_low']:.0f}–{r['entry_zone_high']:.0f}\n"
-        f"  SL ₹{r['stop_loss_price']:.0f} | Target ₹{r['target_price']:.0f}\n"
-        f"  RR {r['rr']:.1f}x | EV ₹{r['ev']:.1f} | Conf {r['confidence']:.0%}\n"
-        f"  Qty {r['position_size_shares']} shares | ID: <code>{short_id}</code>"
-    )
-
-
-def _rec_inline_keyboard(rec_id: str) -> dict:
-    return {
-        "inline_keyboard": [
-            [
-                {"text": "✅ Approve", "callback_data": f"approve:{rec_id}"},
-                {"text": "❌ Reject", "callback_data": f"reject:{rec_id}"},
-            ]
-        ]
-    }
 
 
 # ── Command handlers ───────────────────────────────────────────────────────────
@@ -278,50 +162,6 @@ def _rec_inline_keyboard(rec_id: str) -> dict:
 def handle_status(token: str, chat_id: str | int, db_path: str) -> None:
     snap = _get_snapshot(db_path)
     _send(token, chat_id, _fmt_status(snap))
-
-
-def handle_approve(token: str, chat_id: str | int, db_path: str) -> None:
-    recs = _get_pending_recs(db_path)
-    if not recs:
-        _send(token, chat_id, "✅ No recommendations awaiting approval.")
-        return
-    _send(token, chat_id, f"<b>⏳ {len(recs)} recommendation(s) awaiting approval</b>")
-    for idx, rec in enumerate(recs, 1):
-        _send(
-            token,
-            chat_id,
-            _fmt_rec_card(idx, rec),
-            reply_markup=_rec_inline_keyboard(rec["recommendation_id"]),
-        )
-
-
-def handle_callback(token: str, callback: dict, db_path: str) -> None:
-    callback_id = callback["id"]
-    data = callback.get("data", "")
-    chat_id = callback["message"]["chat"]["id"]
-    message_id = callback["message"]["message_id"]
-    original_text = callback["message"].get("text", "")
-
-    if data.startswith("approve:"):
-        rec_id = data[len("approve:") :]
-        ok = _approve_rec(db_path, rec_id)
-        if ok:
-            _answer_callback(token, callback_id, "✅ Approved")
-            _edit_message_text(token, chat_id, message_id, original_text + "\n\n<b>✅ APPROVED</b>")
-        else:
-            _answer_callback(token, callback_id, "Already actioned or not found")
-
-    elif data.startswith("reject:"):
-        rec_id = data[len("reject:") :]
-        ok = _reject_rec(db_path, rec_id)
-        if ok:
-            _answer_callback(token, callback_id, "❌ Rejected")
-            _edit_message_text(token, chat_id, message_id, original_text + "\n\n<b>❌ REJECTED</b>")
-        else:
-            _answer_callback(token, callback_id, "Already actioned or not found")
-
-    else:
-        _answer_callback(token, callback_id)
 
 
 # ── Polling loop ───────────────────────────────────────────────────────────────
@@ -343,7 +183,7 @@ class TelegramBot:
             {
                 "offset": self._offset,
                 "timeout": self._POLL_SECONDS,
-                "allowed_updates": ["message", "callback_query"],
+                "allowed_updates": ["message"],
             },
             timeout=self._POLL_SECONDS + 10,  # urllib must exceed the Telegram hold duration
         )
@@ -352,10 +192,6 @@ class TelegramBot:
         return result.get("result", [])
 
     def _dispatch(self, update: dict) -> None:
-        if "callback_query" in update:
-            handle_callback(self._token, update["callback_query"], self._db_path)
-            return
-
         msg = update.get("message") or update.get("edited_message")
         if not msg:
             return
@@ -368,15 +204,12 @@ class TelegramBot:
         text = (msg.get("text") or "").strip().lower()
         if text in ("/status", "/status@boomerbot"):
             handle_status(self._token, msg["chat"]["id"], self._db_path)
-        elif text in ("/approve", "/approve@boomerbot", "/screen", "/screen@boomerbot"):
-            handle_approve(self._token, msg["chat"]["id"], self._db_path)
         elif text in ("/help", "/start"):
             _send(
                 self._token,
                 msg["chat"]["id"],
                 "<b>Boomer Bot Commands</b>\n\n"
-                "/status — system snapshot: mode, broker session, signals, queued GTTs, P&amp;L\n"
-                "/approve — pending long-term recs with ✅ Approve / ❌ Reject buttons\n",
+                "/status — system snapshot: mode, broker session, signals, queued GTTs, P&amp;L\n",
             )
 
     def run_forever(self) -> None:
@@ -396,7 +229,7 @@ class TelegramBot:
         _signal.signal(_signal.SIGINT, _shutdown)
 
         logger.info("telegram_bot_starting chat_id=%s", self._chat_id)
-        _send(self._token, self._chat_id, "🤖 <b>Boomer bot online.</b> Send /status or /approve.")
+        _send(self._token, self._chat_id, "🤖 <b>Boomer bot online.</b> Send /status.")
         while True:
             try:
                 updates = self._get_updates()

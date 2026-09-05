@@ -200,7 +200,7 @@ class PositionRecord:
     position_id: str
     symbol: str
     exchange: str
-    track: str  # intraday | swing | long_term
+    track: str  # intraday
     bucket_id: str
     broker_id: BrokerName
     quantity: int

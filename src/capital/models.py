@@ -8,8 +8,6 @@ from typing import Protocol
 
 
 class Track(StrEnum):
-    LONG_TERM = "long_term"
-    SWING = "swing"
     INTRADAY = "intraday"
 
 
@@ -35,27 +33,13 @@ REGIME_EXPOSURE_SCALE: dict[Regime, Decimal] = {
     Regime.BEAR: Decimal("0.30"),
 }
 
-# Capital milestone that triggers the allocation shift from initial to steady-state.
-CAPITAL_MILESTONE = Decimal("250000")  # ₹2,50,000
-
-INITIAL_ALLOCATION: dict[Track, Decimal] = {
-    Track.LONG_TERM: Decimal("0.80"),
-    Track.SWING: Decimal("0.15"),
-    Track.INTRADAY: Decimal("0.05"),
-}
-
-STEADY_ALLOCATION: dict[Track, Decimal] = {
-    Track.LONG_TERM: Decimal("0.70"),
-    Track.SWING: Decimal("0.15"),
-    Track.INTRADAY: Decimal("0.15"),
-}
+# Single track — all capital is allocated to intraday.
+ALLOCATION: dict[Track, Decimal] = {Track.INTRADAY: Decimal("1.00")}
 
 
 def allocation_for_capital(total_capital: Decimal) -> dict[Track, Decimal]:
-    """Return the correct allocation dict given current total capital."""
-    if total_capital >= CAPITAL_MILESTONE:
-        return STEADY_ALLOCATION
-    return INITIAL_ALLOCATION
+    """Return the allocation dict. Single track — always the same regardless of capital level."""
+    return ALLOCATION
 
 
 # Design-specified trade-decision thresholds. These are intentionally
@@ -64,19 +48,11 @@ def allocation_for_capital(total_capital: Decimal) -> dict[Track, Decimal]:
 # For tunable risk parameters (position sizing, loss limits, etc.) see
 # RISK_CONFIG_DEFAULTS in capital/risk_config.py.
 
-# RR minimums per track
-MIN_RR: dict[Track, Decimal] = {
-    Track.INTRADAY: Decimal("1.5"),
-    Track.SWING: Decimal("1.5"),
-    Track.LONG_TERM: Decimal("2.0"),
-}
+# RR minimum
+MIN_RR: dict[Track, Decimal] = {Track.INTRADAY: Decimal("1.5")}
 
-# ATR multiplier for stop placement per track
-ATR_K: dict[Track, Decimal] = {
-    Track.INTRADAY: Decimal("1.5"),
-    Track.SWING: Decimal("2.0"),
-    Track.LONG_TERM: Decimal("3.0"),
-}
+# ATR multiplier for stop placement
+ATR_K: dict[Track, Decimal] = {Track.INTRADAY: Decimal("1.5")}
 
 
 @dataclass(frozen=True)
@@ -86,11 +62,8 @@ class RiskConfig:
     effective_from: date
     # Position sizing (fraction of bucket capital)
     risk_per_intraday_trade_pct: Decimal
-    risk_per_swing_trade_pct: Decimal
-    risk_per_long_term_trade_pct: Decimal
     # Track-level circuit breakers
     intraday_daily_loss_limit_pct: Decimal
-    swing_weekly_loss_limit_pct: Decimal
     # Portfolio-level circuit breakers
     portfolio_daily_loss_limit_pct: Decimal
     portfolio_weekly_loss_limit_pct: Decimal
@@ -101,12 +74,9 @@ class RiskConfig:
     correlation_cluster_cap_pct: Decimal
     # Track decay triggers
     intraday_consecutive_loss_count: int
-    swing_30d_loss_count: int
     # Black swan
     nifty_intraday_pause_pct: Decimal
-    # Per-track confidence haircut (Q3-4: stored here, recalibrated after 60 live trades per track)
-    live_backtest_ratio_long_term: Decimal
-    live_backtest_ratio_swing: Decimal
+    # Confidence haircut (Q3-4: stored here, recalibrated after 60 live trades)
     live_backtest_ratio_intraday: Decimal
     # FinBERT confidence gate
     sentiment_confidence_threshold: Decimal
@@ -116,18 +86,10 @@ class RiskConfig:
     min_avg_daily_turnover_cr: Decimal  # 20d avg ₹ crore/day (market-cap proxy)
 
     def risk_per_trade_pct(self, track: Track) -> Decimal:
-        return {
-            Track.INTRADAY: self.risk_per_intraday_trade_pct,
-            Track.SWING: self.risk_per_swing_trade_pct,
-            Track.LONG_TERM: self.risk_per_long_term_trade_pct,
-        }[track]
+        return self.risk_per_intraday_trade_pct
 
     def live_backtest_ratio(self, track: Track) -> Decimal:
-        return {
-            Track.INTRADAY: self.live_backtest_ratio_intraday,
-            Track.SWING: self.live_backtest_ratio_swing,
-            Track.LONG_TERM: self.live_backtest_ratio_long_term,
-        }[track]
+        return self.live_backtest_ratio_intraday
 
 
 @dataclass(frozen=True)
@@ -136,11 +98,7 @@ class CapitalLedgerRow:
     as_of_date: date
     total_capital: Decimal
     total_cash: Decimal
-    long_term_allocated_pct: Decimal
-    swing_allocated_pct: Decimal
     intraday_allocated_pct: Decimal
-    long_term_deployed: Decimal
-    swing_deployed: Decimal
     intraday_deployed: Decimal
     high_water_mark: Decimal
     eod_drawdown_pct: Decimal
@@ -151,21 +109,13 @@ class CapitalLedgerRow:
         return self.total_capital * self._allocated_pct(track)
 
     def bucket_deployed(self, track: Track) -> Decimal:
-        return {
-            Track.LONG_TERM: self.long_term_deployed,
-            Track.SWING: self.swing_deployed,
-            Track.INTRADAY: self.intraday_deployed,
-        }[track]
+        return self.intraday_deployed
 
     def bucket_available(self, track: Track) -> Decimal:
         return self.bucket_capital(track) - self.bucket_deployed(track)
 
     def _allocated_pct(self, track: Track) -> Decimal:
-        return {
-            Track.LONG_TERM: self.long_term_allocated_pct,
-            Track.SWING: self.swing_allocated_pct,
-            Track.INTRADAY: self.intraday_allocated_pct,
-        }[track]
+        return self.intraday_allocated_pct
 
 
 @dataclass(frozen=True)

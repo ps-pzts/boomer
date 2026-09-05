@@ -6,9 +6,9 @@
 
 ---
 
-## Status: All phases complete — single-broker (Kite-only) architecture
+## Status: Single-focus redesign — intraday-only, single broker, docs reset
 
-**Current phase:** Phase 5 complete. Fyers removed entirely — Kite is the sole broker for all tracks (intraday and delivery). Nightly health check (01:45 IST); restart_guard cycles all three services; bot has its own systemd unit.
+**Current phase:** The system is being deliberately narrowed. `swing` and `long_term` tracks removed — `intraday` is now the only track. The `designs/` folder (all phase docs, open-questions.md, design-evolution.md) was retired along with the 3-track architecture it described; a fresh design pass will follow once the intraday-only system is validated in paper trading. Kite remains the sole broker (see prior Fyers-removal entry below). The human-approval feature (dashboard `/approvals`, Telegram approve/reject) was removed — it existed only to gate `long_term` recommendations, which no longer exist.
 
 **Last updated:** 2026-09-06
 
@@ -18,16 +18,10 @@
 
 | Area | Item | Notes |
 |------|------|-------|
-| Design | Phase 1 — Capital & Risk | Finalized with 9 loopholes documented |
-| Design | Phase 2 — Collector | Finalized with Screener.in, FinBERT, NSE bhavcopy, dual-broker instruments |
-| Design | Phase 3 — Brain | Finalized with 15 loopholes, signal cooldown table, walk-forward Sharpe ≥ 1.3 |
-| Design | Phase 4 — Executor & Backtesting | Finalized with GTT architecture; originally dual-broker (Kite intraday + Fyers delivery), reversed 2026-09-06 to single-broker (Kite only) |
-| Design | Phase 5 — Orchestrator & Ops | Finalized with forward-only migrations, 3AM restart guard, dual-alert layer |
-| Design | open-questions.md | 24 open questions organized by phase |
-| Design | design-evolution.md | Narrative history: 18 issues + 7 hard blockers resolved |
+| Design | `designs/` folder (Phases 1-5, open-questions.md, design-evolution.md) | **Retired 2026-09-06** — described the 3-track (long_term/swing/intraday), dual-broker system being replaced. Deleted rather than rewritten; a fresh design doc will be written once the intraday-only system is rebuilt and validated in paper trading. Historical content still recoverable via git log/PR descriptions. |
 | Infra | CLAUDE.md | Project rules: git workflow, tests, PRs, file limits, context continuity |
 | Infra | UTC→IST migration | All timestamps now use IST (Asia/Kolkata) throughout — DB writes, market hours checks, cron comparisons, all tests. CLAUDE.md Rule 9 updated: "All timestamps use IST, never UTC." Root cause: system is India-only with no DST; UTC was unnecessary overhead. |
-| Bug | APM gate + GTT dispatch | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic; swing/intraday now call `packager.apm_decide()` with live circuit breaker check → `QUEUED_FOR_EXECUTION` if approved; long-term remains `AWAITING_HUMAN`. New `swing_gtt_dispatch` task (09:25 IST) reads `queued_for_execution` recs, places OCO-GTT via Kite (MockBroker fallback), writes to `gtt_orders`, updates rec to `submitted_to_broker`. Dashboard `_approve_rec()` fixed to transition directly to `queued_for_execution` so human-approved long-term recs are also picked up. |
+| Bug | APM gate + GTT dispatch (historical) | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic. Fixed at the time to route swing/intraday through `packager.apm_decide()`. **Superseded 2026-09-06**: `AWAITING_HUMAN`/`requires_human` removed entirely (see Change log) — all recommendations now route through APM unconditionally. The GTT dispatch task (renamed `gtt_dispatch`, was `swing_gtt_dispatch`, 09:25 IST) still reads `queued_for_execution` recs and places OCO-GTT via Kite. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 | Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
@@ -55,37 +49,40 @@ _Nothing — all 5 phases complete._
 
 | ID | Blocker | Owner | Status |
 |----|---------|-------|--------|
-| B4 | SEBI algo trading registration | User | Not started — contact Zerodha + Fyers in parallel with coding |
-| B6 | Minute-bar historical data source | User | Resolved — Option C (organic collection via parquet); see Q2-3 |
+| B4 | SEBI algo trading registration | User | Not started — Zerodha (Kite) only now that Fyers is removed |
+| B6 | Minute-bar historical data source | User | Resolved — organic collection via parquet |
+| B7 | Intraday live pipeline is not fully wired | User/Claude | **New, found during 2026-09-06 audit.** `IntradayPipeline` is never instantiated in production (`Orchestrator()` never passes `intraday_runner=`); `run_intraday()` has no implementation; 4 of 6 `IntradaySignalGenerator` sub-signal weights depend on live features (`premarket_gap_pct`, `orb_range_vs_20d_avg_ratio`, `nifty_intraday_direction`, `bid_ask_spread_pct`) that nothing computes; `IntradayClassifier.classify()` needs `vwap_current`/`orb_high`/`minutes_since_market_open` which are never written anywhere. What actually runs today is the 09:10 pre-market `morning_batch_signals` call, which can only use `fo_signals` (stale prior-session OI) and `news_trade_decay`. Must be built before intraday recommendations are genuinely live-informed. |
 
 ---
 
 ## Open decisions (non-blocking)
 
-See [designs/open-questions.md](designs/open-questions.md) for all 24 questions.
-Key ones resolved in Phase 1 implementation:
-- Q1-1: Regime scaling applies to NEW ENTRIES only — existing positions not force-liquidated on regime shift
-- Q3-4: Per-track confidence haircut (`live_backtest_ratio_*`) in `risk_config`, initial value 0.70
-
-Key ones resolved in Phase 3 implementation:
-- Q3-1: bull_volatile now covers all above-DMA states with elevated VIX; ATR stops scaled 1.5× in Volatile Uptrend
-- Q3-2: Option B — red-flag filings (fraud, auditor change, pledging) trigger immediate Stage 4b exit re-evaluation; entries still morning-batch only
-
-Key ones resolved in Phase 5 implementation:
-- Q5-1: WebSocket in-process within boomer-executor.service (not a separate service)
-- Q5-2: Rollback checklist added to ops/runbook.md
-- Q5-3: Fyers token refresh is a manual pre-market step with CRITICAL alert on failure
-- Q5-4: Fyers credentials (`FYERS_APP_ID`, `FYERS_SECRET`, `FYERS_ACCESS_TOKEN`) in secrets.env alongside Kite
-
-Key ones resolved in Phase 4 implementation:
-- Q4-1: Kite WebSocket tick feed is authoritative LTP; 5-minute staleness threshold falls back to REST quote
-- Q4-3: FyersBroker confirmed (user has API access); GTC/OCO pending paper-trading verification before first live delivery trade
-- Q4-2: Trailing stops continue in paused mode; orchestrator (Phase 5) owns pause/resume signal
-- Q3-5: `graduate_position()` implemented — cancels OCO, places 3×ATR stop OCO, updates track to long_term
+`designs/open-questions.md` was retired along with the rest of `designs/` on 2026-09-06 (see Change log). Its Fyers-related and dual-broker questions were moot by the time it was deleted; the SEBI registration question (Q0-1) still applies, scoped to Zerodha only. Anything not yet answered will be re-opened in the fresh design pass once one is written.
 
 ---
 
 ## Change log
+
+### 2026-09-06 — Refactor: single-focus redesign — remove swing/long_term, remove designs/, remove human-approval
+
+- **Why:** Operator assessment: `swing` and `long_term` had become dead weight — complexity spread across too many verticals without producing validated ROI. A fresh-analysis audit of the surviving `intraday` track (prompted by the operator doubting whether the system was "genuine enough") found the live 30-min intraday pipeline itself was never fully wired (see hard blocker B7, added below) — so the redesign's real value is removing everything not needed for the one track that has to be made to actually work.
+- A multi-repo split (separate repos for broker core / intraday / F&O) was proposed mid-redesign and rejected — see the reasoning captured in this commit's PR description. Decision: stay in one repo; F&O was also dropped from scope entirely (kept away, not built).
+- **`designs/` folder deleted whole** (`README.md`, all 5 phase docs, `open-questions.md`, `design-evolution.md`, ~230KB) — it described the 3-track, and briefly dual-broker, system being retired. Not rewritten in place; a fresh design doc will be written once the intraday-only system is rebuilt and validated in paper trading. Full historical content remains recoverable via `git log`/PR descriptions.
+- **`capital/models.py`**: `Track` enum reduced to `INTRADAY` only. `INITIAL_ALLOCATION`/`STEADY_ALLOCATION`/`CAPITAL_MILESTONE`/`allocation_for_capital()`'s two-tier milestone mechanism collapsed to a single `ALLOCATION = {INTRADAY: 1.00}` constant — with one track there was nothing left to switch between. `RiskConfig` and `CapitalLedgerRow` dropped their swing/long_term fields.
+- **New migration `0007_remove_swing_long_term_columns.sql`**: drops `capital_ledger.{long_term,swing}_allocated_pct`/`{long_term,swing}_deployed`, `risk_config`'s swing/long_term fields, and `recommendations.requires_human`. No CHECK constraint depended on any of these — dropped for cleanliness, not correctness. Historical rows with `track='swing'`/`'long_term'` in `signals`/`recommendations`/`positions` are left as audit trail.
+- **Bug caught while rewriting `RiskConfigStore.update_live_backtest_ratio()`**: its `INSERT INTO risk_config SELECT ...` had no explicit column list, relying on `SELECT` output order matching the table's physical column order positionally. Dropping columns shifted that order (`created_at` ended up before `min_stock_price` et al., not after) — a plain rename would have silently written `now`'s timestamp into `min_avg_daily_turnover_cr`'s slot. Fixed by using an explicit `INSERT (...) SELECT` column list; verified end-to-end against a real migrated DB, not just unit-tested.
+- **Bug caught in `dashboard/queries.py`**: `get_capital_view()` was dividing `allocated_pct` by 100, but `capital/state.py` writes it as a fraction (0.0-1.0, e.g. `Decimal("0.80")`), not a percentage (confirmed against `tests/capital/test_state.py`'s existing assertions) — the dashboard was displaying allocated capital ~100x too small. Fixed alongside the required column removal; `tests/dashboard/test_queries.py`'s fixture data was itself written to the old (wrong) convention and updated too.
+- **Human-approval feature removed entirely** (not left dormant): `RecommendationStatus.AWAITING_HUMAN`, `Recommendation.requires_human`, `packager.package()`'s `requires_human` branch, `RecommendationPackager.apm_decide()`'s human-routed guard, dashboard's whole `/approvals` view (routes + `approvals.html` + nav link), Telegram bot's `/approve`+`/reject` commands and inline-keyboard callback handling. It existed only to gate `long_term` recommendations; with `long_term` gone it would have been permanently dead code.
+- **`brain/position_review.py`'s `health_score()` restructured**, not just trimmed — intraday was the `if` branch, swing the `elif`, long_term the bare `else` (not an explicit check), so removing swing/long_term required converting the time/thesis factor to a single unconditional intraday computation (`minutes_to_squareoff`-based), not deleting two branches.
+- **`entry_timing.py`**: deleted `LongTermClassifier`, `SwingClassifier`, and `check_stacking_gate()` (the Loophole-12 cross-track stacking gate — meaningless with no swing position to stack on top of).
+- **`executor/position_manager.py`**: deleted `graduate_position()` (Q3-5 swing→long_term reclassification, unreachable with both endpoints gone) and simplified `handle_exit_recommendation()` by dropping its now-meaningless `requires_human` parameter — it had zero callers anywhere in the codebase, another already-dead code path this audit surfaced.
+- **`capital/circuit_breakers.py`**: fixed a pre-existing, unrelated bug noticed while trimming this file — `CircuitBreakerState.any_tripped()` iterated `self.__dataclass_fields__` (field *names*, always-truthy strings) instead of field *values*, so it always returned `False`. Fixed to use `dataclasses.astuple(self)`; regression tests added.
+- **`orchestrator/tasks_brain.py`'s `_morning_batch_features`** was hardcoded to compute only long_term/swing-relevant features (`compute_promoter_features`, `compute_smart_money_features`, `compute_filing_sentiment_features`, `compute_earnings_quality_features`) and never called intraday's own batch computers (`compute_fo_features`, `compute_beta_features`, `compute_overnight_news_features`) — a pre-existing gap flagged in the prior Fyers-removal audit. Fixed to call `run_track_computers(INTRADAY_COMPUTERS, ...)` instead of the hardcoded list.
+- **Orchestrator task `swing_gtt_dispatch` renamed to `gtt_dispatch`** — it already dispatched for any `queued_for_execution` recommendation regardless of track; the old name was misleading before this change and actively wrong after it.
+- **New hard blocker B7** (see table above): the live 30-min intraday signal pipeline (`IntradayPipeline`, `run_intraday()`, live feature injection for premarket gap / ORB / VWAP / index direction / spread) is designed but never wired into the running orchestrator. This was found during the audit that motivated this whole redesign and is not fixed by this PR — it's the next real piece of work.
+- Deferred, not done in this pass: 8 `compute_*` feature functions became fully orphaned (4 from deleting the swing/long_term registries, 4 more from fixing `_morning_batch_features` above) and are not yet deleted from `computers.py`/`computers_market.py` — flagged for a follow-up rather than expanding this PR further.
+- Test worked-examples recalculated by hand and verified against actual output, not assumed: `tests/capital/test_pre_trade.py`'s position-sizing math changed because intraday's bucket (100% vs old 15% swing) and risk_pct (0.5% vs old 1% swing) combination produces different share counts, which also changes which pre-trade check fires first (concentration runs before trade-quality in `PreTradeChecker.check()`) — several tests needed new stop-distance values to avoid tripping the wrong check.
+- 337 tests pass, lint clean, no file over 600 lines.
 
 ### 2026-09-06 — Refactor: remove Fyers, single-broker (Kite-only) architecture
 

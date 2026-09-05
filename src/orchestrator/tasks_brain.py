@@ -97,18 +97,19 @@ def _save_signal(db_conn: object, signal: object) -> None:
 
 
 def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: object) -> None:
-    """Compute features for all NSE EQ/BE instruments as of run_date."""
+    """Compute batch features for all NSE EQ/BE instruments as of run_date.
+
+    Runs the intraday track's own registry (price, F&O OI, beta, overnight
+    news) — the only track this system trades. Live-only features (premarket
+    gap, ORB, index direction, spread, news recency) are injected separately
+    at signal time, not here.
+    """
     import datetime as _dt
     import sqlite3
 
     from src.brain.feature_store import FeatureStore
-    from src.brain.features.computers import (
-        compute_earnings_quality_features,
-        compute_filing_sentiment_features,
-        compute_price_features,
-        compute_promoter_features,
-        compute_smart_money_features,
-    )
+    from src.brain.features.runner import run_track_computers
+    from src.brain.features.track_intraday import INTRADAY_COMPUTERS
 
     as_of_date = _dt.date.fromisoformat(run_date)
     fs = FeatureStore(db_path)
@@ -127,11 +128,7 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
 
     for sym in symbols:
         try:
-            compute_price_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_promoter_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_smart_money_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_filing_sentiment_features(db_path, fs, sym, "NSE", as_of_date)
-            compute_earnings_quality_features(db_path, fs, sym, "NSE", as_of_date)
+            run_track_computers(INTRADAY_COMPUTERS, db_path, fs, sym, "NSE", as_of_date)
         except Exception as exc:
             logger.warning("feature_compute_failed symbol=%s error=%s", sym, exc)
 
@@ -145,8 +142,6 @@ def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object
 
     from src.brain.feature_store import FeatureStore
     from src.brain.signals.intraday import IntradaySignalGenerator
-    from src.brain.signals.long_term import LongTermSignalGenerator
-    from src.brain.signals.swing import SwingSignalGenerator
 
     as_of_date = _dt.date.fromisoformat(run_date)
     now_ist = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=5, minutes=30)))
@@ -163,7 +158,7 @@ def _morning_batch_signals(run_date: str, run_id: int, db_path: str, **_: object
         ).fetchall()
     ]
 
-    generators = [LongTermSignalGenerator(), SwingSignalGenerator(), IntradaySignalGenerator()]
+    generators = [IntradaySignalGenerator()]
     saved = 0
     for sym in symbols:
         try:
@@ -239,15 +234,12 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
     rec_store = RecommendationStore(db_path)
     packager = RecommendationPackager()
 
-    # Build APM circuit-breaker state once for all swing/intraday recs.
+    # Build APM circuit-breaker state once for all recs.
     # Called pre-market: today's realised P&L is 0, nifty intraday move is 0.
     _cb_state = evaluate_circuit_breakers(
         intraday_realised_pnl_today=Decimal("0"),
         intraday_bucket_capital=ledger.total_capital * ledger._allocated_pct(Track.INTRADAY),
         intraday_consecutive_losses_today=0,
-        swing_realised_pnl_this_week=Decimal("0"),
-        swing_bucket_capital=ledger.total_capital * ledger._allocated_pct(Track.SWING),
-        swing_losing_trades_30d=ledger.consecutive_loss_days,
         portfolio_realised_pnl_today=Decimal("0"),
         total_capital=Decimal(str(ledger.total_capital)),
         portfolio_realised_pnl_this_week=Decimal("0"),
@@ -361,23 +353,16 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
             )
             conn.commit()
 
-            # Package and route per design spec:
-            #   swing/intraday → APM auto-decides via circuit-breaker check tree
-            #   long_term      → awaiting_human (dashboard approval required)
+            # Package and route: APM auto-decides via circuit-breaker check tree.
             rec = packager.package(
                 plan=plan,
                 entry_plan=None,
                 signal=signal,
                 position_size_shares=position_size,
             )
-            if rec.requires_human:
-                # Long-term: wait for operator approval in dashboard.
-                rec.status = RecommendationStatus.AWAITING_HUMAN
-            else:
-                # Swing/intraday: APM decides now.
-                packager.apm_decide(rec, _apm_circuit_check)
-                if rec.status == RecommendationStatus.APPROVED_BY_APM:
-                    rec.status = RecommendationStatus.QUEUED_FOR_EXECUTION
+            packager.apm_decide(rec, _apm_circuit_check)
+            if rec.status == RecommendationStatus.APPROVED_BY_APM:
+                rec.status = RecommendationStatus.QUEUED_FOR_EXECUTION
             rec_store.save(rec)
             processed += 1
 

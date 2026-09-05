@@ -9,8 +9,6 @@ from zoneinfo import ZoneInfo
 from executor.gtt_manager import GttManager
 from executor.models import (
     BrokerName,
-    GttRequest,
-    GttType,
     OrderRequest,
     OrderSide,
     OrderType,
@@ -22,9 +20,6 @@ logger = logging.getLogger(__name__)
 
 IST = ZoneInfo("Asia/Kolkata")
 
-_GRADUATION_ATR_STOP_MULTIPLIER = 3.0  # long-term stop = 3×ATR (vs swing 2×ATR)
-_GRADUATION_MIN_GAIN_ATR = 1.0  # minimum gain before graduation is considered
-
 
 class PositionManager:
     """
@@ -33,7 +28,6 @@ class PositionManager:
     - close_position(): mark closed on exit fill
     - update_ltp(): refresh unrealised P&L from tick
     - trail_stop(): delegate to GttManager when 2×ATR gain is reached
-    - graduate_position(): swing → long-term (Q3-5)
     - handle_exit_recommendation(): process Stage 4b ExitRecommendation
     - mark_unprotected() / clear_unprotected(): unprotected flag lifecycle
     """
@@ -160,91 +154,16 @@ class PositionManager:
             return False
         return self._gtt.trail_stop(pos, current_price)
 
-    # ── Graduation (Q3-5): swing → long-term ─────────────────────────────────
-
-    def graduate_position(self, position_id: str, current_price: float) -> bool:
-        """
-        Reclassify a swing position as long-term.
-        Steps per Q3-5 design doc:
-        1. Cancel existing swing GTT OCO
-        2. Place new long-term GTT OCO (3×ATR stop, 2R+ target from current price)
-        3. Update positions table: track=long_term, bucket_id=long_term_bucket
-        4. Capital accounting is caller's responsibility (debit swing, credit LT)
-        5. Checks: LT bucket must have capacity (caller verifies before calling here)
-        """
-        pos = self._load(position_id)
-        if not pos or not pos.is_open or pos.track != "swing":
-            return False
-
-        gain = current_price - pos.average_entry_price
-        if gain < _GRADUATION_MIN_GAIN_ATR * pos.atr_at_entry:
-            logger.info("Graduation blocked: insufficient gain for %s", position_id)
-            return False
-
-        # 1. Cancel existing OCO GTT
-        if pos.gtt_oco_id:
-            try:
-                gtt_rec = self._gtt._load_gtt(pos.gtt_oco_id)
-                broker = self._gtt._broker_for(pos.broker_id)
-                broker.cancel_gtt(gtt_rec.broker_gtt_id)
-                self._db.execute(
-                    "UPDATE gtt_orders SET status='gtt_cancelled' WHERE gtt_id=?",
-                    (pos.gtt_oco_id,),
-                )
-            except Exception as exc:
-                logger.error("Failed to cancel swing GTT during graduation: %s", exc)
-                return False
-
-        # 2. New long-term OCO with wider stop (3×ATR) and fresh 2R target
-        new_stop = current_price - _GRADUATION_ATR_STOP_MULTIPLIER * pos.atr_at_entry
-        new_target = current_price + 2 * (current_price - new_stop)
-        gtt_req = GttRequest(
-            symbol=pos.symbol,
-            exchange=pos.exchange,
-            gtt_type=GttType.OCO,
-            quantity=pos.quantity,
-            sl_trigger_price=round(new_stop, 2),
-            sl_limit_price=round(new_stop * 0.995, 2),
-            target_trigger_price=round(new_target, 2),
-            target_limit_price=round(new_target * 1.005, 2),
-            parent_order_id=pos.entry_order_id,
-        )
-        new_gtt_id = self._gtt.place_gtt_for_position(pos, GttType.OCO, gtt_req)
-
-        # 3. Update positions table
-        self._db.execute(
-            """
-            UPDATE positions
-            SET track='long_term', bucket_id='long_term_bucket',
-                stop_loss_price=?, target_price=?, gtt_oco_id=?
-            WHERE position_id=?
-            """,
-            (new_stop, new_target, new_gtt_id, position_id),
-        )
-        self._db.commit()
-        logger.info(
-            "Position graduated to long-term: %s %s new_stop=%.2f new_target=%.2f",
-            position_id,
-            pos.symbol,
-            new_stop,
-            new_target,
-        )
-        return True
-
     # ── Exit recommendation handler ───────────────────────────────────────────
 
     def handle_exit_recommendation(
         self,
         position_id: str,
         reason: str,
-        requires_human: bool,
     ) -> str | None:
         """
-        Process a Stage 4b ExitRecommendation.
-        For swing/intraday: submit market sell order immediately.
-        For long-term: requires_human=True → log and surface to dashboard only.
-        Forced de-risking bypasses requires_human even for long-term.
-        Returns order_id if order submitted, None if deferred to human.
+        Process a Stage 4b ExitRecommendation — submit a market sell order immediately.
+        Returns order_id if an order was submitted, None if the position wasn't found/open.
         """
         from executor.order_manager import OrderManager
 
@@ -252,12 +171,6 @@ class PositionManager:
 
         pos = self._load(position_id)
         if not pos or not pos.is_open:
-            return None
-
-        if requires_human and reason != "forced_derisking":
-            logger.info(
-                "Exit rec deferred to human: %s %s reason=%s", position_id, pos.symbol, reason
-            )
             return None
 
         product = ProductType.MIS if pos.track == "intraday" else ProductType.CNC

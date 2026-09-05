@@ -26,7 +26,7 @@ def _make_db() -> sqlite3.Connection:
 
 
 def _seed_position(
-    db: sqlite3.Connection, symbol: str, broker_id: str, track: str = "swing"
+    db: sqlite3.Connection, symbol: str, broker_id: str, track: str = "intraday"
 ) -> None:
     now = datetime.now(IST).isoformat()
     db.execute(
@@ -36,7 +36,7 @@ def _seed_position(
          stop_loss_price, target_price, atr_at_entry, entry_order_id, gtt_oco_id,
          unprotected_flag, unmanaged, health_score, is_open, entry_at)
         VALUES (?,?,?,?,?,?,10,100,100,0,0,90,120,5,'entry-1',NULL,0,0,80,1,?)""",
-        (f"pos-{symbol}", symbol, "NSE", track, "swing_bucket", broker_id, now),
+        (f"pos-{symbol}", symbol, "NSE", track, "intraday_bucket", broker_id, now),
     )
     db.commit()
 

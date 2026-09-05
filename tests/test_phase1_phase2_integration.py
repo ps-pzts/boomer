@@ -168,9 +168,9 @@ def test_capital_and_filings_coexist_in_same_db(tmp_path):
     conn.execute(
         "INSERT INTO capital_ledger "
         "(ledger_id, as_of_date, total_capital, total_cash, "
-        "long_term_allocated_pct, swing_allocated_pct, intraday_allocated_pct, "
+        "intraday_allocated_pct, "
         "high_water_mark, peak_date, created_at) "
-        "VALUES (?, '2024-04-22', 1000000, 800000, 0.70, 0.20, 0.10, 1000000, '2024-04-22', "
+        "VALUES (?, '2024-04-22', 1000000, 800000, 1.0, 1000000, '2024-04-22', "
         "'2024-04-22T09:00:00Z')",
         (ledger_id,),
     )

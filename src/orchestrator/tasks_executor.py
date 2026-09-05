@@ -165,7 +165,7 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     )
 
 
-def _swing_gtt_dispatch(
+def _gtt_dispatch(
     run_date: str, run_id: int, db_path: str, brokers: list | None = None, **_: object
 ) -> None:
     """Place OCO-GTT orders for all queued_for_execution recommendations.
@@ -194,7 +194,7 @@ def _swing_gtt_dispatch(
     if broker is None:
         broker = MockBroker()
         logger.warning(
-            "swing_gtt_dispatch: no live Kite broker injected — using MockBroker (paper mode)"
+            "gtt_dispatch: no live Kite broker injected — using MockBroker (paper mode)"
         )
 
     # Pre-flight: verify broker session is alive before touching any rec.
@@ -203,7 +203,7 @@ def _swing_gtt_dispatch(
         broker.get_funds()
     except Exception as exc:
         logger.error(
-            "swing_gtt_dispatch: broker session invalid — aborting. broker=%s error=%s",
+            "gtt_dispatch: broker session invalid — aborting. broker=%s error=%s",
             getattr(broker, "broker_id", "unknown"), exc,
         )
         try:
@@ -212,7 +212,7 @@ def _swing_gtt_dispatch(
                 "GTT dispatch aborted — broker session invalid",
                 f"Broker {getattr(broker, 'broker_id', 'unknown')} session check failed: {exc}. "
                 "No queued_for_execution recs were submitted. Refresh the access token.",
-                source_task_id="swing_gtt_dispatch",
+                source_task_id="gtt_dispatch",
             )
         except Exception:
             pass
@@ -238,7 +238,7 @@ def _swing_gtt_dispatch(
 
             if qty < 1 or entry_high <= 0 or stop <= 0 or target <= 0:
                 logger.warning(
-                    "swing_gtt_dispatch: skip rec_id=%s symbol=%s reason=invalid_params",
+                    "gtt_dispatch: skip rec_id=%s symbol=%s reason=invalid_params",
                     rec_id, symbol,
                 )
                 continue
@@ -292,18 +292,18 @@ def _swing_gtt_dispatch(
             conn.commit()
             dispatched += 1
             logger.info(
-                "swing_gtt_dispatch: GTT placed symbol=%s rec_id=%s gtt_id=%s broker_gtt_id=%s",
+                "gtt_dispatch: GTT placed symbol=%s rec_id=%s gtt_id=%s broker_gtt_id=%s",
                 symbol, rec_id, gtt_id, broker_gtt_id,
             )
         except Exception as exc:
             logger.error(
-                "swing_gtt_dispatch: failed rec_id=%s symbol=%s error=%s",
+                "gtt_dispatch: failed rec_id=%s symbol=%s error=%s",
                 rec_id, symbol, exc,
             )
 
     conn.close()
     logger.info(
-        "swing_gtt_dispatch completed queued=%d dispatched=%d run_date=%s",
+        "gtt_dispatch completed queued=%d dispatched=%d run_date=%s",
         len(pending), dispatched, run_date,
     )
 
