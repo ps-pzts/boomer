@@ -186,6 +186,22 @@ Key ones resolved in Phase 4 implementation:
 - Bug fixed: `signals` query used `signal_date` — fixed to `generated_at`
 - Bug fixed: `circuit_breaker_events` query used non-existent `capital_audit_log` table
 
+### 2026-06-02 — Backtester overhaul: entry logic, GTT linkage, holiday calendar, OOS gate
+
+- `src/market_calendar/nse_holidays.py` (NEW): global NSE holiday calendar — `NSE_HOLIDAYS` frozenset (2020–2027, weekday-only), `is_trading_day()`, `trading_days()`, `next_trading_day()`, `prev_trading_day()`, `trading_days_between()`; used by backtester and available to all other modules
+- `src/market_calendar/__init__.py` (NEW): package re-export
+- **Bug fixed (blocker)**: `BacktestSimulation` never opened any positions — `_open_positions` started empty; new `_generate_entries()` evaluates `entry_decider(symbol, date, features, bar)` each day, sizes via `max_position_pct`, places market/limit orders through MockBroker, records position, places OCO GTT linked via `parent_order_id`
+- **Bug fixed (blocker)**: GTT→position linkage broken — `MockBroker.place_gtt()` never stored `parent_order_id`; fixed to store it; triggered GTTs are immediately cancelled to prevent double-close on future days
+- **Bug fixed**: cash disconnected — exit proceeds (`actual_exit × qty − costs`) now credited to MockBroker in `_close_position`; capital = cash + open MTM is correct end-to-end
+- **Bug fixed**: exit slippage used synthetic ±1% bar; `_close_position` now uses actual OHLCV bar (graceful fallback if unavailable)
+- **Bug fixed**: `_trading_days()` yielded Mon–Fri with no holiday exclusions; replaced with `trading_days()` from `market_calendar`; ~10 phantom trading days per year eliminated
+- **Bug fixed**: OOS Sharpe gate (`min_oos_pct_of_is`) was dead config — `_check_acceptance` now evaluates it when `in_sample_sharpe` is provided
+- **Bug fixed**: `_compute_code_hash()` always returned same static value; fixed to hash actual backtester source files so holdout tracking resets on code changes
+- **Bug fixed**: `TradeCost.total_bps` always returned `0.0`; removed — use `CostModel.round_trip_cost_bps()`
+- **Performance**: daily state commits batched (was 1 `COMMIT` per row; now 1 flush at run end)
+- `backtester/models.py`: added `EntryDecision` dataclass; added `max_position_pct` and `max_open_positions` to `BacktestConfig`
+- 79 new tests across `tests/backtester/` and `tests/market_calendar/` (536 total); 0 failures; lint clean
+
 ### 2026-05-10 — Phase 4: Executor & Backtesting
 
 - `migrations/0004_executor_schema.sql`: 9 tables — orders, executions, positions, gtt_orders, reconciliation_alerts, executor_errors, backtest_runs, backtest_trades, backtest_daily_state

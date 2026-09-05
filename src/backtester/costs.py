@@ -25,10 +25,7 @@ class TradeCost:
             + self.stamp_duty
         )
 
-    @property
-    def total_bps(self) -> float:
-        """Total cost as basis points of trade value (for reporting only)."""
-        return 0.0  # computed per-trade by CostModel.round_trip_cost_bps()
+    # To get cost as basis points of trade value, use CostModel.round_trip_cost_bps().
 
 
 class CostModel:
