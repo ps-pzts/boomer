@@ -18,6 +18,7 @@
 
 | Area | Item | Notes |
 |------|------|-------|
+| Executor | KiteSim: paper and the backtester run the real `KiteBroker` (#86) | `executor/brokers/kitesim/` is an in-process Kite (`KiteConnect` signatures, Kite statuses and payload shapes, RMS rejections, Kite exceptions, partial fills, postbacks). Paper is `KiteBroker(kite=KiteSim, broker_name=PAPER)`, so 20 paper sessions exercise the live translation layer. `MockBroker`, `PaperBroker` and `FakeKite` deleted; the backtester uses a bar-driven `BarBroker` on KiteSim. Canary recordings replay into KiteSim as a conformance test. Hostile mode is #87. |
 | Executor | Daily Kite pre-flight (08:55) + order canary (09:15) gate the session (#85) | Paper never exercises the live Kite path, so every trading day (paper days too) `kite_preflight` checks token, funds, instrument dump, orders, positions, LTP (raw payloads shape-checked via `kite_contract.check_shape`) and the feed; `kite_canary` (09:15:05, NSE pre-open rejects stops) places an SL-M SELL + LIMIT BUY qty 1 MIS 3% below LTP on the real KiteBroker, modifies, cancels and verifies CANCELLED/no fill/nothing left (drift guard, cleanup of every `CNRY`-tagged order, raw responses recorded under `data/kite_recordings/`). Results in `kite_daily_checks` (migration 0017). Session can't reach TRADING until both passed today; a failure → `checks_failed` → HALTED(`preflight_failed`/`canary_failed`), not auto-resumable; Telegram `/canary` re-run passing → `checks_passed` → RECONCILING. Opt-in live tests in `tests/live` (`BOOMER_LIVE_KITE=1`). |
 | Design | `designs/state-machines.md`, `designs/observability.md` (#47) | Approved 2026-11-19. Three separate machines (Session / Trade / Order) on one shared core; every component emits to one `events` table, read only by the observability module; trading code never reads events (enforced by a test). |
 | Design | `designs/` folder (Phases 1-5, open-questions.md, design-evolution.md) | **Retired 2026-09-06** — described the 3-track (long_term/swing/intraday), dual-broker system being replaced. Deleted rather than rewritten; a fresh design doc will be written once the intraday-only system is rebuilt and validated in paper trading. Historical content still recoverable via git log/PR descriptions. |
@@ -75,6 +76,14 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: KiteSim, paper on the real KiteBroker, MockBroker deleted (#86)
+
+- **Why:** paper used its own broker and vocabulary, so paper validation proved nothing about the live order path.
+- `src/executor/brokers/kitesim/`: `KiteSim` (engine, rules, portfolio, GTT, payloads, instruments, `SimFeed`, `build_paper_broker`). `KiteBroker` now takes an injected Kite client; GTT code moved to `kite_gtt.py` to stay under the file limit. `BrokerName.MOCK` removed (old DB comment only; no code writes it).
+- `src/backtester/bar_broker.py`: the backtester places orders through `KiteBroker` on KiteSim, walking each daily bar open → nearer extreme → farther extreme → close. `acceptance.py` split out of `simulation.py`; `code_hash` covers both.
+- **Bug found (#86):** `OrderManager.cancel` recorded a cancel twice when the broker's postback landed before `cancel_order` returned. Fixed by re-reading the order after the cancel; regression test in `test_order_manager.py`.
+- Verification: ruff check/format clean, 1340 tests pass (1 skipped, 2 live-Kite deselected). Run with `PYTHONPATH=src` from a worktree (see #94). Design doc `intraday-live-pipeline.md` updated; `PaperBroker` mentions struck through.
 
 ### 2026-11-19 — Bug: `KiteBroker.modify_gtt` could never succeed (found by #84)
 

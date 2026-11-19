@@ -59,8 +59,10 @@ It does **not** provide historical candles. Consequences:
   turns approved signals into same-day **MIS** entries with broker-side protective stops.
 - **Operator rule: MIS only, and every entry has a stop-loss.** No CNC, no GTT, no order whose
   validity extends past the session. Enforced by `OrderManager` check #0 (PR #26) and L9.
-- Execution goes through `PaperBroker` by default (real ticks, simulated fills), behind an
-  explicit `BOOMER_TRADING_MODE=paper|live` switch that defaults to `paper`.
+- Execution goes through the paper broker by default (real ticks, simulated fills), behind an
+  explicit `BOOMER_TRADING_MODE=paper|live` switch that defaults to `paper`. Since #86 the
+  paper broker is the real `KiteBroker` talking to `KiteSim` (an in-process Kite) instead of
+  Zerodha, so paper exercises live's translation layer; see `executor/brokers/kitesim/`.
 - Every approve/reject/modify decision is logged with rule, inputs and outcome (CLAUDE.md §9).
 - Mandatory square-off at 15:14 IST, triggered only by the orchestrator.
 
@@ -90,7 +92,7 @@ It does **not** provide historical candles. Consequences:
       │         live circuit breakers → pre-trade checks → log decision
       │                         │
       │                         ▼
-      └──────────────  ExecutionBroker = PaperBroker(price_source=feed) | KiteBroker
+      └──────────────  ExecutionBroker = KiteBroker(kite=KiteSim, feed) [paper] | KiteBroker [live]
                          MIS entry + SL-M stop + LIMIT target (OCO emulated by PositionManager)
  15:14 intraday_squareoff ─► cancel open legs, MARKET exit MIS
 ```
@@ -98,7 +100,7 @@ It does **not** provide historical candles. Consequences:
 ### 3.1 `MarketDataFeed` (new abstraction)
 
 Market data is separated from order execution so paper mode can use the live feed while orders go
-to `PaperBroker`, and so tests can drive the pipeline with a fake feed. v1 has one adapter:
+to KiteSim (#86; `SimFeed` relays every tick to it and its postbacks to `on_order_update`), and so tests can drive the pipeline with a fake feed. v1 has one adapter:
 `KiteFeed`, built from the existing `KiteBroker` ticker code (including the #23 race fixes).
 Order updates arrive through the existing WebSocket `on_order_update`; the registered postback
 URL is a second channel that can be added later if the WebSocket proves unreliable.
@@ -217,8 +219,8 @@ this a mid-session restart left the feed disconnected all day.
   `feed_health_check`** sends a CRITICAL alert unless the feed is connected with a tick under
   60 s old.
 - `intraday_squareoff` (15:14) also cancels open stop/target legs before the MARKET exit.
-- `PaperBroker` needs `price_source` to be a `MarketDataFeed`, not a `Broker`. This is a small
-  refactor.
+- ~~`PaperBroker` needs `price_source` to be a `MarketDataFeed`, not a `Broker`.~~ Superseded
+  by #86: paper is `KiteBroker` on `KiteSim`, fed by the `MarketDataFeed` through `SimFeed`.
 
 ## 5. Mode switch
 
@@ -288,6 +290,7 @@ show the mode.
   - At most 3 open trades.
   - The pre-trade concentration check is not used: shrinking replaces it, and 3 × 5% can't breach the 25% sector cap. |
 | 5 | Paper-session reporting: EOD Telegram summary + dashboard intraday view |
+| KiteSim | (#86) Paper and the backtester run the real `KiteBroker` against `KiteSim`, which speaks Kite's API, statuses, payload shapes, RMS rejections and exceptions. `MockBroker` / `PaperBroker` deleted. Canary recordings replay into KiteSim as a conformance test. Hostile mode (#87) plugs into its interceptor / `_advance` / postback-outbox hooks. |
 
 ---
 
