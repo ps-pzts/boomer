@@ -183,7 +183,16 @@ A full-universe stream (~2,400 symbols) is unnecessary and heavy. The 09:10 task
 `intraday_watchlist`: rank the pre-market universe by batch score (F&O OI, news, beta) with
 liquidity filters (`avg_traded_value_20d`, `min_stock_price` from `risk_config`, so no hard-coded
 rupees), take the **top N = 50** (Q3), and persist them to a new `intraday_watchlist`
-table (migration `0008`). The feed subscribes those symbols plus NIFTY 50 at 09:14.
+table (migration `0009`). The feed subscribes those symbols plus NIFTY 50 at 09:14.
+
+*Implemented in PR 3 (#37):* ranking = LONG candidates by the generator's batch-only raw score,
+then the remaining slots filled with the most liquid eligible names (live features can turn a
+flat pre-market score into a trade). Eligibility = `risk_config` floors + a usable `atr_14d` +
+the generator returning a signal (its own liquidity gate, see #38). Subscription happens inside
+the 09:10 task rather than a separate 09:14 step. A restart between 08:45 and 15:30 on a trading
+day replays the session's market-data setup at boot (`resume_market_session`): bar session,
+NIFTY 50 + persisted watchlist, feed connect. Tasks only fire on their cron minute, so without
+this a mid-session restart left the feed disconnected all day.
 
 ---
 
@@ -244,7 +253,7 @@ show the mode.
 | L11 | Stop moved against the trade | Stops only trail favourably (CLAUDE.md §10); `trail_stop` is reused with an MIS-aware path |
 | L12 | Partial fill on entry | Stop and target are sized to the filled quantity; the remainder is cancelled at validity expiry |
 | L13 | `filings.observed_at` is commented "UTC" in migration 0002, which predates the IST migration | **Verified 2026-11-19:** stored as IST wall-clock with a misleading `Z` suffix (`collector.base._fmt_dt`). `latest_news_at` strips it and reads IST. Separately, `compute_overnight_news_features` compares these IST strings with UTC-converted bounds, so its window is shifted 5.5 h: tracked as a `bug/` PR |
-| L14 | `_apm_circuit_check` iterates `__dataclass_fields__` and reads `.name` on a string key, so it raises `AttributeError` whenever a breaker actually trips | Fix in PR 4 with a regression test (same class of bug as the `any_tripped()` fix in #25) |
+| L14 | `_apm_circuit_check` iterates `__dataclass_fields__` and reads `.name` on a string key, so it raises `AttributeError` whenever a breaker actually trips | **Removed with `_morning_batch_recommendations` in PR 3 (#37).** PR 4's live circuit-breaker check is written fresh and must be tested with a tripped breaker |
 
 ---
 
@@ -255,7 +264,7 @@ show the mode.
 | 0 | ~~`hotfix/`: remove `gtt_dispatch`, MIS-only pre-trade check~~: PR #26 |
 | 1 | `MarketDataFeed` + `Tick` + `KiteFeed` adapter (FULL mode for depth) + capability/health check + `BOOMER_TRADING_MODE` + `PaperBroker` on the feed. **Done 2026-11-19** |
 | 2 | `LiveBarStore` + parquet flush + `LiveFeatureComputer` (worked-example tests). **Done 2026-11-19**: `collector/live_bars.py`, `brain/features/live.py`, `minute_bar_flush` task every 15 min 09:00-15:45 |
-| 3 | `intraday_watchlist` task + migration `0008` + retire intraday GTT and morning-recommendation path |
+| 3 | `intraday_watchlist` task + migration `0009` + retire intraday GTT and morning-recommendation path. **Done 2026-11-19 (#37)** |
 | 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes |
 | 5 | Paper-session reporting: EOD Telegram summary + dashboard intraday view |
 
