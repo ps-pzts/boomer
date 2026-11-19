@@ -34,6 +34,14 @@ class TestPortfolio:
         )
         assert (p.product, p.broker_id) == (ProductType.MIS, BrokerName.KITE)
 
+    def test_positions_are_only_mis(self, broker):
+        """#93: a same-day manual CNC buy is not an intraday position."""
+        raw = kf.sdk("positions")
+        cnc = {**raw["net"][0], "tradingsymbol": "TCS", "product": "CNC", "quantity": 5}
+        raw = {"net": raw["net"] + [cnc], "day": raw["day"] + [cnc]}
+        respond(broker._kite, "positions", raw)
+        assert [p.symbol for p in broker.list_positions()] == ["INFY"]
+
     def test_holdings(self, broker):
         respond(broker._kite, "holdings", kf.sdk("holdings"))
         (h,) = broker.list_holdings()

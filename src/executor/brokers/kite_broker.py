@@ -209,8 +209,9 @@ class KiteBroker(Broker):
                 product=ProductType.MIS,
                 broker_id=BrokerName.KITE,
             )
-            for p in raw.get("day", [])
-            if p["quantity"] != 0
+            # #93: 'net' filtered to MIS; 'day' also holds same-day CNC trades.
+            for p in raw.get("net", [])
+            if p["quantity"] != 0 and p.get("product") == "MIS"
         ]
 
     def list_holdings(self) -> list[BrokerPosition]:
