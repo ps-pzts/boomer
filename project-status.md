@@ -45,7 +45,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47). SM-1 + OBS-1 (#56) and SM-2 (Trade machine, #45) done 2026-11-19. SM-3a (Session machine runs the day, #63) done 2026-11-19. Next: SM-3b (the decision cycle that opens trades while TRADING). Was: SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47). SM-1 + OBS-1 (#56) and SM-2 (Trade machine, #45) done 2026-11-19. SM-3a (Session machine runs the day, #63) done 2026-11-19. SM-3b (decision cycle, #69) done 2026-11-19: **paper trading can start.** Next: OBS-2..4 (observability module). Was: SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
 
 ---
 
@@ -74,6 +74,22 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: SM-3b — decision cycle opens paper trades (#69)
+
+- **What:** `executor/decision_cycle.py` runs every 30 min. It does nothing unless the session is TRADING (SM7) and fewer than 3 trades are open. For each watchlist symbol, best first:
+  1. Skip it if a trade is active or one was opened under 60 min ago. Both are derived from `intraday_brackets`, so they survive a restart (L2).
+  2. Features = batch (point-in-time) + live (ticks, minute bars, news recency).
+  3. `brain/intraday_decision.decide()` runs signal → plan gates → entry strategy → plan **at the entry price** → size.
+  4. Signal and plan are saved to `signals` / `trade_plans` (`brain/signal_store.py`), then `TradeSupervisor.open_trade` runs under the session lock after re-checking TRADING.
+- **Attribution:** every accept and every reject is an event with its rule and inputs. Three failed cycles in a row → HALTED(`cycle_failures`).
+- **Operator decisions:**
+  - Size = min(0.5%-risk shares × regime scale, 5% of capital ÷ price) (`capital/sizing.py`). Before this, the concentration check rejected nearly every trade.
+  - ORB entries are a stop-limit BUY (trigger ORB high +0.1%, limit +0.2%; never chase above the limit; `TradeRequest.entry_trigger` → Kite "SL"). VWAP entries stay LIMIT.
+  - Max 3 open trades.
+- **Bug fixed by design:** the stop and target were computed from the LTP, not from the classifier's entry price.
+- **Retired:** `executor/intraday.py` (`IntradayPipeline`), the `intraday_runner` wiring, and the `run_cycle(run_date=)` arg bug.
+- 911 tests pass.
 
 ### 2026-11-19 — Enhancement: emergency stop flattens everything immediately (#67)
 

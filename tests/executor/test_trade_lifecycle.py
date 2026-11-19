@@ -249,3 +249,27 @@ class TestOrderManagerCancelRace:
         final = h.om.cancel(stop_id)
         assert final.status == OrderStatus.FILLED
         assert final.filled_quantity == 10
+
+
+class TestStopLimitEntry:
+    """Breakout entries (#69): SL BUY trigger 100.5, limit 101; stop 98, target 104."""
+
+    def _req(self, trigger=100.5, entry=101.0):
+        return TradeRequest("INFY", "NSE", 10, entry, 98.0, 104.0, atr=2.0, entry_trigger=trigger)
+
+    @pytest.mark.parametrize("trigger", [98.0, 97.0, 101.5])
+    def test_trigger_must_sit_between_stop_and_limit(self, trigger):
+        assert validate(self._req(trigger=trigger)) == "stop_trigger_limit_not_ordered"
+
+    def test_waits_for_the_breakout_then_protects(self, h):
+        h.tick(100.0)
+        bid = h.sup.open_trade(self._req())
+        entry = h.om.sync_status(h.bracket(bid)["entry_order_id"])
+        assert (entry.order_type, entry.trigger_price, entry.price) == ("sl_limit", 100.5, 101.0)
+        h.tick(100.2)
+        h.sup.reconcile()
+        assert h.bracket(bid)["state"] == "entry_pending"  # below the trigger: no fill
+        h.tick(100.8)  # breaks out
+        h.tick(100.8)
+        h.sup.reconcile()
+        assert h.bracket(bid)["state"] == "open"

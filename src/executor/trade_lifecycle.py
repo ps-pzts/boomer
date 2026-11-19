@@ -63,12 +63,15 @@ class TradeRequest:
     symbol: str
     exchange: str
     quantity: int
-    entry_price: float  # LIMIT price
+    entry_price: float  # LIMIT price (worst fill)
     stop_price: float
     target_price: float
     atr: float
     trade_plan_id: str | None = None
     recommendation_id: str | None = None
+    # Set for a breakout entry: a stop-limit BUY (Kite "SL") that only becomes a
+    # LIMIT at entry_price once price trades at the trigger (#69). None = LIMIT.
+    entry_trigger: float | None = None
 
 
 def validate(req: TradeRequest) -> str | None:
@@ -79,6 +82,10 @@ def validate(req: TradeRequest) -> str | None:
         return "stop_entry_target_not_ordered"  # long only: stop < entry < target
     if req.atr <= 0:
         return "atr_not_positive"
+    if req.entry_trigger is not None and not (
+        req.stop_price < req.entry_trigger <= req.entry_price
+    ):
+        return "stop_trigger_limit_not_ordered"  # stop < trigger <= limit
     return None
 
 
@@ -100,7 +107,8 @@ class TradeSupervisor:
     # ── Public API ────────────────────────────────────────────────────────────
 
     def open_trade(self, req: TradeRequest) -> str:
-        """Validate, submit the MIS LIMIT entry, persist the bracket. Returns bracket_id.
+        """Validate, submit the MIS entry (LIMIT, or stop-limit when `entry_trigger` is
+        set), persist the bracket. Returns bracket_id.
 
         Raises ValueError if the plan is invalid; PreTradeCheckError (from
         OrderManager) if the entry order is refused. Nothing is persisted then.
@@ -124,10 +132,11 @@ class TradeSupervisor:
             req.symbol,
             req.exchange,
             OrderSide.BUY,
-            OrderType.LIMIT,
+            OrderType.LIMIT if req.entry_trigger is None else OrderType.SL_LIMIT,
             req.quantity,
             f"{bid}-entry",
             price=req.entry_price,
+            trigger=req.entry_trigger or 0.0,
             plan=req.trade_plan_id,
             rec=req.recommendation_id,
         )

@@ -82,6 +82,11 @@ class SessionController:
 
     # ── Queries ───────────────────────────────────────────────────────────────
 
+    @property
+    def supervisor(self) -> object | None:
+        """The TradeSupervisor; None when execution is unavailable (fail closed)."""
+        return self._sup
+
     def state(self, day: date) -> str | None:
         row = self._conn.execute(
             "SELECT state FROM trading_sessions WHERE session_date=?", (day.isoformat(),)
@@ -127,6 +132,13 @@ class SessionController:
         with self.lock:
             if self.state(day) in (sm.CONNECTED, sm.READY, sm.TRADING):
                 self._fire(day, "restarted", rule="process_restarted")
+
+    def report_cycle_failures(self, day: date, error: str) -> None:
+        """The decision cycle failed 3 times in a row (§4.3): no new entries today.
+        Open trades stay managed by the tick."""
+        with self.lock:
+            if self.state(day) == sm.TRADING:
+                self._halt(day, "cycle_failures", {"error": error})
 
     def acknowledge_mismatch(self, day: date, actor: str) -> None:
         """Operator has looked at a reconcile mismatch; the next reconcile may resume."""

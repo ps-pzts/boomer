@@ -44,16 +44,16 @@ def build_task_registry(
     db_path: str,
     archive_dir: str,
     backup_dir: str,
-    intraday_runner: object | None = None,
     reconciler: object | None = None,
     brokers: list | None = None,
     feed: object | None = None,
     bar_recorder: object | None = None,
     session: object | None = None,
+    cycle: object | None = None,
 ) -> dict[str, TaskDefinition]:
     """Return all task definitions wired with runtime dependencies."""
     common = {"db_path": db_path, "archive_dir": archive_dir, "backup_dir": backup_dir}
-    intraday_deps = {"intraday_runner": intraday_runner}
+    cycle_deps = {"cycle": cycle}
     broker_deps = {
         "brokers": brokers or [],
         "feed": feed,
@@ -138,7 +138,7 @@ def build_task_registry(
         ),
         "intraday_cycle": TaskDefinition(
             task_id="intraday_cycle",
-            fn=_wrap(_intraday_cycle, intraday_deps),  # type: ignore[arg-type]
+            fn=_wrap(_intraday_cycle, cycle_deps),  # type: ignore[arg-type]
             schedule="*/30 9-14 * * 1-5",  # 09:30–14:30 IST every 30 min
             dependencies=[],
             timeout_seconds=180,
