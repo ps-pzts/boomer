@@ -85,6 +85,16 @@ Live-only bugs that paper could never show (MockBroker uses our own statuses):
 - **`cancel()`** waits up to ~1 s for Kite's final answer, so a fill racing a `CANCEL PENDING` is recorded.
 - 953 tests pass.
 
+### 2026-11-19 — Bug: a fresh DB never traded (#74)
+
+- **Symptom (audit):** a fresh database never trades. Nothing seeded `risk_config`, so the watchlist task failed and the session reported `breakers_unavailable`. The capital ledger first appeared at the 16:00 EOD, so day one had no execution.
+- **Deeper issue:** execution was built once at the 03:00 boot, when the Kite token has expired and the ledger may be missing. So it stayed unavailable all day even after the ledger appeared.
+- **Fix:**
+  - `orchestrator/bootstrap.py` seeds the default `risk_config` at boot if the table is empty. It creates the first capital ledger from Kite available cash at boot and again after the 08:45 token refresh, only if none exists, with an alert.
+  - `SessionController` builds execution lazily through a factory, retried every tick until it succeeds, and never replaced mid-session.
+  - The decision cycle uses the session's current supervisor.
+- 933 tests pass.
+
 ### 2026-11-19 — Feat: trailing stop (#71)
 
 - **Operator decision (option 1):** once a trade is up 1R, the stop moves to breakeven. After that it trails 1×ATR below the highest LTP since entry. The fixed 1.5:1 target stays.

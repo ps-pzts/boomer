@@ -54,7 +54,6 @@ class DecisionCycle:
         *,
         db_path: str,
         session: object,
-        supervisor: object,
         feed: object,
         bar_store: Callable[[], object | None],
         batch_features: Callable[[str, str, date], dict[str, Any]],
@@ -67,7 +66,6 @@ class DecisionCycle:
     ) -> None:
         self._db_path = db_path
         self._session = session
-        self._sup = supervisor
         self._feed = feed
         self._bar_store = bar_store
         self._batch = batch_features
@@ -107,8 +105,11 @@ class DecisionCycle:
         if not self._session.entries_allowed(day):  # type: ignore[attr-defined]
             state = self._session.state(day)  # type: ignore[attr-defined]
             return CycleResult(skipped=f"session_{state}")
+        sup = self._session.supervisor  # type: ignore[attr-defined]
+        if sup is None:  # execution not built yet (#74): nothing can be opened
+            return CycleResult(skipped="execution_unavailable")
         with self._session.lock:  # type: ignore[attr-defined]
-            slots = MAX_OPEN_TRADES - self._sup.active_count()  # type: ignore[attr-defined]
+            slots = MAX_OPEN_TRADES - sup.active_count()  # type: ignore[attr-defined]
         if slots <= 0:
             return CycleResult(skipped="max_open_trades")
         ledger = self._ledger()
@@ -207,7 +208,7 @@ class DecisionCycle:
                 _emit("rejection", "entry_rejected", symbol=d.symbol, rule="session_not_trading")
                 return None
             try:
-                bid = self._sup.open_trade(req)  # type: ignore[attr-defined]
+                bid = self._session.supervisor.open_trade(req)  # type: ignore[attr-defined]
             except Exception as exc:  # ValueError (plan) / PreTradeCheckError (order)
                 logger.warning("entry_refused symbol=%s error=%s", d.symbol, exc)
                 _emit(
