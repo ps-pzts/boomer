@@ -29,6 +29,7 @@ def fs(db_path):
 
 # ── FeatureComputer descriptor ────────────────────────────────────────────────
 
+
 def test_feature_computer_is_frozen():
     fc = FeatureComputer(fn=None, writes=("a",))
     with pytest.raises((AttributeError, TypeError)):
@@ -42,6 +43,7 @@ def test_feature_computer_defaults():
 
 
 # ── run_track_computers ───────────────────────────────────────────────────────
+
 
 def test_runs_batch_computer_and_reports_success(db_path, fs):
     called = []
@@ -122,14 +124,17 @@ def test_registry_executes_in_order(db_path, fs):
 
 # ── Registry import smoke tests (no DB needed) ───────────────────────────────
 
+
 def test_intraday_registry_importable():
     from brain.features.track_intraday import INTRADAY_COMPUTERS
+
     assert len(INTRADAY_COMPUTERS) > 0
     assert all(isinstance(c, FeatureComputer) for c in INTRADAY_COMPUTERS)
 
 
 def test_live_only_computers_have_none_fn():
     from brain.features.track_intraday import INTRADAY_COMPUTERS
+
     for c in INTRADAY_COMPUTERS:
         if c.requires_live:
             assert c.fn is None, f"{c.writes} is requires_live but fn is not None"
@@ -137,5 +142,6 @@ def test_live_only_computers_have_none_fn():
 
 def test_intraday_price_features_is_first():
     from brain.features.track_intraday import INTRADAY_COMPUTERS
+
     first = INTRADAY_COMPUTERS[0]
     assert "price_close" in first.writes, "price_features must be first in intraday registry"

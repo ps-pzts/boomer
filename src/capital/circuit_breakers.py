@@ -30,9 +30,7 @@ class CircuitBreakerState:
     black_swan: BreakerStatus  # manual resume required
 
     def any_tripped(self) -> bool:
-        return any(
-            v == BreakerStatus.TRIPPED for v in dataclasses.astuple(self)
-        )
+        return any(v == BreakerStatus.TRIPPED for v in dataclasses.astuple(self))
 
     def requires_manual_resume(self) -> bool:
         return (

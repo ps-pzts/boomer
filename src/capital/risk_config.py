@@ -128,7 +128,8 @@ class RiskConfigStore:
                 )
                 """,
                 (
-                    config_id, effective_from.isoformat(),
+                    config_id,
+                    effective_from.isoformat(),
                     float(d["risk_per_intraday_trade_pct"]),
                     float(d["intraday_daily_loss_limit_pct"]),
                     float(d["portfolio_daily_loss_limit_pct"]),

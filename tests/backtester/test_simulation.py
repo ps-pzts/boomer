@@ -1,59 +1,32 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 
 import pytest
 
-from backtester.models import BacktestConfig, EntryDecision
+from backtester.models import EntryDecision
 from backtester.simulation import BacktestSimulation
 from executor.models import PriceBar, ProductType
-
-# ── Test fixtures ──────────────────────────────────────────────────────────────
-
-def _make_db() -> sqlite3.Connection:
-    db = sqlite3.connect(":memory:")
-    db.row_factory = sqlite3.Row
-    with open("migrations/0001_initial_schema.sql") as f:
-        db.executescript(f.read())
-    with open("migrations/0004_executor_schema.sql") as f:
-        db.executescript(f.read())
-    return db
-
-
-def _bar(symbol: str, d: str, *, o=100, h=102, lo=98, c=100, vol=100_000) -> PriceBar:
-    return PriceBar(symbol=symbol, date=d, open=o, high=h, low=lo, close=c, volume=vol)
-
-
-def _flat_price_loader(symbol: str, from_date: str, to_date: str) -> list[PriceBar]:
-    """Flat ₹100 bar for any symbol/date."""
-    return [_bar(symbol, from_date)]
-
-
-def _empty_feature_loader(symbol: str, as_of_date: str) -> dict:
-    return {}
-
-
-def _make_config(**overrides) -> BacktestConfig:
-    defaults = dict(
-        name="test",
-        start_date=date(2024, 1, 2),
-        end_date=date(2024, 1, 12),  # ~8 trading days (excludes Jan 6-7 weekend)
-        initial_capital=100_000.0,
-        tracks=["intraday"],
-    )
-    defaults.update(overrides)
-    return BacktestConfig(**defaults)
-
+from tests.backtester.sim_helpers import (
+    _bar,
+    _empty_feature_loader,
+    _flat_price_loader,
+    _make_config,
+    _make_db,
+)
 
 # ── Existing core tests (keep passing) ────────────────────────────────────────
+
 
 class TestBacktestSimulationBasic:
     def test_run_completes_and_persists_run(self):
         db = _make_db()
         sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=["RELIANCE", "TCS"],
+            db=db,
+            config=_make_config(),
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=["RELIANCE", "TCS"],
         )
         summary = sim.run()
         assert summary.run_id is not None
@@ -65,8 +38,11 @@ class TestBacktestSimulationBasic:
     def test_daily_states_persisted(self):
         db = _make_db()
         sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=["TCS"],
+            db=db,
+            config=_make_config(),
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=["TCS"],
         )
         summary = sim.run()
         count = db.execute(
@@ -77,8 +53,11 @@ class TestBacktestSimulationBasic:
     def test_capital_stays_near_initial_with_no_entry_decider(self):
         db = _make_db()
         sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=["RELIANCE"],
+            db=db,
+            config=_make_config(),
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=["RELIANCE"],
         )
         summary = sim.run()
         assert summary.final_capital == pytest.approx(100_000.0, rel=0.01)
@@ -87,8 +66,11 @@ class TestBacktestSimulationBasic:
     def test_run_failure_marks_status_failed(self):
         db = _make_db()
         sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=_make_config(),
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         # Sabotage: remove daily_states to force ValueError in _compute_summary
         with pytest.raises(ValueError):
@@ -98,12 +80,13 @@ class TestBacktestSimulationBasic:
 
 # ── Entry logic tests ──────────────────────────────────────────────────────────
 
+
 def _always_enter_decider(symbol, sim_date, features, bar) -> EntryDecision:
     """Signal to buy every symbol every day (for deterministic testing)."""
     return EntryDecision(
-        entry_price=0.0,           # market order at open (₹100)
-        sl_price=90.0,             # stop 10% below
-        target_price=120.0,        # target 20% above
+        entry_price=0.0,  # market order at open (₹100)
+        sl_price=90.0,  # stop 10% below
+        target_price=120.0,  # target 20% above
         product=ProductType.CNC,
         track="intraday",
         confidence=0.8,
@@ -136,8 +119,11 @@ class TestEntryLogic:
     def test_no_entry_when_decider_returns_none(self):
         db = _make_db()
         sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=["RELIANCE"],
+            db=db,
+            config=_make_config(),
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=["RELIANCE"],
             entry_decider=_never_enter_decider,
         )
         summary = sim.run()
@@ -187,13 +173,12 @@ class TestEntryLogic:
         )
         sim.run()
         # Only one position in RELIANCE even though the decider fires every day
-        reliance_positions = [
-            p for p in sim._open_positions.values() if p["symbol"] == "RELIANCE"
-        ]
+        reliance_positions = [p for p in sim._open_positions.values() if p["symbol"] == "RELIANCE"]
         assert len(reliance_positions) <= 1
 
 
 # ── GTT / exit tests ───────────────────────────────────────────────────────────
+
 
 def _make_stop_trigger_loader(trigger_on_day: int):
     """Return a price loader that drops below SL (₹90) on a specific trading-day index."""
@@ -295,6 +280,7 @@ class TestGttExitLogic:
 
 # ── Cash accounting tests ──────────────────────────────────────────────────────
 
+
 class TestCashAccounting:
     def test_cash_decreases_on_entry(self):
         db = _make_db()
@@ -304,9 +290,13 @@ class TestCashAccounting:
             captured.append(sim._mock.get_funds().available_cash)
             if len(captured) == 1:  # only enter on very first call
                 return EntryDecision(
-                    entry_price=0.0, sl_price=90.0, target_price=120.0,
-                    product=ProductType.CNC, track="intraday",
-                    confidence=0.8, strategy_id="s",
+                    entry_price=0.0,
+                    sl_price=90.0,
+                    target_price=120.0,
+                    product=ProductType.CNC,
+                    track="intraday",
+                    confidence=0.8,
+                    strategy_id="s",
                 )
             return None
 
@@ -349,6 +339,7 @@ class TestCashAccounting:
 
 # ── Statistics tests ───────────────────────────────────────────────────────────
 
+
 class TestBacktestSharpe:
     def test_sharpe_with_all_positive_returns(self):
         all_up = [0.01] * 100
@@ -369,14 +360,18 @@ class TestBacktestSharpe:
 
 # ── Trading days tests ─────────────────────────────────────────────────────────
 
+
 class TestBacktestTradingDays:
     def test_excludes_weekends(self):
         db = _make_db()
         # Jan 1-7 2024: Mon, Tue, Wed, Thu, Fri, Sat, Sun
         config = _make_config(start_date=date(2024, 1, 1), end_date=date(2024, 1, 7))
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         days = list(sim._trading_days())
         assert all(d.weekday() < 5 for d in days)
@@ -386,8 +381,11 @@ class TestBacktestTradingDays:
         # Jan 22 (Ram Mandir) and Jan 26 (Republic Day) are holidays in 2024
         config = _make_config(start_date=date(2024, 1, 22), end_date=date(2024, 1, 26))
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         days = list(sim._trading_days())
         assert date(2024, 1, 22) not in days
@@ -398,8 +396,11 @@ class TestBacktestTradingDays:
         db = _make_db()
         config = _make_config(start_date=date(2024, 1, 8), end_date=date(2024, 1, 12))
         sim = BacktestSimulation(
-            db=db, config=config, price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
+            db=db,
+            config=config,
+            price_loader=_flat_price_loader,
+            feature_loader=_empty_feature_loader,
+            universe=[],
         )
         days = list(sim._trading_days())
         assert len(days) == 5
@@ -407,112 +408,6 @@ class TestBacktestTradingDays:
 
 # ── Acceptance / OOS tests ─────────────────────────────────────────────────────
 
-class TestBacktestAcceptance:
-    def test_acceptance_fails_on_low_sharpe(self):
-        db = _make_db()
-        sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
-        )
-        failures, passes = sim._check_acceptance(
-            sharpe=0.5, max_dd=5.0,
-            trades_by_track={"intraday": 600},
-            expectancy=0.5, win_rate=0.6, avg_win=2.0, avg_loss=1.0,
-        )
-        assert not passes
-        assert any("Sharpe" in f for f in failures)
-
-    def test_acceptance_passes_all_criteria(self):
-        db = _make_db()
-        sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
-        )
-        failures, passes = sim._check_acceptance(
-            sharpe=1.5, max_dd=10.0,
-            trades_by_track={"intraday": 450},
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
-        )
-        assert passes
-        assert failures == []
-
-    def test_acceptance_fails_on_too_few_trades(self):
-        db = _make_db()
-        sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
-        )
-        failures, passes = sim._check_acceptance(
-            sharpe=1.5, max_dd=10.0,
-            trades_by_track={"intraday": 50},  # < 100 minimum
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
-        )
-        assert not passes
-        assert any("trades" in f for f in failures)
-
-    def test_oos_check_fires_when_in_sample_sharpe_provided(self):
-        db = _make_db()
-        sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
-        )
-        # OOS Sharpe 0.5 is < 50% of IS Sharpe 2.0 → fail
-        failures, passes = sim._check_acceptance(
-            sharpe=0.5, max_dd=5.0,
-            trades_by_track={"intraday": 200},
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
-            in_sample_sharpe=2.0,
-        )
-        assert not passes
-        assert any("OOS" in f for f in failures)
-
-    def test_oos_check_passes_when_sharpe_meets_threshold(self):
-        db = _make_db()
-        sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
-        )
-        # OOS Sharpe 1.4 >= 50% of IS Sharpe 2.0 → OOS check passes
-        failures, passes = sim._check_acceptance(
-            sharpe=1.4, max_dd=5.0,
-            trades_by_track={"intraday": 200},
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
-            in_sample_sharpe=2.0,
-        )
-        assert passes
-        assert not any("OOS" in f for f in failures)
-
-    def test_oos_check_skipped_when_no_in_sample_sharpe(self):
-        db = _make_db()
-        sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
-        )
-        # Pass all non-OOS criteria; no in_sample_sharpe → OOS check is not evaluated
-        failures, passes = sim._check_acceptance(
-            sharpe=1.4, max_dd=5.0,
-            trades_by_track={"intraday": 200},
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
-        )
-        assert passes
-        assert not any("OOS" in f for f in failures)
-
-    def test_acceptance_fails_on_max_drawdown(self):
-        db = _make_db()
-        sim = BacktestSimulation(
-            db=db, config=_make_config(), price_loader=_flat_price_loader,
-            feature_loader=_empty_feature_loader, universe=[],
-        )
-        failures, passes = sim._check_acceptance(
-            sharpe=1.5, max_dd=20.0,  # > 15% threshold
-            trades_by_track={"intraday": 200},
-            expectancy=0.5, win_rate=0.6, avg_win=3.0, avg_loss=1.0,
-        )
-        assert not passes
-        assert any("DD" in f for f in failures)
-
-
-# ── Code hash test ─────────────────────────────────────────────────────────────
 
 class TestCodeHash:
     def test_code_hash_is_deterministic(self):
@@ -522,5 +417,5 @@ class TestCodeHash:
 
     def test_code_hash_is_non_trivial(self):
         h = BacktestSimulation._compute_code_hash()
-        assert h != "boomer_v1"[:16]   # not the old placeholder
+        assert h != "boomer_v1"[:16]  # not the old placeholder
         assert len(h) == 16

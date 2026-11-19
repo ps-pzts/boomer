@@ -89,9 +89,11 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
             "SELECT COUNT(*) FROM recommendations WHERE status='queued_for_execution'"
         ).fetchone()[0]
         tripped = [
-            r[0] for r in conn.execute(
+            r[0]
+            for r in conn.execute(
                 "SELECT DISTINCT breaker_name FROM circuit_breaker_events"
-                " WHERE event_type='tripped' AND DATE(event_time)=?", (run_date,)
+                " WHERE event_type='tripped' AND DATE(event_time)=?",
+                (run_date,),
             ).fetchall()
         ]
     finally:
@@ -101,16 +103,19 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
     cb_line = f"\n⚡ <b>Circuit breakers:</b> {', '.join(tripped)}" if tripped else ""
 
     from alerts.telegram import send_telegram
+
     send_telegram(
-        token, chat_id,
+        token,
+        chat_id,
         f"✅ <b>Boomer — morning check-in</b> ({now_str})\n"
         f"Orchestrator is running. Today is {run_date}.\n"
         f"🚀 Queued for GTT at 09:25: {queued}"
-        f"{cb_line}"
+        f"{cb_line}",
     )
     logger.info(
         "morning_heartbeat sent run_date=%s queued=%d",
-        run_date, queued,
+        run_date,
+        queued,
     )
 
 
@@ -162,15 +167,14 @@ def _nightly_health_check(run_date: str, run_id: int, db_path: str, **_: object)
 
     # 2. Stuck RUNNING tasks (> 1 h) ──────────────────────────────────────────
     cutoff = (
-        datetime.now(IST) - timedelta(hours=1)
-    ).replace(tzinfo=None).isoformat(timespec="seconds")
+        (datetime.now(IST) - timedelta(hours=1)).replace(tzinfo=None).isoformat(timespec="seconds")
+    )
     try:
         conn = sqlite3.connect(db_path, timeout=5)
         conn.row_factory = sqlite3.Row
         try:
             stuck = conn.execute(
-                "SELECT task_id FROM task_runs"
-                " WHERE status='RUNNING' AND started_at < ?",
+                "SELECT task_id FROM task_runs WHERE status='RUNNING' AND started_at < ?",
                 (cutoff,),
             ).fetchall()
         finally:
@@ -186,7 +190,7 @@ def _nightly_health_check(run_date: str, run_id: int, db_path: str, **_: object)
         usage = shutil.disk_usage(os.path.dirname(os.path.abspath(db_path)))
         free_pct = usage.free / usage.total * 100
         if free_pct < 20.0:
-            free_gb = usage.free / (1024 ** 3)
+            free_gb = usage.free / (1024**3)
             issues.append(f"Low disk space: {free_pct:.1f}% free ({free_gb:.1f} GB)")
     except Exception as exc:
         issues.append(f"Disk check failed: {exc}")
@@ -197,7 +201,8 @@ def _nightly_health_check(run_date: str, run_id: int, db_path: str, **_: object)
     if not token or not chat_id:
         logger.info(
             "nightly_health_check run_date=%s issues=%d (Telegram not configured)",
-            run_date, len(issues),
+            run_date,
+            len(issues),
         )
         return
 

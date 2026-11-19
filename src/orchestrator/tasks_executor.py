@@ -40,6 +40,7 @@ def _pre_market_executor_setup(
                     )
                     try:
                         from src.alerts.alerter import get_alerter
+
                         get_alerter().critical(
                             f"Broker re-auth failed — {broker.broker_id}",
                             f"Token was refreshed but broker.authenticate() failed: {exc}. "

@@ -99,8 +99,11 @@ class BotModeStore:
         import datetime
         from zoneinfo import ZoneInfo
 
-        now = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+        now = (
+            datetime.datetime.now(ZoneInfo("Asia/Kolkata"))
+            .replace(tzinfo=None)
             .isoformat(timespec="seconds")
+        )
         with self._conn() as conn:
             old = conn.execute("SELECT mode FROM bot_mode WHERE id = 1").fetchone()
             old_mode = old["mode"] if old else BotMode.AUTO
@@ -136,8 +139,11 @@ class TaskRunStore:
         import datetime
         from zoneinfo import ZoneInfo
 
-        now = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+        now = (
+            datetime.datetime.now(ZoneInfo("Asia/Kolkata"))
+            .replace(tzinfo=None)
             .isoformat(timespec="seconds")
+        )
         with self._conn() as conn:
             cur = conn.execute(
                 """INSERT INTO task_runs
@@ -158,8 +164,11 @@ class TaskRunStore:
         import datetime
         from zoneinfo import ZoneInfo
 
-        now = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+        now = (
+            datetime.datetime.now(ZoneInfo("Asia/Kolkata"))
+            .replace(tzinfo=None)
             .isoformat(timespec="seconds")
+        )
         with self._conn() as conn:
             conn.execute(
                 """UPDATE task_runs SET status=?, ended_at=?, error_message=?, error_traceback=?

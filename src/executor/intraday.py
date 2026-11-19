@@ -17,8 +17,8 @@ IST = ZoneInfo("Asia/Kolkata")
 logger = logging.getLogger(__name__)
 
 _MARKET_OPEN_IST = (9, 15)
-_LAST_ENTRY_IST = (14, 30)   # no new entries after this
-_SQUAREOFF_IST = (15, 14)    # orchestrator calls square_off at this time
+_LAST_ENTRY_IST = (14, 30)  # no new entries after this
+_SQUAREOFF_IST = (15, 14)  # orchestrator calls square_off at this time
 _MARKET_CLOSE_IST = (15, 30)
 
 _SIGNAL_VALIDITY_MINUTES = 30

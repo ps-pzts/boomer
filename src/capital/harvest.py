@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 
+
 @dataclass(frozen=True)
 class HarvestResult:
     fired: bool

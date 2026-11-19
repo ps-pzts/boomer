@@ -51,6 +51,7 @@ def _insert_prices(db_path: str, symbol: str, exchange: str, rows: list[tuple]):
 
 # ── compute_price_features ────────────────────────────────────────────────────
 
+
 class TestComputePriceFeatures:
     def _seed(self, db_path, n: int, base_close: float = 100.0):
         """Insert n consecutive daily rows ending today, all with uniform values."""
@@ -125,6 +126,7 @@ class TestComputePriceFeatures:
 
 # ── compute_filing_count_features ─────────────────────────────────────────────
 
+
 class TestComputeFilingCountFeatures:
     def _insert_filing(self, db_path, symbol, exchange, observed_at_utc):
         conn = sqlite3.connect(db_path)
@@ -146,8 +148,12 @@ class TestComputeFilingCountFeatures:
                     'neutral', 0.5)
             """,
             (
-                observed_at_utc + "_f", observed_at_utc, symbol, exchange,
-                observed_at_utc[:10], observed_at_utc,
+                observed_at_utc + "_f",
+                observed_at_utc,
+                symbol,
+                exchange,
+                observed_at_utc[:10],
+                observed_at_utc,
             ),
         )
         conn.commit()
@@ -171,6 +177,7 @@ class TestComputeFilingCountFeatures:
 
 
 # ── compute_catalyst_proximity_features ───────────────────────────────────────
+
 
 class TestComputeCatalystProximityFeatures:
     def _insert_action(

@@ -66,6 +66,13 @@ _Nothing — all 5 phases complete._
 
 ## Change log
 
+### 2026-11-19 — Chore: `ruff format` the codebase so CI's format gate passes
+
+- **Why:** CI runs `ruff format --check`, which had failed on every merge to `main` since at least #24 (32 unformatted files). The CLAUDE.md pre-push gate only runs `ruff check`, so this was never caught locally.
+- Formatting pushed `src/backtester/simulation.py` (590 → 613 lines) and `tests/backtester/test_simulation.py` past the 600-line limit, so they were split by responsibility first: SQL persistence moved to the new `src/backtester/run_store.py` (`BacktestSimulation` keeps thin delegating methods; `run_store.py` added to the code-hash file list), and acceptance-gate tests moved to `tests/backtester/test_simulation_acceptance.py`, with shared fixtures in `tests/backtester/sim_helpers.py`. New `tests/backtester/test_run_store.py`. No behaviour change. The backtest code hash changes, which resets holdout-burn tracking.
+- Follow-up, not done here: `tests/test_integration_full_pipeline.py` is 652 lines (over the limit before this change).
+- 519 tests pass, `ruff check` and `ruff format --check` clean.
+
 ### 2026-11-19 — Hotfix: MIS-only, remove 365-day CNC GTT dispatch
 
 - **Why:** operator rule: Boomer places only MIS orders with a stop-loss, never long-validity delivery orders. `gtt_dispatch` violated this whenever Kite credentials were present (no paper-mode gate), and CLAUDE.md §10 forbids intraday becoming a held position.

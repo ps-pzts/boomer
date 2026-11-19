@@ -253,11 +253,13 @@ def _morning_batch_recommendations(run_date: str, run_id: int, db_path: str, **_
 
     def _apm_circuit_check(rec: object) -> tuple[bool, str]:
         from src.brain.models import Recommendation as _Rec
+
         r: _Rec = rec  # type: ignore[assignment]
         track = Track(r.track)
         if _cb_state.track_blocked(track):
             tripped = [
-                f.name for f in _cb_state.__dataclass_fields__  # type: ignore[attr-defined]
+                f.name
+                for f in _cb_state.__dataclass_fields__  # type: ignore[attr-defined]
                 if getattr(_cb_state, f.name) == "tripped"
             ]
             return False, f"circuit_breaker_tripped:{','.join(tripped)}"

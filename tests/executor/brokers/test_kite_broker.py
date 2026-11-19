@@ -43,9 +43,7 @@ class TestGetLtp:
         broker._kite.positions.return_value = {"day": []}
         assert broker.get_ltp("KPEL", "NSE") == 375.0
 
-    def test_tier2_positions_fallback_when_rest_and_holdings_miss(
-        self, broker: KiteBroker
-    ) -> None:
+    def test_tier2_positions_fallback_when_rest_and_holdings_miss(self, broker: KiteBroker) -> None:
         broker._kite.ltp.side_effect = Exception("Insufficient permission")
         broker._kite.holdings.return_value = []
         broker._kite.positions.return_value = {
@@ -82,10 +80,14 @@ class TestGetLtp:
 class TestPlaceGttLtpGuard:
     def _oco_request(self) -> GttRequest:
         return GttRequest(
-            symbol="KPEL", exchange="NSE",
-            gtt_type=GttType.OCO, quantity=18,
-            sl_trigger_price=338.03, sl_limit_price=337.36,
-            target_trigger_price=439.46, target_limit_price=438.58,
+            symbol="KPEL",
+            exchange="NSE",
+            gtt_type=GttType.OCO,
+            quantity=18,
+            sl_trigger_price=338.03,
+            sl_limit_price=337.36,
+            target_trigger_price=439.46,
+            target_limit_price=438.58,
         )
 
     def test_raises_when_ltp_unavailable(self, broker: KiteBroker) -> None:
@@ -113,9 +115,7 @@ class TestPlaceGttLtpGuard:
 
     def test_oco_uses_ltp_from_holdings_fallback(self, broker: KiteBroker) -> None:
         broker._kite.ltp.side_effect = Exception("no market data")
-        broker._kite.holdings.return_value = [
-            {"tradingsymbol": "KPEL", "last_price": 360.0}
-        ]
+        broker._kite.holdings.return_value = [{"tradingsymbol": "KPEL", "last_price": 360.0}]
         broker._kite.positions.return_value = {"day": []}
         broker._kite.place_gtt.return_value = {"trigger_id": 12345}
 
@@ -129,9 +129,12 @@ class TestPlaceGttLtpGuard:
         broker._kite.positions.return_value = {"day": []}
 
         req = GttRequest(
-            symbol="KPEL", exchange="NSE",
-            gtt_type=GttType.SINGLE, quantity=18,
-            trigger_price=338.03, limit_price=337.36,
+            symbol="KPEL",
+            exchange="NSE",
+            gtt_type=GttType.SINGLE,
+            quantity=18,
+            trigger_price=338.03,
+            limit_price=337.36,
         )
         with pytest.raises(RuntimeError, match="LTP unavailable"):
             broker.place_gtt(req)
@@ -200,9 +203,7 @@ class TestTickerSubscription:
 
         assert fake_ticker.subscribe_calls == [[12345]]
 
-    def test_new_tokens_deferred_when_handshake_not_yet_complete(
-        self, broker: KiteBroker
-    ) -> None:
+    def test_new_tokens_deferred_when_handshake_not_yet_complete(self, broker: KiteBroker) -> None:
         """Regression: subscribe() must never be called before the WS is connected —
         calling it early raises inside the real kiteconnect SDK (no self._ticker.ws)."""
         self._mock_one_instrument(broker, "KPEL", 12345)
@@ -248,9 +249,7 @@ class TestOnTicksReceived:
         received: list[tuple[str, float]] = []
         broker._tick_subscriptions = [(["KPEL"], lambda sym, ltp: received.append((sym, ltp)))]
 
-        broker._on_ticks_received(
-            ws=object(), ticks=[{"instrument_token": 12345, "last_price": 0}]
-        )
+        broker._on_ticks_received(ws=object(), ticks=[{"instrument_token": 12345, "last_price": 0}])
 
         assert received == []
         assert "KPEL" not in broker._ltp

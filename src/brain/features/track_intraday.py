@@ -39,13 +39,18 @@ from brain.features.computers_market import (
 from brain.features.runner import FeatureComputer
 
 INTRADAY_COMPUTERS: list[FeatureComputer] = [
-
     # ── Batch-computable (run before market open) ─────────────────────────────
-
     FeatureComputer(
         fn=compute_price_features,
-        writes=("price_close", "avg_traded_value_20d", "avg_daily_volume_20d",
-                "atr_14d", "volume_zscore_5d", "dma_20", "high_20d"),
+        writes=(
+            "price_close",
+            "avg_traded_value_20d",
+            "avg_daily_volume_20d",
+            "atr_14d",
+            "volume_zscore_5d",
+            "dma_20",
+            "high_20d",
+        ),
         essential=True,
     ),
     FeatureComputer(
@@ -63,11 +68,9 @@ INTRADAY_COMPUTERS: list[FeatureComputer] = [
         writes=("overnight_news_sentiment",),
         essential=False,
     ),
-
     # ── Live-only: injected by intraday task runner at signal time ────────────
     # fn=None means the runner skips these; they are listed here so you can
     # see at a glance every feature key the signal generator may consume.
-
     FeatureComputer(
         fn=None,
         writes=("premarket_gap_pct",),

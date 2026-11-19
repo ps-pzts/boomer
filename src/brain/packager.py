@@ -28,6 +28,7 @@ from brain.models import (
 
 IST = ZoneInfo("Asia/Kolkata")
 
+
 class RecommendationPackager:
     """Converts a Stage 3 TradePlan + Stage 3.5 EntryPlan into a Recommendation."""
 
