@@ -8,12 +8,18 @@ Regression coverage for the silent bad-fallback bug:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.executor.brokers.kite_broker import KiteBroker
-from src.executor.models import GttRequest, GttType
+from executor.brokers.feeds.base import Tick
+from executor.brokers.feeds.manual_feed import ManualFeed
+from executor.brokers.kite_broker import KiteBroker
+from executor.models import GttRequest, GttType
+
+IST = ZoneInfo("Asia/Kolkata")
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -140,131 +146,63 @@ class TestPlaceGttLtpGuard:
             broker.place_gtt(req)
 
 
-# ── Ticker subscription (KiteTicker wiring) ────────────────────────────────────
+# ── Feed delegation (KiteFeed owns the WebSocket since B7 PR 1) ──────────────
 
 
-class _FakeTicker:
-    """Stand-in for kiteconnect.KiteTicker — records subscribe/mode calls."""
-
-    MODE_QUOTE = "quote"
-
-    def __init__(self, api_key: str, access_token: str) -> None:
-        self.api_key = api_key
-        self.access_token = access_token
-        self.subscribe_calls: list[list[int]] = []
-        self.mode_calls: list[tuple[str, list[int]]] = []
-        self.on_ticks = None
-        self.on_order_update = None
-        self.on_connect = None
-        self.on_close = None
-
-    def connect(self, threaded: bool = False) -> None:
-        pass  # real SDK connects asynchronously; tests fire on_connect manually
-
-    def subscribe(self, tokens: list[int]) -> None:
-        self.subscribe_calls.append(list(tokens))
-
-    def set_mode(self, mode: str, tokens: list[int]) -> None:
-        self.mode_calls.append((mode, list(tokens)))
+def _tick(symbol: str, ltp: float, age_seconds: float = 0.0) -> Tick:
+    return Tick(
+        symbol=symbol,
+        exchange="NSE",
+        ltp=ltp,
+        received_at=datetime.now(IST) - timedelta(seconds=age_seconds),
+    )
 
 
-class TestTickerSubscription:
-    """Regression coverage for the silent no-subscribe bug: KiteTicker connected
-    but never called subscribe()/set_mode(), so zero ticks ever arrived."""
+class TestFeedDelegation:
+    def test_fresh_feed_tick_used_before_rest(self, broker: KiteBroker) -> None:
+        feed = ManualFeed()
+        broker.attach_feed(feed)
+        feed.push(_tick("KPEL", 401.5))
+        assert broker.get_ltp("KPEL", "NSE") == 401.5
+        broker._kite.ltp.assert_not_called()
 
-    def _mock_one_instrument(self, broker: KiteBroker, symbol: str, token: int) -> None:
-        broker._kite.instruments.return_value = [
-            {"tradingsymbol": symbol, "instrument_token": token},
-        ]
+    def test_stale_feed_tick_falls_through_to_rest(self, broker: KiteBroker) -> None:
+        feed = ManualFeed()
+        broker.attach_feed(feed)
+        feed.push(_tick("KPEL", 390.0, age_seconds=600))
+        broker._kite.ltp.return_value = {"NSE:KPEL": {"last_price": 402.0}}
+        assert broker.get_ltp("KPEL", "NSE") == 402.0
 
-    def test_on_connect_subscribes_all_known_tokens(self, broker: KiteBroker) -> None:
-        """Once the WS handshake completes, all resolved tokens must be subscribed."""
-        self._mock_one_instrument(broker, "KPEL", 12345)
-        fake_ticker = _FakeTicker("key", "token")
-        broker._ticker = fake_ticker
+    def test_stale_feed_tick_is_last_resort(self, broker: KiteBroker) -> None:
+        feed = ManualFeed()
+        broker.attach_feed(feed)
+        feed.push(_tick("KPEL", 390.0, age_seconds=600))
+        broker._kite.ltp.side_effect = Exception("no data")
+        broker._kite.holdings.return_value = []
+        broker._kite.positions.return_value = {"day": []}
+        assert broker.get_ltp("KPEL", "NSE") == 390.0
 
-        broker._start_ticker_if_needed(["KPEL"])
-        # Not connected yet — must NOT subscribe prematurely (the bug this guards).
-        assert fake_ticker.subscribe_calls == []
-
-        broker._on_ticker_connect(ws=object(), response={})
-
-        assert fake_ticker.subscribe_calls == [[12345]]
-        assert fake_ticker.mode_calls == [(_FakeTicker.MODE_QUOTE, [12345])]
-
-    def test_new_tokens_subscribed_immediately_once_connected(self, broker: KiteBroker) -> None:
-        """A later on_tick() call, once already connected, subscribes right away."""
-        self._mock_one_instrument(broker, "KPEL", 12345)
-        fake_ticker = _FakeTicker("key", "token")
-        broker._ticker = fake_ticker
-        broker._ticker_connected = True
-
-        broker._start_ticker_if_needed(["KPEL"])
-
-        assert fake_ticker.subscribe_calls == [[12345]]
-
-    def test_new_tokens_deferred_when_handshake_not_yet_complete(self, broker: KiteBroker) -> None:
-        """Regression: subscribe() must never be called before the WS is connected —
-        calling it early raises inside the real kiteconnect SDK (no self._ticker.ws)."""
-        self._mock_one_instrument(broker, "KPEL", 12345)
-        fake_ticker = _FakeTicker("key", "token")
-        broker._ticker = fake_ticker
-        broker._ticker_connected = False  # handshake still in flight
-
-        broker._start_ticker_if_needed(["KPEL"])  # must not raise, must not subscribe
-
-        assert fake_ticker.subscribe_calls == []
-        assert 12345 in broker._token_to_symbol
-
-    def test_on_ticker_close_resets_connected_state(self, broker: KiteBroker) -> None:
-        fake_ticker = _FakeTicker("key", "token")
-        broker._ticker = fake_ticker
-        broker._ticker_connected = True
-        broker._subscribed_tokens = {12345}
-
-        broker._on_ticker_close(ws=object(), code=1006, reason="abnormal closure")
-
-        assert broker._ticker_connected is False
-        assert broker._subscribed_tokens == set()
-
-
-# ── _on_ticks_received() → symbol resolution and LTP updates ──────────────────
-
-
-class TestOnTicksReceived:
-    def test_maps_instrument_token_to_symbol(self, broker: KiteBroker) -> None:
-        broker._token_to_symbol = {12345: "KPEL"}
+    def test_on_tick_subscribes_and_filters_to_requested_symbols(self, broker: KiteBroker) -> None:
+        feed = ManualFeed()
+        broker.attach_feed(feed)
         received: list[tuple[str, float]] = []
-        broker._tick_subscriptions = [(["KPEL"], lambda sym, ltp: received.append((sym, ltp)))]
-
-        broker._on_ticks_received(
-            ws=object(), ticks=[{"instrument_token": 12345, "last_price": 401.5}]
-        )
-
+        broker.on_tick(["KPEL"], lambda sym, ltp: received.append((sym, ltp)))
+        feed.push(_tick("KPEL", 401.5))
+        feed.push(_tick("OTHER", 10.0))
+        assert feed.subscribed == {"KPEL"}
         assert received == [("KPEL", 401.5)]
-        assert broker._ltp["KPEL"] == 401.5
 
-    def test_ignores_tick_with_zero_last_price(self, broker: KiteBroker) -> None:
-        broker._token_to_symbol = {12345: "KPEL"}
-        received: list[tuple[str, float]] = []
-        broker._tick_subscriptions = [(["KPEL"], lambda sym, ltp: received.append((sym, ltp)))]
+    def test_order_updates_come_from_feed(self, broker: KiteBroker) -> None:
+        feed = ManualFeed()
+        broker.attach_feed(feed)
+        updates: list[dict] = []
+        broker.on_order_update(updates.append)
+        feed.push_order_update({"order_id": "1", "status": "COMPLETE"})
+        assert updates == [{"order_id": "1", "status": "COMPLETE"}]
 
-        broker._on_ticks_received(ws=object(), ticks=[{"instrument_token": 12345, "last_price": 0}])
-
-        assert received == []
-        assert "KPEL" not in broker._ltp
-
-    def test_unknown_token_without_tradingsymbol_is_dropped(self, broker: KiteBroker) -> None:
-        """A tick for a token we never subscribed (and with no tradingsymbol field,
-        which is the real-world case) must be dropped, not raise."""
-        broker._token_to_symbol = {}
-        broker._tick_subscriptions = []
-
-        broker._on_ticks_received(
-            ws=object(), ticks=[{"instrument_token": 99999, "last_price": 100.0}]
-        )
-
-        assert broker._ltp == {}
+    def test_on_tick_without_feed_raises(self, broker: KiteBroker) -> None:
+        with pytest.raises(RuntimeError, match="no feed"):
+            broker.on_tick(["KPEL"], lambda s, p: None)
 
 
 # ── _resolve_instrument_token() caching ────────────────────────────────────────
