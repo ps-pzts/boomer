@@ -36,7 +36,7 @@
 
 ## What's in progress
 
-_Nothing — all 5 phases complete._
+- **B7 intraday live pipeline: design drafted** (`designs/intraday-live-pipeline.md`, 2026-11-19), awaiting operator review. Blocked on Q1 (live data source: the Kite account is on the free Personal plan, which has no market data API). Review also found that `gtt_dispatch` places real CNC GTTs valid 365 days for intraday recs when Kite credentials are set (doc §1a; hotfix proposed).
 
 ---
 
