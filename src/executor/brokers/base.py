@@ -107,6 +107,12 @@ class Broker(ABC):
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support historical data")
 
+    def list_open_orders(self) -> list[dict]:
+        """Every order still working at the broker (resting, triggered, part-filled,
+        or in flight), as {broker_order_id, symbol, exchange, side, order_type,
+        status}. Used to find orders no trade tracks (#65)."""
+        raise NotImplementedError(f"{self.__class__.__name__} cannot list open orders")
+
     def tick_size(self, symbol: str, exchange: str) -> float:
         """The instrument's price tick; every order price must be a multiple (#75)."""
         return 0.05

@@ -99,6 +99,16 @@ class OrderManager:
             )
         return order_id
 
+    def live_broker_order_ids(self) -> set[str]:
+        """Broker ids of every order we still consider working (#65 reconcile)."""
+        marks = ",".join("?" * len(TERMINAL_STATUSES))
+        rows = self._db.execute(
+            f"SELECT broker_order_id FROM orders WHERE broker_order_id IS NOT NULL"
+            f" AND status NOT IN ({marks})",
+            tuple(str(s) for s in TERMINAL_STATUSES),
+        ).fetchall()
+        return {str(r[0]) for r in rows}
+
     def modify_trigger(self, order_id: str, trigger_price: float) -> OrderRecord:
         """Move a resting stop's trigger (trailing stop, #71). The broker decides
         first; only an accepted modify is written to our row. Raises if the order
