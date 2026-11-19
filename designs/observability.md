@@ -154,7 +154,7 @@ The only reader of `events`.
 
    Snapshots and heartbeats re-baseline it, so it self-corrects after a missed event.
 2. **Surfaces:**
-   - dashboard **`/live`**: the projection, pushed over the existing WebSocket manager
+   - web UI **Live**: the projection, pushed over a WebSocket (`/ws/live`, polling fallback). The old dashboard was deleted (#105); the UI lives in `src/observability/web/` because only that package may read events
    - **`/live/trade/{id}`** and **`/live/session/{date}`**: timelines, i.e. every event with that correlation id, in order
    - Telegram **`/status`**: **Done 2026-11-19 (#103)** as a rendering of the session, Trade and Kite-check tables (not yet of the projection). The live trade/session feed and end-of-day summary run as `observability/telegram_feed.py`, a read-only events tail
 3. **Derived alerts** via the existing alerter: SILENT component, `source_seq` gap, persistent DRIFT, PROTECTING too long, Session entering HALTED. These are *additional* to the critical alerts sent at source (§2.6).
@@ -173,7 +173,7 @@ Writing remains allowed everywhere, through `emit()` or `statemachine.transition
 |---|---|---|
 | OBS-1 | `events` migration, emitter (queue + writer thread, own connection, boot_id/seq), `lifecycle` and `heartbeat` events, enforcement test. **Done 2026-11-19 (#56)**: migration `0012`, `src/observability/emit.py`, `tests/test_events_read_only.py`; orchestrator heartbeat carries feed health | SM-1 |
 | OBS-2 | `broker_snapshot` source; decision/rejection events in watchlist, cycle and risk; orchestrator task events | SM-3 (B7 4c) |
-| OBS-3 | Projection + `/live`, timelines, Telegram `/status`, derived alerts | after SM-3 |
+| OBS-3 | Projection + `/live`, timelines, Telegram `/status`, derived alerts | after SM-3. **Done 2026-11-19 (#105)**: `observability/projection.py`, `observability/web/` (mobile-first UI, WebSocket push). Derived alerts except broker drift (needs OBS-2 `broker_snapshot`) |
 | OBS-4 | Nightly archive to parquet + 30-day retention | any time after OBS-1 |
 
 ## 13. Loopholes and decisions
