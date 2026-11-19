@@ -195,10 +195,11 @@ Replaces the implicit states in `TradeSupervisor` (#45/#46). Adds an explicit `P
 | `ENTRY_PENDING` | `entry_expired` / `entry_rejected` / `square_off` | `CANCELLED` | filled qty = 0 |
 | `PROTECTING` | `stop_confirmed` | `OPEN` | stop order status is resting at the broker |
 | `PROTECTING` | `stop_failed` | `EXITING` | stop rejected or couldn't be submitted (L9): market exit + CRITICAL |
-| `OPEN` | `leg_filled` | `EXITING` or `CLOSED` | OCO: cancel the other leg, then settle by **net filled quantity** (net 0 → CLOSED; ≠ 0 → corrective order → EXITING) |
+| `OPEN` | `leg_filled` | `EXITING` | OCO: cancel the other leg, then settle by **net filled quantity**: net 0 → `flat` → CLOSED at once; ≠ 0 → `corrective_order` (stays EXITING) |
 | `OPEN` | `stop_lost` | `EXITING` | stop cancelled outside the bot / expired without filling: market exit + CRITICAL |
 | `OPEN` | `square_off` | `EXITING` | cancel both legs, market exit |
-| `EXITING` | `exit_filled` | `CLOSED` or `EXITING` | re-settle: net 0 → CLOSED, else another corrective order |
+| `EXITING` | `flat` | `CLOSED` | net filled quantity across the trade's orders is 0 |
+| `EXITING` | `corrective_order` | `EXITING` | net ≠ 0: market order for the remainder, or buy-back if oversold (CRITICAL) |
 | `EXITING` | `exit_failed` | `EXITING` | retry at market + CRITICAL (self-transition, recorded each time) |
 
 `PROTECTING` should last seconds. If a trade stays in it beyond one reconcile, that is itself a CRITICAL condition, and observability flags it (`designs/observability.md` §7).
@@ -235,7 +236,7 @@ Already explicit (`ALLOWED_TRANSITIONS`). Changes:
 | PR | Scope |
 |---|---|
 | SM-1 | `src/statemachine/` core + spec validation + `events` table and emitter (observability §4-5) + the guard test that keeps trading code from reading `events` + Order machine on the core. **Done 2026-11-19 (#56).** No-op triggers (§3) were not needed by the Order machine and are deferred to SM-2, where the Trade machine's reconcile loop needs them |
-| SM-2 | Trade machine on the core: reworks #46 (`TradeSupervisor`), adds `PROTECTING` |
+| SM-2 | Trade machine on the core: reworks #46 (`TradeSupervisor`), adds `PROTECTING`. **Done 2026-11-19 (#45)**: `executor/trade_machine.py` (spec), `trade_lifecycle.py` (supervisor), `trade_store.py` (bracket persistence; `advance()` = fields + transition + event in one transaction), migration `0013`. Every exit passes through `EXITING` (`leg_filled` → `flat`) so the settlement is always recorded. No-op triggers turned out unnecessary: reconcile only fires a trigger when it observes a change |
 | SM-3 | Session machine + `trading_sessions` migration. This **is** B7 PR 4c: the cycle, live circuit breakers and execution-broker wiring are built as its guards and transitions |
 | OBS-* | Observability module (`designs/observability.md` §10). Replaces B7 PR 5 |
 
