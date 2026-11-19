@@ -7,7 +7,7 @@ name = "boomer"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "kiteconnect>=5.0",
+    "kiteconnect>=5.2.2",  # market_protection support (#43)
     "pyotp>=2.9",
     "pyarrow>=15",  # minute-bar parquet (designs/intraday-live-pipeline.md §3.2)
 ]
