@@ -89,7 +89,7 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
         r[0]
         for r in conn.execute(
             "SELECT DISTINCT nse_symbol FROM instruments"
-            " WHERE series IN ('EQ','BE') AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
+            " WHERE series = 'EQ' AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
         ).fetchall()
     ]
     conn.close()
@@ -130,7 +130,7 @@ def _intraday_watchlist(
         r[0]
         for r in conn.execute(
             "SELECT DISTINCT nse_symbol FROM instruments"
-            " WHERE series IN ('EQ','BE') AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
+            " WHERE series = 'EQ' AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
         ).fetchall()
     ]
     conn.close()
