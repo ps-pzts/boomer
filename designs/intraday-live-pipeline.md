@@ -265,7 +265,10 @@ show the mode.
 | 1 | `MarketDataFeed` + `Tick` + `KiteFeed` adapter (FULL mode for depth) + capability/health check + `BOOMER_TRADING_MODE` + `PaperBroker` on the feed. **Done 2026-11-19** |
 | 2 | `LiveBarStore` + parquet flush + `LiveFeatureComputer` (worked-example tests). **Done 2026-11-19**: `collector/live_bars.py`, `brain/features/live.py`, `minute_bar_flush` task every 15 min 09:00-15:45 |
 | 3 | `intraday_watchlist` task + migration `0009` + retire intraday GTT and morning-recommendation path. **Done 2026-11-19 (#37)** |
-| 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes |
+| 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes. **Split 2026-11-19 (#33) into:** |
+| 4a | Paper fill realism: `MockBroker` simulates SL/SL-M triggers and fills (it never did), rejects wrong-side stops like Kite, tracks MIS positions, and sends Kite's `order_id` key in updates. Plus `OrderManager` resolving the paper broker (#40, #41). **Done 2026-11-19** |
+| 4b | Trade lifecycle supervisor: entry fill → position → SL-M + target → cancel the other leg → close with realised P&L; L9 unprotected guard; both-legs-filled guard; square-off cancels open legs |
+| 4c | `IntradayRunner` decision cycle + live circuit breakers + orchestrator wiring (execution broker from trading mode, `run_cycle()` arg bug, persistent cooldown L2) |
 | 5 | Paper-session reporting: EOD Telegram summary + dashboard intraday view |
 
 ---

@@ -216,3 +216,33 @@ class TestOrderManagerIdempotency:
         assert record.symbol == "TCS"
         assert record.quantity == 5
         assert record.status == OrderStatus.PENDING
+
+
+class TestBrokerResolution:
+    """Regression #41: orders placed via PaperBroker in the KITE slot recorded
+    broker_id='paper', and sync/cancel raised KeyError looking that key up."""
+
+    def _paper_om(self):
+        from executor.brokers.feeds.manual_feed import ManualFeed
+        from executor.brokers.paper_broker import PaperBroker
+
+        paper = PaperBroker(price_source=ManualFeed(), initial_cash=1_000_000)
+        return OrderManager(db=_make_db(), brokers={BrokerName.KITE: paper}, ltp_cache={}), paper
+
+    def test_sync_status_finds_paper_broker_in_kite_slot(self):
+        om, _ = self._paper_om()
+        oid = om.submit(_intraday_req(price=100.0), track="other")
+        assert om.sync_status(oid).status == OrderStatus.PENDING
+
+    def test_cancel_finds_paper_broker_in_kite_slot(self):
+        om, _ = self._paper_om()
+        oid = om.submit(_intraday_req(price=100.0), track="other")
+        om.cancel(oid)
+        assert om.sync_status(oid).status == OrderStatus.CANCELLED
+
+    def test_unknown_broker_raises_clear_error(self):
+        om, _ = self._paper_om()
+        oid = om.submit(_intraday_req(price=100.0), track="other")
+        om._brokers = {BrokerName.MOCK: MockBroker()}
+        with pytest.raises(RuntimeError, match="broker_id=paper"):
+            om.sync_status(oid)

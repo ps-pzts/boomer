@@ -24,6 +24,8 @@
 | Bug | APM gate + GTT dispatch (historical) | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic. Fixed at the time to route swing/intraday through `packager.apm_decide()`. **Superseded 2026-09-06**: `AWAITING_HUMAN`/`requires_human` removed entirely (see Change log) — all recommendations now route through APM unconditionally. The GTT dispatch task (renamed `gtt_dispatch`, was `swing_gtt_dispatch`, 09:25 IST) still reads `queued_for_execution` recs and places OCO-GTT via Kite. **Superseded 2026-11-19**: `gtt_dispatch` removed (see Change log). |
 | Hotfix | Intraday recs were sent as 365-day CNC GTTs | Symptom: with Kite credentials set, `gtt_dispatch` (09:25) placed every queued intraday rec as a CNC OCO-GTT valid 365 days, so an intraday signal became a year-long delivery position. Root cause: Kite GTTs only support CNC/NRML, and the task predates the intraday-only redesign. Fix: task removed; `OrderManager` pre-trade check #0 now rejects any non-MIS product. |
 | Bug | Overnight news window wrong (#35) | Symptom: `overnight_news_sentiment` ignored pre-market news and counted the previous session's. Root cause: IST `observed_at` strings (misleading `Z`) compared against UTC bounds (5.5 h shift), calendar-day lower bound (lost weekend/holiday news), wall-clock upper bound (lookahead). Fix: window = [prev trading day 15:30, as_of 09:15) IST in the collector's string format. |
+| Bug | Paper stops never filled (#40) | Symptom: in paper mode a stop-loss never triggered, so losing paper trades rode to the 15:14 square-off. Root cause: `MockBroker` only simulated MARKET/LIMIT fills; it also never tracked positions and sent updates without Kite's `order_id` key. Fix: SL/SL-M/SL_LIMIT trigger + fill simulation, Kite-style wrong-side stop rejection, MIS positions, `order_id` in payloads. |
+| Bug | OrderManager KeyError in paper mode (#41) | Symptom: syncing or cancelling any paper order raised `KeyError: paper`. Root cause: orders go through the `KITE` registry slot (holding `PaperBroker`) but rows record the broker's own id `paper`, which was then looked up as a key. Fix: resolve by key, then by each broker's own id. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 | Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
@@ -37,7 +39,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. Next: PR 4 (IntradayRunner + MIS entry/SL-M/target + live circuit breakers). Open: #38 liquidity gate 5 vs 10 crore (operator decision).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. Next: 4b (trade lifecycle supervisor). Open: #38 liquidity gate 5 vs 10 crore (operator decision).
 
 ---
 
@@ -66,6 +68,14 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Bug: B7 PR 4a — paper stop-loss fills + OrderManager paper broker lookup (#40, #41)
+
+- **Why:** paper trading is the go-live rehearsal (design Q5), but a paper stop could never trigger, so paper P&L would overstate results; and no paper order could be synced at all.
+- `MockBroker` (#40): SL (SL-M) triggers when price trades through the trigger and fills at min(trigger, bar open) for sells (a gap fills at the worse price), mirrored for buys; SL_LIMIT becomes a resting LIMIT once triggered; wrong-side stops are REJECTED at placement like Kite (exercises design L9); MIS fills maintain a net position per symbol (`list_positions()` was always empty); update payloads include Kite's `order_id` key and are copies; `cancel_order` leaves REJECTED orders rejected. The backtester only uses MARKET/LIMIT + GTTs, so its results are unchanged.
+- `OrderManager` (#41): `sync_status`/`cancel` resolve the broker by registry key, then by each broker's own `broker_id`; previously `KeyError: paper` for every paper order.
+- PR 4 split into 4a/4b/4c (design §8, #33).
+- Tests: new `tests/executor/brokers/test_mock_broker_stops.py` (incl. paper end-to-end: feed tick → PaperBroker stop fill → OrderManager row FILLED via push update); `TestBrokerResolution` in `test_order_manager.py`. 690 tests pass.
 
 ### 2026-11-19 — Feat: B7 PR 3 — daily intraday watchlist, retire morning recommendation path (#37)
 

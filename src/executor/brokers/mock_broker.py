@@ -29,6 +29,16 @@ class MockBroker(Broker):
 
     Same-code principle: backtester uses this broker; live trading uses
     KiteBroker — the executor code is identical.
+
+    Stop orders (#40), modelled on how Kite treats them:
+    - SL (SL-M) SELL triggers when price trades at or below trigger_price and fills
+      at min(trigger, bar.open): a gap through the stop fills at the worse price.
+      BUY mirrors it. SL_LIMIT becomes a resting LIMIT at `price` once triggered.
+    - A stop whose trigger is already on the wrong side of the last price (SELL
+      trigger >= last, BUY trigger <= last) is REJECTED at placement, as Kite does.
+    - Order-update payloads carry the Kite key `order_id` as well as
+      `broker_order_id`, so OrderManager.handle_broker_update can match them.
+    - MIS fills update a net position per symbol, so list_positions() is truthful.
     """
 
     def __init__(self, initial_cash: float = 100_000.0) -> None:
@@ -76,10 +86,18 @@ class MockBroker(Broker):
             "average_fill_price": 0.0,
             "status": OrderStatus.PENDING,
             "rejection_reason": "",
+            "triggered": False,
         }
         self._orders[broker_order_id] = order
 
         bar = self._current_bars.get(request.symbol)
+        if bar and self._is_stop(request.order_type):
+            reason = self._stop_rejection(request, bar.close)
+            if reason:
+                order["status"] = OrderStatus.REJECTED
+                order["rejection_reason"] = reason
+                self._notify_order_update(order)
+                return broker_order_id
         if bar and self._would_fill_immediately(request, bar):
             fill_price = self._compute_fill_price(request, bar)
             self._fill_order(broker_order_id, request.quantity, fill_price)
@@ -94,7 +112,11 @@ class MockBroker(Broker):
     def cancel_order(self, broker_order_id: str) -> None:
         if broker_order_id in self._orders:
             order = self._orders[broker_order_id]
-            if order["status"] not in (OrderStatus.FILLED, OrderStatus.CANCELLED):
+            if order["status"] not in (
+                OrderStatus.FILLED,
+                OrderStatus.CANCELLED,
+                OrderStatus.REJECTED,
+            ):
                 order["status"] = OrderStatus.CANCELLED
                 self._notify_order_update(order)
 
@@ -199,18 +221,48 @@ class MockBroker(Broker):
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
+    @staticmethod
+    def _is_stop(order_type: OrderType) -> bool:
+        return order_type in (OrderType.SL, OrderType.SL_LIMIT)
+
+    @staticmethod
+    def _stop_rejection(request: OrderRequest, last_price: float) -> str:
+        if request.trigger_price <= 0:
+            return "stop order without a trigger price"
+        if request.side == OrderSide.SELL and request.trigger_price >= last_price:
+            return f"SELL stop trigger {request.trigger_price} >= last price {last_price}"
+        if request.side == OrderSide.BUY and request.trigger_price <= last_price:
+            return f"BUY stop trigger {request.trigger_price} <= last price {last_price}"
+        return ""
+
+    @staticmethod
+    def _stop_crossed(request: OrderRequest, bar: PriceBar) -> bool:
+        if request.side == OrderSide.SELL:
+            return bar.low <= request.trigger_price
+        return bar.high >= request.trigger_price
+
+    @staticmethod
+    def _limit_crossed(request: OrderRequest, bar: PriceBar) -> bool:
+        return (request.side == OrderSide.BUY and bar.low <= request.price) or (
+            request.side == OrderSide.SELL and bar.high >= request.price
+        )
+
     def _would_fill_immediately(self, request: OrderRequest, bar: PriceBar) -> bool:
         if request.order_type == OrderType.MARKET:
             return True
         if request.order_type == OrderType.LIMIT:
-            return (request.side == OrderSide.BUY and bar.low <= request.price) or (
-                request.side == OrderSide.SELL and bar.high >= request.price
-            )
-        return False
+            return self._limit_crossed(request, bar)
+        if request.order_type == OrderType.SL:
+            return self._stop_crossed(request, bar)
+        return False  # SL_LIMIT fills only after it has triggered (see resting loop)
 
     def _compute_fill_price(self, request: OrderRequest, bar: PriceBar) -> float:
         if request.order_type == OrderType.MARKET:
             return bar.open
+        if request.order_type == OrderType.SL:
+            if request.side == OrderSide.SELL:
+                return min(request.trigger_price, bar.open)
+            return max(request.trigger_price, bar.open)
         return request.price
 
     def _fill_order(self, broker_order_id: str, quantity: int, fill_price: float) -> None:
@@ -220,15 +272,54 @@ class MockBroker(Broker):
         order["status"] = OrderStatus.FILLED
         side_sign = 1 if order["side"] == OrderSide.BUY else -1
         self._cash -= side_sign * quantity * fill_price
+        if order["product"] == ProductType.MIS:
+            self._apply_mis_fill(
+                order["symbol"], order["exchange"], side_sign * quantity, fill_price
+            )
         self._notify_order_update(order)
+
+    def _apply_mis_fill(self, symbol: str, exchange: str, signed_qty: int, price: float) -> None:
+        """Net MIS position per symbol; average price only moves when adding exposure."""
+        pos = self._positions.get(symbol)
+        if pos is None:
+            self._positions[symbol] = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "quantity": signed_qty,
+                "average_price": price,
+                "product": ProductType.MIS,
+            }
+            return
+        old_qty = pos["quantity"]
+        new_qty = old_qty + signed_qty
+        if new_qty == 0:
+            del self._positions[symbol]
+            return
+        if old_qty == 0 or (old_qty > 0) == (signed_qty > 0):  # adding to the position
+            pos["average_price"] = (
+                pos["average_price"] * abs(old_qty) + price * abs(signed_qty)
+            ) / abs(new_qty)
+        elif (old_qty > 0) != (new_qty > 0):  # flipped through zero
+            pos["average_price"] = price
+        pos["quantity"] = new_qty
 
     def _process_resting_orders(self, bar: PriceBar) -> None:
         for broker_order_id, order in self._orders.items():
-            if order["status"] != OrderStatus.PENDING:
+            if order["status"] not in (OrderStatus.PENDING, OrderStatus.TRIGGERED):
                 continue
             if order["symbol"] != bar.symbol:
                 continue
             req = self._order_to_request(order)
+            if req.order_type == OrderType.SL_LIMIT:
+                if not order["triggered"]:
+                    if not self._stop_crossed(req, bar):
+                        continue
+                    order["triggered"] = True
+                    order["status"] = OrderStatus.TRIGGERED
+                    self._notify_order_update(order)
+                if self._limit_crossed(req, bar):
+                    self._fill_order(broker_order_id, order["quantity"], req.price)
+                continue
             if self._would_fill_immediately(req, bar):
                 fill_price = self._compute_fill_price(req, bar)
                 self._fill_order(broker_order_id, order["quantity"], fill_price)
@@ -256,8 +347,11 @@ class MockBroker(Broker):
                 callback(bar.symbol, bar.close)
 
     def _notify_order_update(self, order: dict) -> None:
+        # Kite's postback / WebSocket payload names the id `order_id`; OrderManager
+        # matches on that key. Send a copy so callbacks can't mutate broker state.
+        payload = {**order, "order_id": order["broker_order_id"]}
         for callback in self._order_callbacks:
-            callback(order)
+            callback(payload)
 
     @staticmethod
     def _order_to_request(order: dict) -> OrderRequest:
