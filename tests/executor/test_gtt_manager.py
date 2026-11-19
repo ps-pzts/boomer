@@ -210,3 +210,41 @@ class TestGttManagerDailyReconcile:
 
         triggered = gm.daily_reconcile(BrokerName.MOCK)
         assert gtt_id in triggered
+
+
+class TestGttNoLongerProtecting:
+    """#92: Kite's 'rejected' / 'disabled' GTTs protect nothing; they used to read as ACTIVE."""
+
+    @pytest.mark.parametrize("kite_status", ["rejected", "disabled", "cancelled", "deleted"])
+    def test_dead_gtt_is_marked_cancelled_and_alerted(self, kite_status):
+        db = _make_db()
+        broker = MockBroker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
+        req = GttRequest(
+            symbol="SAIL",
+            exchange="NSE",
+            gtt_type=GttType.SINGLE,
+            quantity=10,
+            trigger_price=90.0,
+            limit_price=89.0,
+        )
+        pos = _make_position(symbol="SAIL")
+        pos.broker_id = BrokerName.MOCK
+        gtt_id = gm.place_gtt_for_position(pos, GttType.SINGLE, req)
+        (broker_gtt,) = broker._gtts.values()
+        broker_gtt["status"] = kite_status
+
+        assert gm.daily_reconcile(BrokerName.MOCK) == []
+        status = db.execute("SELECT status FROM gtt_orders WHERE gtt_id=?", (gtt_id,)).fetchone()
+        assert status[0] == GttStatus.GTT_CANCELLED
+        alerts = db.execute("SELECT bot_value FROM reconciliation_alerts").fetchall()
+        assert len(alerts) == 1 and kite_status in alerts[0][0]
+
+    @pytest.mark.parametrize("kite_status", ["active", "triggered", "expired"])
+    def test_normalise_keeps_live_statuses(self, kite_status):
+        expected = {
+            "active": GttStatus.GTT_ACTIVE,
+            "triggered": GttStatus.GTT_TRIGGERED,
+            "expired": GttStatus.GTT_EXPIRED,
+        }[kite_status]
+        assert GttManager._normalise_gtt_status({"status": kite_status}) == expected

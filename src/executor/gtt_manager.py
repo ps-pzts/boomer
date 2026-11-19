@@ -184,6 +184,17 @@ class GttManager:
                     "UPDATE gtt_orders SET status=?, last_checked_at=? WHERE gtt_id=?",
                     (GttStatus.GTT_EXPIRED, now, gtt_id),
                 )
+            elif broker_status == GttStatus.GTT_CANCELLED:
+                # #92: rejected / disabled / cancelled at the broker → it protects nothing.
+                self._db.execute(
+                    "UPDATE gtt_orders SET status=?, last_checked_at=? WHERE gtt_id=?",
+                    (GttStatus.GTT_CANCELLED, now, gtt_id),
+                )
+                self._raise_gtt_alert(
+                    broker_id,
+                    gtt_id,
+                    f"GTT no longer protecting: broker status {broker_record.get('status')}",
+                )
             else:
                 self._db.execute(
                     "UPDATE gtt_orders SET last_checked_at=? WHERE gtt_id=?",
@@ -316,6 +327,6 @@ class GttManager:
             return GttStatus.GTT_TRIGGERED
         if "expired" in status_str:
             return GttStatus.GTT_EXPIRED
-        if "cancelled" in status_str or "deleted" in status_str:
+        if any(w in status_str for w in ("cancelled", "deleted", "rejected", "disabled")):
             return GttStatus.GTT_CANCELLED
         return GttStatus.GTT_ACTIVE
