@@ -103,9 +103,11 @@ For financial calculation tests (position sizing, EV gate, circuit breakers): al
 
 Every branch merged to `main` goes through a PR. No direct merges.
 
-PR description must include:
+PR description must include (and must link its issue, see §11):
 
 ```markdown
+Closes #<issue>
+
 ## What this does
 <!-- One paragraph. What capability does this add or what problem does it fix? -->
 
@@ -121,6 +123,7 @@ PR description must include:
 - [ ] No file exceeds 600 lines
 - [ ] open-questions.md checked for relevant open questions
 - [ ] project-status.md updated
+- [ ] Linked issue updated with progress and outcome (§11)
 ```
 
 No PR merges with open checklist items.
@@ -181,3 +184,40 @@ If the code you are about to write contradicts the design document, the design d
 - Never hardcode broker-specific logic outside the broker abstraction layer
 - Never assume an open question in `open-questions.md` has been resolved without checking
 - Never merge a PR without updating `project-status.md`
+- Never open a PR or fix a bug without a linked GitHub issue (§11)
+
+---
+
+## 11. Issues — Every PR and Bug Is Traceable
+
+Every piece of work gets a GitHub issue: features, enhancements, refactors, hotfixes, and every bug, including ones found in passing while doing something else. The issue is the durable record of **what was intended, why, and what actually happened**, so the work can be traced later without the chat session that produced it.
+
+**End goal (what every issue must relate back to):** an intraday-only system that is validated in paper trading and then trades live through Kite: MIS orders only, every entry protected by a stop-loss, live only after the paper→live criteria in `designs/intraday-live-pipeline.md` §9 Q5 are met.
+
+**Lifecycle**
+1. **Open the issue before starting the work.** A bug found mid-task gets its own issue immediately, even if the fix is deferred.
+2. **Update it while working.** Add a comment when the plan changes, when something unexpected is found, or when a decision is made (operator answers, deviations from the design).
+3. **Link the PR.** The PR description starts with `Closes #<issue>`. One issue can be closed by several PRs only if each is listed in the issue.
+4. **Close with an outcome.** Before merging, comment on the issue with what changed, what was verified (tests, CI), and any follow-ups (each follow-up = its own new issue, linked). Merging the PR closes the issue.
+5. **Multi-PR work** (e.g. B7's 5 PRs) gets one tracking issue with a checklist of child issues/PRs, ticked as each merges.
+
+**Issue body structure** (also in `.github/ISSUE_TEMPLATE/work-item.md`):
+
+```markdown
+## What we're aiming for, and why
+<!-- The goal of this work and the reason it is needed now. For a bug: the symptom, the root cause if known, and how it was found. -->
+
+## Consequences if not built / fixed
+<!-- What goes wrong, or stays blocked, if this is not done. Be concrete: money at risk, wrong signals, lost data, blocked PRs. -->
+
+## How this moves us toward the end goal
+<!-- How this work advances the end goal above. -->
+
+## Architecture changes
+<!-- "None", or: new modules/tables/tasks, changed interfaces, schedule changes, and any deviation from the design doc (with the reason). -->
+
+## Progress log
+<!-- Dated one-liners. Further updates go in comments. -->
+```
+
+Labels: `bug` for defects, `enhancement` for features/refactors, `documentation` for docs and rules.
