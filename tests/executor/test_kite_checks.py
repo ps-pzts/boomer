@@ -13,7 +13,7 @@ import pytest
 from db.migrations import run_migrations
 from executor import kite_checks as kc
 from executor.preflight import CheckReport, CheckResult
-from tests.executor.kite_fake import FakeKite
+from tests.kitesim_kit import SimKite, make_sim, paper_broker
 
 IST = ZoneInfo("Asia/Kolkata")
 DAY = date(2026, 11, 19)
@@ -115,14 +115,14 @@ class TestRunAndRecord:
     def test_pass_is_recorded_without_alert(self, db, tmp_path):
         path = db.execute("PRAGMA database_list").fetchone()[2]
         alerter = _Alerter()
-        rep = self._run(path, "canary", FakeKite().broker(), alerter, tmp_path)
+        rep = self._run(path, "canary", SimKite().broker(), alerter, tmp_path)
         assert rep.ok and kc.gate(db, DAY) == "preflight_pending"
         assert alerter.sent == []
 
     def test_failure_is_recorded_and_alerted(self, db, tmp_path):
         path = db.execute("PRAGMA database_list").fetchone()[2]
-        fk = FakeKite()
-        fk.reject_place = {"BUY"}
+        fk = SimKite()
+        fk.script.reject = {"BUY"}
         alerter = _Alerter()
         rep = self._run(path, "canary", fk.broker(), alerter, tmp_path)
         assert not rep.ok and kc.gate(db, DAY) == "canary_failed"
@@ -137,10 +137,9 @@ class TestRunAndRecord:
         assert alerter.sent[0][0] == "critical"
 
     def test_kite_broker_picked_from_the_list(self):
-        from executor.brokers.paper_broker import PaperBroker
-
-        kite = FakeKite().broker()
-        paper = object.__new__(PaperBroker)
+        """#86: the paper broker is a KiteBroker too (on KiteSim); never pick it."""
+        kite = SimKite().broker()
+        paper = paper_broker(make_sim())
         assert kc.kite_broker([paper, kite]) is kite
         assert kc.kite_broker([paper]) is None
         assert kc.kite_broker([]) is None

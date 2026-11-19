@@ -13,7 +13,7 @@ from src.orchestrator.models import BotModeStore, TaskRunStore
 from src.orchestrator.scheduler import Scheduler
 from src.orchestrator.tasks import build_task_registry
 from src.orchestrator.tasks_session import _kite_canary, _kite_preflight
-from tests.executor.kite_fake import FakeKite
+from tests.kitesim_kit import SimKite
 
 IST = ZoneInfo("Asia/Kolkata")
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
@@ -83,7 +83,7 @@ class TestTaskFunctions:
     def test_preflight_records_a_pass(self, db_path):
         alerter = _Alerter()
         _kite_preflight(
-            "2026-11-19", 1, db_path=db_path, brokers=[FakeKite().broker()], alerter=alerter
+            "2026-11-19", 1, db_path=db_path, brokers=[SimKite().broker()], alerter=alerter
         )
         assert [r[1:] for r in _rows(db_path)] == [("preflight", 1, "scheduled")]
         assert alerter.titles == []
@@ -107,7 +107,7 @@ class TestTaskFunctions:
             "2026-11-19",
             1,
             db_path=db_path,
-            brokers=[FakeKite().broker()],
+            brokers=[SimKite().broker()],
             alerter=_Alerter(),
             clock=lambda: now[0],
             sleep=sleep,
@@ -119,7 +119,7 @@ class TestTaskFunctions:
     def test_canary_symbol_from_env(self, db_path, tmp_path, monkeypatch):
         monkeypatch.setenv("BOOMER_KITE_RECORDINGS_DIR", str(tmp_path / "rec"))
         monkeypatch.setenv("BOOMER_CANARY_SYMBOL", "TCS")
-        fk = FakeKite()
+        fk = SimKite()
         at = datetime.datetime(2026, 11, 19, 9, 16, tzinfo=IST)
         _kite_canary(
             "2026-11-19",
@@ -130,4 +130,4 @@ class TestTaskFunctions:
             clock=lambda: at,
             sleep=lambda s: None,
         )
-        fk.sdk.ltp.assert_any_call(["NSE:TCS"])
+        assert (["NSE:TCS"],) in [c["instruments"] for c in fk.sdk.called("ltp")]

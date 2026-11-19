@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import kiteconnect
 import pytest
 
 from executor.brokers.kite_broker import KiteBroker
 from executor.brokers.kite_instruments import InstrumentCache
-from executor.brokers.paper_broker import PaperBroker
+from executor.brokers.kitesim.paper import build_paper_broker
 from executor.models import BrokerName, OrderRequest, OrderSide, OrderType, ProductType
 from executor.order_manager import OrderManager
 from executor.ticks import is_on_tick, on_tick, round_to_tick
@@ -80,9 +81,10 @@ class TestInstrumentTicks:
 
 @pytest.fixture()
 def h(tmp_path) -> Harness:
-    """Paper broker that uses a 0.10 tick for every instrument, like a Kite dump would."""
+    """Paper broker on an instrument dump with a 0.10 tick for every instrument."""
     h = Harness(tmp_path)
-    h.paper = PaperBroker(price_source=h.feed, initial_cash=1_000_000, tick_size=lambda s, e: 0.1)
+    rows = [dict(r, tick_size=0.1) for r in kf.sdk("instruments")]
+    h.paper = build_paper_broker(h.feed, 1_000_000, instruments=lambda ex: rows, clock=h.clock)
     h.om = OrderManager(h.db, {BrokerName.KITE: h.paper}, ltp_cache={}, clock=h.clock)
     return h
 
@@ -90,7 +92,7 @@ def h(tmp_path) -> Harness:
 class TestEndToEnd:
     def test_paper_refuses_off_tick_like_kite(self, h):
         h.tick(100.0)
-        with pytest.raises(ValueError, match="not a multiple of tick"):
+        with pytest.raises(kiteconnect.exceptions.InputException, match="Tick size"):
             h.paper.place_order(_req(OrderSide.BUY, OrderType.LIMIT, price=99.95))
 
     def test_order_manager_rounds_before_sending(self, h):

@@ -94,8 +94,7 @@ class GttType(StrEnum):
 
 class BrokerName(StrEnum):
     KITE = "kite"
-    MOCK = "mock"
-    PAPER = "paper"
+    PAPER = "paper"  # KiteBroker on KiteSim (#86); "mock" was removed with its broker
 
 
 class ReconciliationAlertType(StrEnum):

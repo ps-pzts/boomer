@@ -1,6 +1,6 @@
 """SessionController end to end on the paper broker (#63, designs/state-machines.md §4).
 
-Real OrderManager / PositionManager / TradeSupervisor / PaperBroker / ManualFeed
+Real OrderManager / PositionManager / TradeSupervisor / the paper broker / ManualFeed
 (the Trade machine harness), with the clock moved through one trading day.
 """
 

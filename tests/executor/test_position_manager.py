@@ -7,12 +7,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from executor.brokers.mock_broker import MockBroker
 from executor.gtt_manager import GttManager
 from executor.models import (
     BrokerName,
 )
 from executor.position_manager import PositionManager
+from tests.kitesim_kit import make_sim, paper_broker
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -79,7 +79,7 @@ def _seed_position(db: sqlite3.Connection, **overrides) -> str:
 class TestPositionManagerOpen:
     def test_open_position_creates_row(self):
         db = _make_db()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: MockBroker()})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: paper_broker(make_sim())})
         pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
 
         pos_id = pm.open_position(
@@ -102,7 +102,7 @@ class TestPositionManagerOpen:
 
     def test_close_position_marks_closed(self):
         db = _make_db()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: MockBroker()})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: paper_broker(make_sim())})
         pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
         _seed_position(db)
 
@@ -115,7 +115,7 @@ class TestPositionManagerOpen:
 class TestPositionManagerLTP:
     def test_update_ltp_updates_unrealised_pnl(self):
         db = _make_db()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: MockBroker()})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: paper_broker(make_sim())})
         pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
         _seed_position(db, quantity=10, average_entry_price=2500.0)
 
@@ -130,7 +130,7 @@ class TestPositionManagerLTP:
 class TestPositionManagerUnprotected:
     def test_mark_and_clear_unprotected(self):
         db = _make_db()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: MockBroker()})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: paper_broker(make_sim())})
         pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
         _seed_position(db, unprotected_flag=0)
 
@@ -150,7 +150,7 @@ class TestPositionManagerUnprotected:
 class TestPositionManagerLoadOpen:
     def test_load_open_filters_by_track(self):
         db = _make_db()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: MockBroker()})
+        gm = GttManager(db=db, brokers={BrokerName.KITE: paper_broker(make_sim())})
         pm = PositionManager(db=db, gtt_manager=gm, order_manager=MagicMock())
         _seed_position(db, position_id="pos-1", track="unmanaged_legacy")
         _seed_position(db, position_id="pos-2", track="intraday")

@@ -11,7 +11,7 @@ import pytest
 
 from executor.brokers.feeds.base import FeedHealth
 from executor.preflight import CheckReport, CheckResult, run_preflight
-from tests.executor.kite_fake import FakeKite
+from tests.kitesim_kit import SimKite
 
 IST = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 11, 19, 8, 55, tzinfo=IST)
@@ -27,8 +27,8 @@ class _Feed:
         return FeedHealth(connected=self.connected, last_tick_at=None, subscribed=1)
 
 
-def _run(fk: FakeKite, feed=None) -> CheckReport:
-    return run_preflight(fk.broker(), feed, clock=lambda: NOW, sleep=lambda s: None)
+def _run(fk: SimKite, feed=None, checked: bool = True) -> CheckReport:
+    return run_preflight(fk.broker(checked), feed, clock=lambda: NOW, sleep=lambda s: None)
 
 
 def _by_name(report: CheckReport) -> dict[str, CheckResult]:
@@ -36,7 +36,7 @@ def _by_name(report: CheckReport) -> dict[str, CheckResult]:
 
 
 def test_happy_path_every_check_passes():
-    report = _run(FakeKite(), _Feed(True))
+    report = _run(SimKite(), _Feed(True))
     assert report.ok, report.failures()
     assert report.kind == "preflight"
     assert list(_by_name(report)) == [
@@ -52,7 +52,7 @@ def test_happy_path_every_check_passes():
 
 
 def test_report_is_frozen_and_serialisable():
-    report = _run(FakeKite(), _Feed(True))
+    report = _run(SimKite(), _Feed(True))
     with pytest.raises(FrozenInstanceError):
         report.kind = "x"  # type: ignore[misc]
     d = report.as_dict()
@@ -60,50 +60,52 @@ def test_report_is_frozen_and_serialisable():
 
 
 def test_invalid_token_fails_and_skips_the_rest():
-    fk = FakeKite()
-    fk.sdk.profile.side_effect = kiteconnect.exceptions.TokenException("Incorrect api_key")
+    fk = SimKite()
+    fk.script.raises["profile"] = kiteconnect.exceptions.TokenException("Incorrect api_key")
     report = _run(fk, _Feed(True))
     r = _by_name(report)
     assert not report.ok
     assert not r["token"].ok and "TokenException" in r["token"].detail
     assert all(not r[n].ok and "token invalid" in r[n].detail for n in ("funds", "orders"))
-    fk.sdk.orders.assert_not_called()  # nothing else hits Kite with a dead token
+    assert fk.sdk.called("orders") == []  # nothing else hits Kite with a dead token
 
 
 def test_shape_mismatch_fails_the_check_with_the_problem():
-    fk = FakeKite()
-    fk.sdk.margins.side_effect = lambda segment=None: {
+    fk = SimKite()
+    fk.script.transform["margins"] = lambda _: {
         "available": {"live_balance": 1.0},  # Kite renamed 'cash'
         "utilised": {"debits": 0.0},
     }
-    r = _by_name(_run(fk, _Feed(True)))
+    r = _by_name(_run(fk, _Feed(True), checked=False))  # an off-contract shape on purpose
     assert not r["funds"].ok and "available.cash" in r["funds"].detail
     assert r["token"].ok and r["orders"].ok
 
 
 def test_order_shape_checked_for_every_order():
-    fk = FakeKite()
-    oid = fk._place("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1.0)
-    del fk.book[oid]["filled_quantity"]
-    r = _by_name(_run(fk, _Feed(True)))
+    fk = SimKite()
+    fk.sim.place_order("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1400.0)
+    fk.script.transform["orders"] = lambda orders: [
+        {k: v for k, v in o.items() if k != "filled_quantity"} for o in orders
+    ]
+    r = _by_name(_run(fk, _Feed(True), checked=False))  # an off-contract shape on purpose
     assert not r["orders"].ok and "filled_quantity" in r["orders"].detail
 
 
 def test_unknown_probe_instrument_fails():
-    fk = FakeKite()
-    fk.sdk.instruments.side_effect = lambda exchange=None: []
+    fk = SimKite()
+    fk.script.transform["instruments"] = lambda rows: []
     r = _by_name(_run(fk, _Feed(True)))
     assert not r["instruments"].ok and "NSE:INFY" in r["instruments"].detail
 
 
 def test_feed_not_connected_fails_after_waiting():
     feed = _Feed(False)
-    r = _by_name(_run(FakeKite(), feed))
+    r = _by_name(_run(SimKite(), feed))
     assert not r["feed"].ok and feed.calls > 1
 
 
 def test_no_feed_in_this_process_is_skipped_not_failed():
-    r = _by_name(_run(FakeKite(), None))
+    r = _by_name(_run(SimKite(), None))
     assert r["feed"].ok and r["feed"].detail.startswith("skipped")
 
 

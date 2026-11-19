@@ -10,8 +10,8 @@ import kiteconnect
 import pytest
 
 from executor import kite_checks as kc
-from tests.executor.kite_fake import FakeKite
 from tests.executor.test_kite_checks import _MIGRATIONS
+from tests.kitesim_kit import SimKite
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -45,7 +45,7 @@ def _gate(db_path: str, day: date) -> str | None:
 
 def test_market_hours_runs_both_and_clears_the_gate(db_path, tmp_path):
     at = datetime(2026, 11, 19, 10, 0, tzinfo=IST)
-    reports = _rerun(db_path, FakeKite().broker(), at, tmp_path)
+    reports = _rerun(db_path, SimKite().broker(), at, tmp_path)
     assert [(r.kind, r.ok) for r in reports] == [("preflight", True), ("canary", True)]
     assert _gate(db_path, at.date()) is None
 
@@ -59,25 +59,25 @@ def test_market_hours_runs_both_and_clears_the_gate(db_path, tmp_path):
     ],
 )
 def test_outside_market_hours_only_preflight_runs(db_path, tmp_path, at):
-    fk = FakeKite()
+    fk = SimKite()
     reports = _rerun(db_path, fk.broker(), at, tmp_path)
     assert [r.kind for r in reports] == ["preflight"]
-    fk.sdk.place_order.assert_not_called()
+    assert fk.sdk.called("place_order") == []
 
 
 def test_failed_preflight_skips_the_canary(db_path, tmp_path):
-    fk = FakeKite()
-    fk.sdk.profile.side_effect = kiteconnect.exceptions.TokenException("expired")
+    fk = SimKite()
+    fk.script.raises["profile"] = kiteconnect.exceptions.TokenException("expired")
     at = datetime(2026, 11, 19, 10, 0, tzinfo=IST)
     reports = _rerun(db_path, fk.broker(), at, tmp_path)
     assert [(r.kind, r.ok) for r in reports] == [("preflight", False)]
-    fk.sdk.place_order.assert_not_called()
+    assert fk.sdk.called("place_order") == []
     assert _gate(db_path, at.date()) == "preflight_failed"
 
 
 def test_rerun_rows_are_marked_operator(db_path, tmp_path):
     at = datetime(2026, 11, 19, 10, 0, tzinfo=IST)
-    _rerun(db_path, FakeKite().broker(), at, tmp_path)
+    _rerun(db_path, SimKite().broker(), at, tmp_path)
     c = sqlite3.connect(db_path)
     assert {r[0] for r in c.execute("SELECT source FROM kite_daily_checks")} == {"operator"}
 
