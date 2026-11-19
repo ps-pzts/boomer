@@ -9,6 +9,9 @@ Invariants (checked after every step of a scenario):
   I1  an OPEN trade has a resting stop at the broker
   I2  trades' net quantity per symbol == the broker's net position
   I3  no resting order at the broker that no trade tracks
+  I5  a resting stop's trigger never moves down (CLAUDE.md §10)
+  I6  every long position is covered by resting stops of at least its size,
+      unless its trade is protecting or exiting (the Q5 'never without a stop' rule)
   I4  at end of day: broker flat, nothing resting, every trade terminal
 """
 
@@ -34,6 +37,7 @@ class Hostile(Harness):
         super().__init__(tmp_path)
         self.plan = FaultPlan(self.paper._kite, seed=seed)
         self.sim = self.paper._kite
+        self._stop_high: dict[str, float] = {}
 
     def wire_postbacks(self) -> None:
         """Order updates reach OrderManager the way the live WebSocket's do."""
@@ -65,6 +69,30 @@ class Hostile(Harness):
         for o in self.paper.list_open_orders():
             if o["broker_order_id"] not in known:
                 out.append(f"I3 untracked resting order {o}")
+        for o in self.sim.orders():
+            if o["order_type"] in ("SL", "SL-M") and o["status"] in ("TRIGGER PENDING", "OPEN"):
+                trig = float(o["trigger_price"])
+                seen = self._stop_high.get(o["tradingsymbol"], trig)
+                if trig < seen:
+                    out.append(f"I5 stop for {o['tradingsymbol']} lowered {seen} -> {trig}")
+                self._stop_high[o["tradingsymbol"]] = max(seen, trig)
+        transitional = {
+            r[0]
+            for r in self.db.execute(
+                "SELECT symbol FROM intraday_brackets WHERE state IN ('protecting','exiting')"
+            )
+        }
+        for symbol, qty in broker_net.items():
+            cover = sum(
+                o["pending_quantity"]
+                for o in self.sim.orders()
+                if o["tradingsymbol"] == symbol
+                and o["order_type"] in ("SL", "SL-M")
+                and o["transaction_type"] == "SELL"
+                and o["status"] in ("TRIGGER PENDING", "OPEN", "MODIFY PENDING")
+            )
+            if qty > 0 and cover < qty and symbol not in transitional:
+                out.append(f"I6 {symbol}: long {qty} but resting stops cover {cover}")
         if end_of_day:
             if broker_net:
                 out.append(f"I4 broker not flat: {broker_net}")
