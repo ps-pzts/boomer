@@ -109,6 +109,10 @@ _KITE_VALIDITY_MAP: dict[OrderValidity, str] = {
 }
 
 
+# Kite statuses after which an order can no longer fill (#65).
+_KITE_DONE = frozenset({"COMPLETE", "CANCELLED", "CANCELLED AMO", "REJECTED"})
+
+
 class KiteBroker(Broker):
     """
     Zerodha KiteBroker implementation using kiteconnect SDK.
@@ -401,6 +405,26 @@ class KiteBroker(Broker):
     def _load_instruments(self, exchange: str) -> list[dict]:
         self._ensure_authenticated()
         return self._kite.instruments(exchange=exchange)
+
+    def list_open_orders(self) -> list[dict]:
+        """Kite orders not yet COMPLETE / CANCELLED / REJECTED (#65). In-flight
+        statuses (MODIFY PENDING, ...) count as working."""
+        self._ensure_authenticated()
+        out = []
+        for o in self._kite.orders():
+            if o.get("status") in _KITE_DONE:
+                continue
+            out.append(
+                {
+                    "broker_order_id": str(o["order_id"]),
+                    "symbol": o.get("tradingsymbol", ""),
+                    "exchange": o.get("exchange", ""),
+                    "side": str(o.get("transaction_type", "")).lower(),
+                    "order_type": o.get("order_type", ""),
+                    "status": o.get("status", ""),
+                }
+            )
+        return out
 
     def tick_size(self, symbol: str, exchange: str) -> float:
         """From Kite's instrument dump; 0.05 only if the instrument isn't listed (#75)."""

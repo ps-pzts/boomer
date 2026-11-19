@@ -216,10 +216,32 @@ class SessionController:
         if self._sup is not None:
             self._sup.square_off_all()  # type: ignore[attr-defined]  # idempotent
         if emergency:
+            self._cancel_untracked_orders(day)
             self._flatten_untracked(day)
         ctx["active_trades"] = self._active_trades()
         ctx["broker_open_symbols"] = sorted(self._broker_net())
         self._fire(day, "all_flat", rule="flat_at_broker", ctx=ctx)
+
+    def _cancel_untracked_orders(self, day: date) -> None:
+        """Emergency (#67/#65): cancel every working order the bot doesn't track.
+        Our own orders were already cancelled by square_off_all."""
+        stray = self.untracked_orders() or []
+        for o in stray:
+            try:
+                self._broker.cancel_order(o["broker_order_id"])  # type: ignore[union-attr]
+            except Exception as exc:
+                logger.error("emergency_cancel_failed order=%s error=%s", o, exc)
+        if stray:
+            from observability.emit import emit
+
+            emit(
+                "decision",
+                "emergency_cancel_untracked",
+                severity="critical",
+                entity_type="session",
+                entity_id=day.isoformat(),
+                orders=stray,
+            )
 
     def _flatten_untracked(self, day: date) -> None:
         if self._om is None or self._broker is None:
@@ -310,7 +332,24 @@ class SessionController:
             open_legs=legs,
             feed_fresh=ctx["feed_fresh"],
             watchlist_size=ctx["watchlist_size"],
+            untracked_orders=self.untracked_orders(),
         )
+
+    def untracked_orders(self) -> list[dict] | None:
+        """Orders working at the broker that we don't consider live (#65); None if
+        the broker can't be asked."""
+        if self._broker is None or self._om is None:
+            return []
+        try:
+            ours = self._om.live_broker_order_ids()  # type: ignore[attr-defined]
+            return [
+                o
+                for o in self._broker.list_open_orders()  # type: ignore[attr-defined]
+                if o["broker_order_id"] not in ours
+            ]
+        except Exception:
+            logger.exception("broker_open_orders_unavailable")
+            return None
 
     # ── Context (SM2: built once per tick, guards stay pure) ─────────────────
 

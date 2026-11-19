@@ -87,6 +87,21 @@ class PaperBroker(Broker):
         with self._lock:
             self._mock.set_price_bar(bar)
 
+    def list_open_orders(self) -> list[dict]:
+        with self._lock:
+            return [
+                {
+                    "broker_order_id": oid,
+                    "symbol": o["symbol"],
+                    "exchange": o["exchange"],
+                    "side": str(o["side"]),
+                    "order_type": str(o["order_type"]),
+                    "status": str(o["status"]),
+                }
+                for oid, o in self._mock._orders.items()
+                if str(o["status"]) in ("pending", "triggered", "partial")
+            ]
+
     def tick_size(self, symbol: str, exchange: str) -> float:
         return self._tick_size(symbol, exchange) if self._tick_size else 0.05
 

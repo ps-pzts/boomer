@@ -158,7 +158,7 @@ The **cycle asks the Session machine** "is the state TRADING?" before scoring an
 |---|---|---|
 | Every open trade's net filled quantity equals the broker's net MIS position for that symbol | broker `list_positions()` | a stop filled during the outage; a manual exit in the Kite app |
 | No broker MIS position without an open trade | broker `list_positions()` | a manual trade, or a fill we never recorded |
-| Every resting leg we track is resting at the broker, and vice versa | broker order status | a stop cancelled outside the bot; an orphan order |
+| Every resting leg we track is resting at the broker, and vice versa | broker order status; `Broker.list_open_orders()` vs our live orders (#65) | a stop cancelled outside the bot; an orphan order |
 | Every `OPEN` trade's stop is resting (Trade machine invariant §5.3) | broker order status | stop expired or rejected while we were down |
 | Feed fresh (tick ≤ 60 s) | feed health | still reconnecting |
 | Today's watchlist present and subscribed | `intraday_watchlist` + feed | crash before 09:10 |

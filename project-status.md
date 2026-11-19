@@ -84,6 +84,16 @@ Live-only bugs that paper could never show (MockBroker uses our own statuses):
 - **Order tags** are now alphanumeric only.
 - **`cancel()`** waits up to ~1 s for Kite's final answer, so a fill racing a `CANCEL PENDING` is recorded.
 
+### 2026-11-19 — Feat: orders at the broker that no trade tracks (#65)
+
+- **Before:** the reconcile-before-resume check couldn't see an order working at the broker that nothing tracks (an order placed by hand, or one left by a crash), so it could fire later and open a position nobody manages. An emergency stop couldn't cancel such orders either.
+- **Now:**
+  - `Broker.list_open_orders()` (Kite: anything not COMPLETE, CANCELLED or REJECTED; paper: resting orders).
+  - `OrderManager.live_broker_order_ids()`.
+  - A `no_untracked_resting_order` reconcile check, which fails closed if the broker can't be asked.
+  - The emergency stop now also cancels every untracked working order.
+- 960 tests pass.
+
 ### 2026-11-19 — Bug: order prices on a fixed ₹0.05 grid (#75)
 
 - **Symptom (audit):** every price was rounded to ₹0.05. Kite rejects a price or trigger that isn't a multiple of the instrument's own `tick_size`, so entries, targets and stop moves could fail live for some stocks. Paper didn't check, so it could never show this.

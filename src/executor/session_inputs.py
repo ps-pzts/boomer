@@ -142,6 +142,7 @@ def reconcile_report(
     open_legs: Iterable[LegStatus],
     feed_fresh: bool,
     watchlist_size: int,
+    untracked_orders: list[dict] | None = (),  # type: ignore[assignment]
 ) -> ReconcileReport:
     """Pure: compare our trades against the broker. A clean report is the only way
     back to TRADING; any failure halts with `reconcile_mismatch` and the operator
@@ -169,6 +170,14 @@ def reconcile_report(
         "not_resting": not_resting,
     }
     r.checks["open_trades_have_stop"] = {"ok": not stops_missing, "missing": stops_missing}
+    # #65: an order working at the broker that we don't track (manual, or left by
+    # a crash) could fire later and open a position nobody manages. None = the
+    # broker couldn't be asked: fail closed.
+    r.checks["no_untracked_resting_order"] = (
+        {"ok": False, "error": "broker open orders unavailable"}
+        if untracked_orders is None
+        else {"ok": not untracked_orders, "orders": list(untracked_orders)}
+    )
     r.checks["feed_fresh"] = {"ok": feed_fresh}
     r.checks["watchlist_present"] = {"ok": watchlist_size > 0, "size": watchlist_size}
     return r
