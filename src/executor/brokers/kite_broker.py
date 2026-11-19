@@ -55,6 +55,12 @@ _KITE_PRODUCT_MAP: dict[ProductType, str] = {
     ProductType.CNC: "CNC",
 }
 
+# Order types whose `price` field Kite reads: LIMIT, and SL (stop-limit) once triggered.
+_PRICED_ORDER_TYPES = frozenset({OrderType.LIMIT, OrderType.SL_LIMIT})
+# Order types Kite requires `market_protection` on for API orders (#43).
+_MARKET_PROTECTED_ORDER_TYPES = frozenset({OrderType.MARKET, OrderType.SL})
+_AUTO_MARKET_PROTECTION = -1
+
 _KITE_VALIDITY_MAP: dict[OrderValidity, str] = {
     OrderValidity.DAY: "DAY",
     OrderValidity.IOC: "IOC",
@@ -109,11 +115,15 @@ class KiteBroker(Broker):
             "order_type": _KITE_ORDER_TYPE_MAP[request.order_type],
             "quantity": request.quantity,
             "product": _KITE_PRODUCT_MAP[request.product],
-            "price": request.price if request.order_type == OrderType.LIMIT else 0,
+            "price": request.price if request.order_type in _PRICED_ORDER_TYPES else 0,
             "trigger_price": request.trigger_price,
             "validity": _KITE_VALIDITY_MAP[request.validity],
             "tag": request.idempotency_key[:20] if request.idempotency_key else request.tag[:20],
         }
+        if request.order_type in _MARKET_PROTECTED_ORDER_TYPES:
+            # Kite rejects API MARKET / SL-M orders without market protection (#43);
+            # -1 lets Kite apply its automatic protection band.
+            params["market_protection"] = _AUTO_MARKET_PROTECTION
         resp = self._kite.place_order(variety=self._kite.VARIETY_REGULAR, **params)
         return str(resp["order_id"])
 

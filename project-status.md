@@ -26,6 +26,7 @@
 | Bug | Overnight news window wrong (#35) | Symptom: `overnight_news_sentiment` ignored pre-market news and counted the previous session's. Root cause: IST `observed_at` strings (misleading `Z`) compared against UTC bounds (5.5 h shift), calendar-day lower bound (lost weekend/holiday news), wall-clock upper bound (lookahead). Fix: window = [prev trading day 15:30, as_of 09:15) IST in the collector's string format. |
 | Bug | Paper stops never filled (#40) | Symptom: in paper mode a stop-loss never triggered, so losing paper trades rode to the 15:14 square-off. Root cause: `MockBroker` only simulated MARKET/LIMIT fills; it also never tracked positions and sent updates without Kite's `order_id` key. Fix: SL/SL-M/SL_LIMIT trigger + fill simulation, Kite-style wrong-side stop rejection, MIS positions, `order_id` in payloads. |
 | Bug | OrderManager KeyError in paper mode (#41) | Symptom: syncing or cancelling any paper order raised `KeyError: paper`. Root cause: orders go through the `KITE` registry slot (holding `PaperBroker`) but rows record the broker's own id `paper`, which was then looked up as a key. Fix: resolve by key, then by each broker's own id. |
+| Bug | Live MARKET/SL-M orders would be rejected (#43) | Symptom (latent; live mode only): Kite rejects API MARKET and SL-M orders without `market_protection`, which would have blocked every stop-loss, market exit and square-off on the first live day. SL (stop-limit) orders were also sent with price 0. Fix: `KiteBroker.place_order` sends `market_protection=-1` for MARKET/SL-M and `price` for LIMIT/SL; `kiteconnect>=5.2.2`. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 | Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
@@ -68,6 +69,12 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Bug: send market_protection on live Kite MARKET/SL-M orders (#43)
+
+- **Why:** Kite rejects API MARKET and SL-M orders without `market_protection` (in force for algo orders from April 1 per the Kite Connect forum). In live mode every stop-loss leg, market exit and 15:14 square-off would have been rejected. Paper mode never calls Kite for orders, so this would only have surfaced on the first live day.
+- `KiteBroker.place_order`: `market_protection=-1` (automatic) for MARKET and SL-M; `price` now sent for SL (stop-limit) orders too, not only LIMIT. `pyproject.toml`: `kiteconnect>=5.2.2` (verified the installed 5.2.2 `place_order` accepts the parameter).
+- Tests: `TestPlaceOrderParams` in `tests/executor/brokers/test_kite_broker.py`. 694 tests pass.
 
 ### 2026-11-19 — Bug: B7 PR 4a — paper stop-loss fills + OrderManager paper broker lookup (#40, #41)
 

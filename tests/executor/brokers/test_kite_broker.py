@@ -233,3 +233,61 @@ class TestResolveInstrumentToken:
         broker._resolve_instrument_token("KPEL", "NSE")
 
         assert broker._kite.instruments.call_count == 1
+
+
+# ── place_order parameters (#43) ──────────────────────────────────────────────
+
+
+def _order(order_type, price=0.0, trigger=0.0):
+    from executor.models import OrderRequest, OrderSide, ProductType
+
+    return OrderRequest(
+        symbol="KPEL",
+        exchange="NSE",
+        side=OrderSide.SELL,
+        order_type=order_type,
+        quantity=10,
+        product=ProductType.MIS,
+        price=price,
+        trigger_price=trigger,
+    )
+
+
+class TestPlaceOrderParams:
+    """Regression #43: Kite rejects API MARKET/SL-M orders without market_protection,
+    and SL (stop-limit) orders were sent with price 0."""
+
+    def _sent(self, broker: KiteBroker, request) -> dict:
+        broker._kite.place_order.return_value = {"order_id": "1"}
+        broker.place_order(request)
+        return broker._kite.place_order.call_args.kwargs
+
+    def test_market_order_sends_auto_market_protection(self, broker: KiteBroker) -> None:
+        from executor.models import OrderType
+
+        sent = self._sent(broker, _order(OrderType.MARKET))
+        assert sent["order_type"] == "MARKET"
+        assert sent["market_protection"] == -1
+
+    def test_stop_market_sends_auto_market_protection(self, broker: KiteBroker) -> None:
+        from executor.models import OrderType
+
+        sent = self._sent(broker, _order(OrderType.SL, trigger=98.0))
+        assert sent["order_type"] == "SL-M"
+        assert sent["trigger_price"] == 98.0
+        assert sent["market_protection"] == -1
+
+    def test_limit_order_has_price_and_no_market_protection(self, broker: KiteBroker) -> None:
+        from executor.models import OrderType
+
+        sent = self._sent(broker, _order(OrderType.LIMIT, price=101.5))
+        assert sent["price"] == 101.5
+        assert "market_protection" not in sent
+
+    def test_stop_limit_sends_its_limit_price(self, broker: KiteBroker) -> None:
+        from executor.models import OrderType
+
+        sent = self._sent(broker, _order(OrderType.SL_LIMIT, price=97.5, trigger=98.0))
+        assert sent["order_type"] == "SL"
+        assert (sent["price"], sent["trigger_price"]) == (97.5, 98.0)
+        assert "market_protection" not in sent
