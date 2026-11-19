@@ -75,7 +75,7 @@ export function live(d, ui) {
     : d.bot_mode !== "auto" ? `Bot mode: ${d.bot_mode.replaceAll("_", " ")}` : "";
   const failed = (s && s.halt_detail && s.halt_detail.failed_checks) || [];
 
-  const view = [
+  const left = [
     h("section", { class: "card hero " + stTone },
       h("div", { class: "hero-state" }, h("span", { class: "glyph", "aria-hidden": "true" }, glyph), stLabel),
       why && h("p", { class: "why" }, why),
@@ -83,29 +83,30 @@ export function live(d, ui) {
       s && s.halt_reason === "reconcile_mismatch" && h("p", { class: "why" }, s.halt_acked ? "Acknowledged. Waiting for a clean reconcile." : "Fix it at the broker, then send /ack in Telegram.")),
   ];
   if (d.attention.length) {
-    view.push(h("section", { class: "attention", "aria-label": "Needs attention" }, d.attention.map((a) => {
+    left.push(h("section", { class: "attention", "aria-label": "Needs attention" }, d.attention.map((a) => {
       const href = a.kind === "trade" || (a.kind === "event" && a.ref) ? "#trade-" + a.ref : null;
       const body = [h("span", { class: "glyph", "aria-hidden": "true" }, a.severity === "critical" ? "!" : "▲"), h("span", {}, a.text)];
       return href ? h("a", { class: "alert " + a.severity, href }, body) : h("div", { class: "alert " + a.severity }, body);
     })));
   }
-  view.push(h("section", { class: "kpis" },
+  left.push(h("section", { class: "kpis" },
     kpi("Realised today", `${arrow(k.realised)} ${money(k.realised)}`, `${k.closed} closed: ${k.wins} won, ${k.losses} lost`, tone(k.realised), true),
     kpi("Unrealised", money(k.unrealised), `${k.active} active`, tone(k.unrealised)),
     kpi("Open slots", `${k.active} / ${MAX_OPEN}`, k.active >= MAX_OPEN ? "Full: no new entries" : "Room for entries"),
   ));
   const active = d.trades.filter((t) => ["entry_pending", "protecting", "open", "exiting"].includes(t.state));
-  view.push(h("h2", { class: "section-title" }, "Active trades"));
-  view.push(active.length ? h("div", { class: "list-gap" }, active.map(tradeCard)) : empty("No active trades."));
+  left.push(h("h2", { class: "section-title" }, "Active trades"));
+  left.push(active.length ? h("div", { class: "cards" }, active.map(tradeCard)) : empty("No active trades."));
+  const right = [];
 
   const closed = d.pnl;
   if (closed.length) {
     const chart = columns({ items: closed.map((p) => ({ label: p.symbol, value: p.pnl, sub: `Day total ${money(p.cum)}`, ref: p })) });
-    view.push(withTable({ title: "P&L per closed trade", chart, columnsHead: ["Time", "Symbol", "P&L", "Day"],
+    right.push(withTable({ title: "P&L per closed trade", chart, columnsHead: ["Time", "Symbol", "P&L", "Day"],
       rows: closed.map((p) => [clock(p.ts), p.symbol, money(p.pnl), money(p.cum)]) }));
   }
 
-  view.push(h("section", { class: "card" }, h("h2", {}, "Components"),
+  right.push(h("section", { class: "card" }, h("h2", {}, "Components"),
     d.components.length ? h("div", { class: "list" }, d.components.map((c) => {
       const tn = c.status === "silent" ? "critical" : "";
       const age = c.age_s + ui.skew;
@@ -119,8 +120,8 @@ export function live(d, ui) {
   const chips = ["all", "trade", "session", "alert"].map((g) =>
     h("button", { class: "chip", type: "button", "aria-pressed": String(ui.filter === g), onclick: () => { ui.filter = g; ui.render(); } },
       { all: "All", trade: "Trades", session: "Session", alert: "Alerts" }[g]));
-  view.push(h("section", { class: "card" }, h("h2", {}, "Events"), h("div", { class: "chips" }, chips), stream(d.stream, ui.filter)));
-  return view;
+  right.push(h("section", { class: "card events" }, h("h2", {}, "Events"), h("div", { class: "chips" }, chips), stream(d.stream, ui.filter)));
+  return [h("div", { class: "cols" }, h("div", { class: "col" }, left), h("div", { class: "col" }, right))];
 }
 
 // ── trades tab ────────────────────────────────────────────────────────────────
@@ -130,7 +131,7 @@ export function trades(d) {
   if (!d.trades.length) return [empty("No trades today.")];
   const order = { open: 0, protecting: 0, exiting: 0, entry_pending: 1, closed: 2, cancelled: 3 };
   return [h("h2", { class: "section-title" }, `Today: ${d.trades.length} trades`),
-    h("div", { class: "list-gap" }, [...d.trades].sort((a, b) => order[a.state] - order[b.state] || (b.created_at > a.created_at ? 1 : -1)).map(tradeCard))];
+    h("div", { class: "cards" }, [...d.trades].sort((a, b) => order[a.state] - order[b.state] || (b.created_at > a.created_at ? 1 : -1)).map(tradeCard))];
 }
 
 // ── days tab ──────────────────────────────────────────────────────────────────
@@ -140,15 +141,14 @@ export async function days() {
   if (!rows.length) return [empty("No trading days recorded yet.")];
   const asc = [...rows].reverse();
   const chart = columns({ items: asc.map((r) => ({ label: shortDate(r.day), value: r.realised, sub: `${r.closed} closed, ${r.wins}W/${r.losses}L`, ref: r })), onPick: (i) => (location.hash = "#day-" + i.ref.day) });
-  return [
+  return [h("div", { class: "cols even" }, h("div", { class: "col" }, [
     withTable({ title: "Realised P&L by day", chart, columnsHead: ["Day", "Mode", "Trades", "W/L", "P&L"],
-      rows: rows.map((r) => [shortDate(r.day), (r.mode || "").toUpperCase(), r.trades, `${r.wins}/${r.losses}`, money(r.realised)]) }),
-    h("section", { class: "card" }, h("h2", {}, "Sessions"), h("div", { class: "list" }, rows.map((r) =>
+      rows: rows.map((r) => [shortDate(r.day), (r.mode || "").toUpperCase(), r.trades, `${r.wins}/${r.losses}`, money(r.realised)]) })]),
+    h("div", { class: "col" }, h("section", { class: "card" }, h("h2", {}, "Sessions"), h("div", { class: "list" }, rows.map((r) =>
       h("a", { class: "item", href: "#day-" + r.day },
         h("span", { class: "item-main" }, h("span", {}, shortDate(r.day) + "  " + (r.mode || "").toUpperCase()),
           h("span", { class: "small muted" }, `${r.trades} trades, ${r.wins} won, ${r.losses} lost`)),
-        h("span", { class: "num " + tone(r.realised) }, `${arrow(r.realised)} ${money(r.realised)}`))))),
-  ];
+        h("span", { class: "num " + tone(r.realised) }, `${arrow(r.realised)} ${money(r.realised)}`)))))))];
 }
 
 // ── detail screens ────────────────────────────────────────────────────────────
@@ -176,7 +176,6 @@ export async function tradeDetail(id) {
     d.orders.length > 0 && h("section", { class: "card" }, h("h2", {}, "Orders"), h("div", { class: "scroll-x" },
       h("table", { class: "data" }, h("thead", {}, h("tr", {}, ["Side", "Type", "Status", "Qty", "Fill"].map((c) => h("th", {}, c)))),
         h("tbody", {}, d.orders.map((o) => h("tr", {}, [o.side, o.order_type, o.status, `${o.filled_quantity}/${o.quantity}`, price(o.average_fill_price)].map((c) => h("td", { class: "num" }, c)))))))),
-    h("section", { class: "card" }, h("h2", {}, `Timeline (${d.events.length})`), timeline(d.events)),
   ];
 }
 
@@ -187,7 +186,8 @@ export async function dayDetail(day) {
     h("a", { class: "back", href: "#days" }, "‹ Days"),
     h("section", { class: "card hero" }, h("div", { class: "hero-state" }, shortDate(day)),
       h("p", { class: "why" }, s ? `${(s.mode || "").toUpperCase()} session, ${s.state}${s.halt_reason ? ", halted: " + s.halt_reason : ""}` : "No session row")),
-    d.trades.length > 0 && h("div", { class: "list-gap" }, d.trades.map(tradeCard)),
-    h("section", { class: "card" }, h("h2", {}, `Timeline (${d.events.length})`), timeline(d.events)),
+    h("div", { class: "cols even" },
+      h("div", { class: "col" }, d.trades.length > 0 && h("div", { class: "cards" }, d.trades.map(tradeCard))),
+      h("div", { class: "col" }, h("section", { class: "card" }, h("h2", {}, `Timeline (${d.events.length})`), timeline(d.events)))),
   ];
 }

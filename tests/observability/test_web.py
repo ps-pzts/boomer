@@ -116,6 +116,15 @@ class TestRoutes:
         assert client.get("/static/js/main.js").status_code == 200
         assert client.get("/static/app.css").status_code == 200
 
+    def test_phone_tablet_and_desktop_layouts_exist(self, client):
+        css = client.get("/static/app.css").text
+        assert "@media (min-width: 600px)" in css and "@media (min-width: 960px)" in css
+        page = client.get("/", headers=auth()).text
+        assert page.index('<nav class="tabs"') < page.index(
+            "</header>"
+        )  # tabs move into the top bar on desktop
+        assert client.get("/static/app.css").headers["cache-control"] == "no-cache"
+
     def test_security_headers(self, client):
         r = client.get("/", headers=auth())
         assert "default-src 'self'" in r.headers["content-security-policy"]

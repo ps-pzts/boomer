@@ -13,10 +13,27 @@ function niceMax(v) {
 }
 
 export function columns({ items, onPick, height = 150 }) {
-  // items: [{label, value, sub, ref}]
+  // items: [{label, value, sub, ref}]. Drawn 1:1 at the container's width and redrawn when it
+  // changes, so a desktop card does not blow the type and bars up.
   const wrap = h("div", { class: "chart" });
   if (!items.length) return wrap;
-  const width = Math.max(300, 24 + items.length * (BAR + GAP));
+  let width = 0;
+  const draw = (w) => {
+    if (Math.abs(w - width) < 2) return;
+    width = w;
+    wrap.replaceChildren(...build(items, onPick, height, w, wrap));
+  };
+  draw(wrap.clientWidth || 328);
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver((entries) => {
+      const w = Math.floor(entries[0].contentRect.width);
+      if (w > 0) draw(w);
+    }).observe(wrap);
+  }
+  return wrap;
+}
+
+function build(items, onPick, height, width, wrap) {
   const top = Math.max(0, ...items.map((i) => i.value));
   const bot = Math.min(0, ...items.map((i) => i.value));
   const span = niceMax(Math.max(top, -bot, 1));
@@ -24,18 +41,18 @@ export function columns({ items, onPick, height = 150 }) {
   const hasNeg = bot < 0;
   const zeroY = PAD.t + (hasNeg ? innerH / 2 : innerH);
   const scale = (hasNeg ? innerH / 2 : innerH) / span;
-  const root = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Column chart" });
+  const root = svg("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img", "aria-label": "Column chart" });
   for (const frac of hasNeg ? [-1, 0, 1] : [0, 1]) {
     const y = zeroY - frac * span * scale;
     root.append(svg("line", { x1: PAD.l, x2: width - PAD.r, y1: y, y2: y, class: frac === 0 ? "base" : "grid" }));
   }
   const slot = (width - PAD.l - PAD.r) / items.length;
+  const bw = Math.max(6, Math.min(BAR, slot - 4));
   const tip = h("div", { class: "tip", hidden: true });
   const show = (i, x) => {
     tip.replaceChildren(h("strong", { class: tone(i.value) }, money(i.value)), h("span", {}, i.label), i.sub && h("div", { class: "muted" }, i.sub));
     tip.hidden = false;
-    const w = wrap.clientWidth || width;
-    tip.style.left = Math.min(Math.max(4, (x / width) * w - 60), w - 190) + "px";
+    tip.style.left = Math.min(Math.max(4, x - 60), Math.max(4, width - 190)) + "px";
     tip.style.top = "0px";
   };
   items.forEach((i, n) => {
@@ -44,23 +61,21 @@ export function columns({ items, onPick, height = 150 }) {
     const up = i.value >= 0;
     const y = up ? zeroY - len : zeroY;
     const bar = svg("rect", {
-      x: cx - Math.min(BAR, slot - 4) / 2, y, width: Math.min(BAR, slot - 4), height: len, rx: 4,
+      x: cx - bw / 2, y, width: bw, height: len, rx: 4,
       fill: up ? "var(--gain)" : "var(--loss)", class: "bar", tabindex: 0, role: "button",
       "aria-label": `${i.label}: ${money(i.value)}`,
     });
-    const pick = () => (onPick ? onPick(i) : null);
     bar.addEventListener("pointerenter", () => show(i, cx));
     bar.addEventListener("focus", () => show(i, cx));
     bar.addEventListener("pointerleave", () => (tip.hidden = true));
     bar.addEventListener("blur", () => (tip.hidden = true));
-    bar.addEventListener("click", () => { show(i, cx); pick(); });
+    bar.addEventListener("click", () => { show(i, cx); if (onPick) onPick(i); });
     root.append(bar);
-    // value at the tip (outside the bar), label under the baseline
+    // value at the tip (outside the bar), label under the baseline; thin out labels when crowded
     root.append(svg("text", { x: cx, y: up ? y - 5 : y + len + 12, "text-anchor": "middle", class: "val", text: money(i.value) }));
-    root.append(svg("text", { x: cx, y: height - 8, "text-anchor": "middle", text: i.label }));
+    if (slot >= 34 || n % Math.ceil(34 / slot) === 0) root.append(svg("text", { x: cx, y: height - 8, "text-anchor": "middle", text: i.label }));
   });
-  wrap.append(root, tip);
-  return wrap;
+  return [root, tip];
 }
 
 // A table behind a toggle: the same numbers without hover.

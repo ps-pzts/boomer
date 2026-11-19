@@ -254,10 +254,44 @@ table.data th { font-size: 11px; letter-spacing: 0.06em; text-transform: upperca
 .t-item pre { margin: 4px 0 0; padding: 10px; background: var(--raised); border-radius: 8px; font: 11px/1.45 var(--mono); overflow-x: auto; max-width: 100%; }
 .noscript { padding: 16px; }
 
-@media (min-width: 560px) {
-  body { max-width: 560px; margin-inline: auto; }
-  .tabs { max-width: 560px; margin-inline: auto; }
+/* two-column pages: stacked on a phone, side by side on a desktop */
+.cols { display: grid; gap: 14px; min-width: 0; }
+.col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.cards { display: grid; gap: 10px; }
+
+/* tablet: a centred column */
+@media (min-width: 600px) {
+  body { max-width: 680px; margin-inline: auto; }
+  .tabs { max-width: 680px; margin-inline: auto; }
 }
+
+/* desktop: wide page, tabs in the top bar, two columns, cards in a grid */
+@media (min-width: 960px) {
+  body { max-width: 1280px; padding-inline: 28px; }
+  .top { margin-inline: -28px; padding-inline: 28px; min-height: 60px; }
+  .brand { order: 1; }
+  .tabs { order: 2; margin: 0 auto 0 28px; max-width: none; position: static; display: flex; gap: 4px; background: none; border: 0; padding: 0; }
+  .top-right { order: 3; }
+  .tabs a { display: inline-flex; grid-auto-flow: column; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 10px; font-size: 14px; }
+  .tabs a:hover { background: var(--raised); }
+  .tabs a[aria-current="page"] { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+  .tab-ico { font-size: 15px; }
+  main { padding-block: 20px 32px; gap: 18px; }
+  .cols { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 18px; align-items: start; }
+  .col { gap: 18px; }
+  .cols.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cards { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .kpi.wide .kpi-value { font-size: 40px; }
+  .events .list { max-height: 560px; overflow-y: auto; padding-right: 6px; }
+  .trade:hover, .item:hover, .alert:hover { background: var(--raised); }
+  .item { padding-inline: 4px; border-radius: 8px; }
+  .chip:hover { background: var(--raised); }
+  .tip { max-width: 240px; }
+}
+@media (min-width: 1500px) {
+  body { max-width: 1480px; }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .pill, .kpi-value { transition: color 0.2s, background-color 0.2s; }
 }
