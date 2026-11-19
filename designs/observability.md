@@ -156,7 +156,7 @@ The only reader of `events`.
 2. **Surfaces:**
    - dashboard **`/live`**: the projection, pushed over the existing WebSocket manager
    - **`/live/trade/{id}`** and **`/live/session/{date}`**: timelines, i.e. every event with that correlation id, in order
-   - Telegram **`/status`**: a text rendering of the projection. It replaces the current one, which still reports the removed "queued GTTs"
+   - Telegram **`/status`**: **Done 2026-11-19 (#103)** as a rendering of the session, Trade and Kite-check tables (not yet of the projection). The live trade/session feed and end-of-day summary run as `observability/telegram_feed.py`, a read-only events tail
 3. **Derived alerts** via the existing alerter: SILENT component, `source_seq` gap, persistent DRIFT, PROTECTING too long, Session entering HALTED. These are *additional* to the critical alerts sent at source (§2.6).
 
 ## 11. Enforcement
