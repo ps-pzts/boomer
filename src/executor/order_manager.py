@@ -22,6 +22,7 @@ from executor.models import (
     StateMachineError,
 )
 from executor.order_machine import ORDER_SPEC
+from executor.ticks import on_tick, round_to_tick
 from statemachine import IllegalTransition, record_created, transition
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,8 @@ class OrderManager:
         Raises PreTradeCheckError if any check fails.
         """
         broker = self._broker_for()
+        # #75: every price on the instrument's own tick, rounded the safe way.
+        request = on_tick(request, broker.tick_size(request.symbol, request.exchange))
         ltp = self._ltp.get(request.symbol)
         self._pre_trade_checks(request, broker, ltp, track)
 
@@ -104,6 +107,9 @@ class OrderManager:
         if record.status not in (OrderStatus.PENDING, OrderStatus.TRIGGERED):
             raise PreTradeCheckError(f"order {order_id} is {record.status}, not resting")
         broker = self._broker_for_record(record)
+        trigger_price = round_to_tick(  # up: a SELL stop only ever gets tighter (#75)
+            trigger_price, broker.tick_size(record.symbol, record.exchange), up=True
+        )
         broker.modify_order(record.broker_order_id, {"trigger_price": trigger_price})
         self._db.execute(
             "UPDATE orders SET trigger_price=? WHERE order_id=?", (trigger_price, order_id)

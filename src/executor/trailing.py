@@ -100,7 +100,8 @@ class Trailer:
                 self._store.set(b["bracket_id"], high_water=high)  # type: ignore[attr-defined]
             return
         try:
-            self._om.modify_trigger(b["stop_order_id"], move.new_stop)  # type: ignore[attr-defined]
+            sent = self._om.modify_trigger(b["stop_order_id"], move.new_stop)  # type: ignore[attr-defined]
+            new_stop = float(sent.trigger_price)  # on the instrument's tick (#75)
         except Exception as exc:  # stop stays where it was; next tick retries
             logger.warning("trail_modify_failed bracket=%s error=%s", b["bracket_id"], exc)
             self._store.set(b["bracket_id"], high_water=high)  # type: ignore[attr-defined]
@@ -111,12 +112,12 @@ class Trailer:
             rule=move.rule,
             inputs={
                 "from": current,
-                "to": move.new_stop,
+                "to": new_stop,
                 "high": high,
                 "ltp": ltp,
                 "atr": b["atr"],
             },
-            trail_stop=move.new_stop,
+            trail_stop=new_stop,
             high_water=high,
             stop_moves=b["stop_moves"] + 1,
         )
@@ -125,5 +126,5 @@ class Trailer:
             b["bracket_id"],
             move.rule,
             current,
-            move.new_stop,
+            new_stop,
         )

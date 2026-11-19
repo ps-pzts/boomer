@@ -402,5 +402,14 @@ class KiteBroker(Broker):
         self._ensure_authenticated()
         return self._kite.instruments(exchange=exchange)
 
+    def tick_size(self, symbol: str, exchange: str) -> float:
+        """From Kite's instrument dump; 0.05 only if the instrument isn't listed (#75)."""
+        try:
+            tick = self.instruments.tick_size(symbol, exchange)
+        except Exception as exc:  # dump unavailable: log, fall back
+            logger.warning("tick_size_unavailable %s:%s error=%s", exchange, symbol, exc)
+            tick = None
+        return tick or 0.05
+
     def _resolve_instrument_token(self, symbol: str, exchange: str) -> int:
         return self.instruments.token(symbol, exchange)

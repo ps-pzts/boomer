@@ -107,6 +107,10 @@ class Broker(ABC):
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support historical data")
 
+    def tick_size(self, symbol: str, exchange: str) -> float:
+        """The instrument's price tick; every order price must be a multiple (#75)."""
+        return 0.05
+
     def get_ltp(self, symbol: str, exchange: str) -> float | None:
         """
         Get last traded price via REST (not tick feed).

@@ -14,6 +14,7 @@ from executor.models import (
     OrderRequest,
     PriceBar,
 )
+from executor.ticks import is_on_tick
 
 
 class PaperBroker(Broker):
@@ -37,12 +38,14 @@ class PaperBroker(Broker):
         price_source: MarketDataFeed,
         initial_cash: float = 100_000.0,
         book: object | None = None,
+        tick_size: Callable[[str, str], float] | None = None,
     ) -> None:
         self._price_source = price_source
         self._mock = MockBroker(initial_cash=initial_cash)
         self._ltp: dict[str, float] = {}
         self._lock = threading.RLock()
         self._book = book
+        self._tick_size = tick_size  # #75: same ticks as Kite when wired to its dump
         if book is not None:
             self._restore(book.load())  # type: ignore[attr-defined]
             self._mock.on_order_update(lambda _o: self._save())  # fills, triggers
@@ -84,13 +87,24 @@ class PaperBroker(Broker):
         with self._lock:
             self._mock.set_price_bar(bar)
 
+    def tick_size(self, symbol: str, exchange: str) -> float:
+        return self._tick_size(symbol, exchange) if self._tick_size else 0.05
+
     def place_order(self, request: OrderRequest) -> str:
+        tick = self.tick_size(request.symbol, request.exchange)
+        for name, value in (("price", request.price), ("trigger_price", request.trigger_price)):
+            if not is_on_tick(value, tick):  # Kite refuses these; so does paper (#75)
+                raise ValueError(f"{name} {value} is not a multiple of tick {tick}")
         with self._lock:
             oid = self._mock.place_order(request)
             self._save()
             return oid
 
     def modify_order(self, broker_order_id: str, changes: dict) -> str:
+        order = self._mock.get_order_status(broker_order_id) or {}
+        tick = self.tick_size(order.get("symbol", ""), order.get("exchange", "NSE"))
+        if not is_on_tick(changes.get("trigger_price", 0.0), tick):
+            raise ValueError(f"trigger {changes['trigger_price']} is not a multiple of tick {tick}")
         with self._lock:
             oid = self._mock.modify_order(broker_order_id, changes)
             self._save()

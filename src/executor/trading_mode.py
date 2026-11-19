@@ -99,11 +99,17 @@ def build_execution_broker(
     paper_initial_cash: float,
     paper_book: object | None = None,
 ) -> Broker:
-    """Paper: simulated fills on the live feed. Live: the real broker."""
+    """Paper: simulated fills on the live feed, Kite's tick sizes when a live broker
+    is configured (#75). Live: the real broker."""
     if mode == TradingMode.LIVE:
         if live_broker is None:
             raise RuntimeError("live mode requested but no live broker is configured")
         return live_broker
     if paper_initial_cash <= 0:
         raise ValueError("paper_initial_cash must be positive")
-    return PaperBroker(price_source=feed, initial_cash=paper_initial_cash, book=paper_book)
+    return PaperBroker(
+        price_source=feed,
+        initial_cash=paper_initial_cash,
+        book=paper_book,
+        tick_size=live_broker.tick_size if live_broker is not None else None,
+    )
