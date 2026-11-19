@@ -1,6 +1,6 @@
 # State Machines: Session, Trade, Order
 
-> **Status:** APPROVED 2026-11-19 (operator), issue #47. Not implemented yet. See §8 for delivery.
+> **Status:** APPROVED 2026-11-19 (operator), issue #47; amended 2026-11-19 with reconcile-before-resume (§4.5, #58). SM-1 implemented (#56, PR #57); see §8.
 > **Companion doc:** `designs/observability.md`: every transition here is emitted as an event there.
 > **Relationship to B7:** `designs/intraday-live-pipeline.md` §3.5 (trade lifecycle) and §4 (wiring) are
 > re-expressed here as explicit machines. Where the two disagree, this doc wins for state and
@@ -93,6 +93,7 @@ Properties:
 | `READY` | Watchlist chosen and subscribed (09:10) | no |
 | `TRADING` | Market open, fresh ticks, no breaker tripped | **yes** |
 | `HALTED` | A guard failed during the session (`halt_reason` column) | no; open trades stay managed |
+| `RECONCILING` | Recovering from an outage or a restart: checking our state against the source of truth before resuming (§4.5, #58) | no; open trades stay managed |
 | `NO_NEW_ENTRIES` | After 14:30 (design L-entry cutoff) | no; open trades stay managed |
 | `SQUARING_OFF` | 15:14: flattening every trade | no |
 | `CLOSED` | All trades flat, session over (terminal) | no |
@@ -109,10 +110,13 @@ Non-trading days get no row (holiday / weekend): the scheduler doesn't start a s
 | `CONNECTED` | `watchlist_ready` | `READY` | watchlist non-empty |
 | `READY` | `market_open` (09:15 +) | `TRADING` | fresh tick (≤ 60 s), no breaker tripped, bot mode RUNNING |
 | `TRADING` | `halt` | `HALTED` | — (reason required: `feed_stale`, `breaker:<name>`, `cycle_failures`, `paused`, `emergency_stop`) |
-| `HALTED` | `resume` | `TRADING` | cause cleared **and** before 14:30 **and** cause is resumable (§4.3) |
+| `HALTED` | `recover` | `RECONCILING` | cause cleared **and** cause is resumable (§4.3) **and** before 14:30 |
+| `RECONCILING` | `reconciled` | `TRADING` | clean reconcile report (§4.5) **and** before 14:30 |
+| `RECONCILING` | `reconcile_failed` | `HALTED` | — (reason `reconcile_mismatch`; CRITICAL alert with the report) |
+| `CONNECTED`, `READY`, `TRADING` | `restarted` (boot mid-session) | `RECONCILING` | — (the process can't trust anything it held in memory, §4.5) |
 | `TRADING` | `entry_cutoff` (14:30) | `NO_NEW_ENTRIES` | — |
-| `HALTED` | `entry_cutoff` (14:30) | `NO_NEW_ENTRIES` | — (halt reason kept in history) |
-| `TRADING`, `HALTED`, `NO_NEW_ENTRIES`, `READY`, `CONNECTED` | `square_off` (15:14) | `SQUARING_OFF` | **none: square-off is never blocked** |
+| `HALTED`, `RECONCILING` | `entry_cutoff` (14:30) | `NO_NEW_ENTRIES` | — (halt reason kept in history; open trades are still reconciled before square-off) |
+| `TRADING`, `HALTED`, `RECONCILING`, `NO_NEW_ENTRIES`, `READY`, `CONNECTED` | `square_off` (15:14) | `SQUARING_OFF` | **none: square-off is never blocked** |
 | `SQUARING_OFF` | `all_flat` | `CLOSED` | every trade CLOSED/CANCELLED **and** broker net position 0 |
 | `PRE_OPEN`, `CONNECTED` | `abandon` (15:30) | `ABANDONED` | — |
 
@@ -126,6 +130,9 @@ Non-trading days get no row (holiday / weekend): the scheduler doesn't start a s
 | `breaker:nifty_move` (market-wide move) | yes | automatically, when the move falls back inside the threshold |
 | `paused` | yes | operator sets mode RUNNING |
 | `emergency_stop` | no | operator, next day |
+| `reconcile_mismatch` | yes, after the operator acknowledges | operator (dashboard / Telegram), then the next reconcile must come back clean |
+
+Every same-day resume passes through `RECONCILING` (§4.5): there is no direct `HALTED → TRADING`.
 
 ### 4.4 Who triggers what
 
@@ -133,10 +140,36 @@ Non-trading days get no row (holiday / weekend): the scheduler doesn't start a s
 |---|---|
 | `session_start`, `setup_ok` | `pre_market_executor_setup` (08:45) |
 | `watchlist_ready` | `intraday_watchlist` (09:10) |
-| `market_open`, `halt`, `resume` | the 30-minute cycle and the every-minute reconcile task (each run evaluates the guards) |
+| `market_open`, `halt`, `recover`, `reconciled`, `reconcile_failed` | the 30-minute cycle and the every-minute reconcile task (each run evaluates the guards) |
+| `restarted` | orchestrator boot (`resume_market_session`), when today's session row is in `CONNECTED`, `READY` or `TRADING` |
 | `entry_cutoff`, `square_off`, `all_flat`, `abandon` | scheduled tasks at 14:30, 15:14, every minute after 15:14, 15:30 |
 
 The **cycle asks the Session machine** "is the state TRADING?" before scoring anything. Every other component that today checks the clock or `_disabled_for_day` stops doing so.
+
+### 4.5 Reconcile before resume (operator rule, #58)
+
+**Whenever something recovers** (the Kite feed, the broker session, NSE data, or the orchestrator after a crash), the system **reconciles with the source of truth before it trades again**. It never assumes its own state survived the outage.
+
+**Trading checks (gate `RECONCILING → TRADING`).** The report is clean only if all hold:
+
+| Check | Source of truth | Mismatch example |
+|---|---|---|
+| Every open trade's net filled quantity equals the broker's net MIS position for that symbol | broker `list_positions()` | a stop filled during the outage; a manual exit in the Kite app |
+| No broker MIS position without an open trade | broker `list_positions()` | a manual trade, or a fill we never recorded |
+| Every resting leg we track is resting at the broker, and vice versa | broker order status | a stop cancelled outside the bot; an orphan order |
+| Every `OPEN` trade's stop is resting (Trade machine invariant §5.3) | broker order status | stop expired or rejected while we were down |
+| Feed fresh (tick ≤ 60 s) | feed health | still reconnecting |
+| Today's watchlist present and subscribed | `intraday_watchlist` + feed | crash before 09:10 |
+
+Before the checks run, the Trade supervisor's own `reconcile()` is executed once. That settles anything that simply filled during the outage through the normal transitions (`leg_filled`, `stop_lost`, ...), so only genuine disagreements remain.
+
+**Mismatch → `HALTED(reconcile_mismatch)`** + CRITICAL alert carrying the report. The bot does not "fix" an unexplained broker position by trading against it: the operator decides, then acknowledges, and the next reconcile must come back clean. Open trades stay managed and square-off is never blocked (§4.2).
+
+**Data sources recovering don't halt trading.** They trigger a *data* reconcile instead. Example: the NSE surveillance list (#50) is fetched late. When it becomes available, possibly mid-session, it is applied at once:
+- watchlist stocks now under surveillance are excluded from **new entries**;
+- stocks we already **hold** keep being managed normally (stop, target, 15:14), with no panic exit (operator decision 2026-11-19).
+
+**Every reconcile emits one `decision` event** (`reconcile_report`) with each check's inputs and outcome, so observability shows why trading did or didn't resume. Reconcile reads the **broker** (the source of truth) and the machines' own tables, never the `events` table (`designs/observability.md` §2).
 
 ## 5. Trade machine (`intraday_brackets` table, one row per trade)
 
@@ -192,9 +225,10 @@ Already explicit (`ALLOWED_TRANSITIONS`). Changes:
 | SM3 | Square-off blocked by a halt | `square_off` has **no guard** and is allowed from every non-terminal state (§4.2) |
 | SM4 | Process restart mid-transition | State + event commit atomically; on restart each machine resumes from its table. A trade found in `PROTECTING` at boot is treated as `stop_failed` unless its stop is confirmed resting at the broker |
 | SM5 | Machines start reading each other's events | Forbidden (§2.4). The events table is read only by the observability module, and a test enforces it (`designs/observability.md` §2) |
-| SM6 | Session row missing (e.g. orchestrator started at 11:00 after a crash) | `resume_market_session` (#37) also creates or loads today's session row and replays the setup triggers |
+| SM6 | Session row missing, or the orchestrator restarted mid-session after a crash | `resume_market_session` (#37) creates or loads today's session row and replays the setup triggers; an existing row in `CONNECTED`/`READY`/`TRADING` takes `restarted` → `RECONCILING`, so nothing resumes without a clean reconcile (#58) |
 | SM7 | Trade opened while the session is not TRADING | `open_trade` guard requires session TRADING; the cycle doesn't even score otherwise |
-| SM8 | Broker and our tables disagree (manual trade in the Kite app, missed fill) | Not a machine transition. Observability detects it from broker snapshots (`designs/observability.md` §6) and alerts; the operator decides. The session's `all_flat` guard uses broker truth, so a mismatch blocks `CLOSED` |
+| SM8 | Broker and our tables disagree (manual trade in the Kite app, missed fill) | During a session it is caught by the reconcile checks (§4.5) whenever the session recovers or restarts; at any time observability detects it from broker snapshots (`designs/observability.md` §8) and alerts; the operator decides. The session's `all_flat` guard uses broker truth, so a mismatch blocks `CLOSED` |
+| SM9 | Resuming after an outage on stale in-memory state | Operator rule (#58): every recovery goes through `RECONCILING` against the broker; there is no direct `HALTED → TRADING` and a restart can't skip it |
 
 ## 8. Delivery (re-sequences B7, `designs/intraday-live-pipeline.md` §8)
 
