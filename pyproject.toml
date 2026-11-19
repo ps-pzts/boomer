@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
     "kiteconnect>=5.0",
     "pyotp>=2.9",
+    "pyarrow>=15",  # minute-bar parquet (designs/intraday-live-pipeline.md §3.2)
 ]
 
 [project.optional-dependencies]
