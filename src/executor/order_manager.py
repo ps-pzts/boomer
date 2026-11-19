@@ -91,6 +91,32 @@ class OrderManager:
             )
         return order_id
 
+    def modify_trigger(self, order_id: str, trigger_price: float) -> OrderRecord:
+        """Move a resting stop's trigger (trailing stop, #71). The broker decides
+        first; only an accepted modify is written to our row. Raises if the order
+        isn't resting or the broker refuses (e.g. trigger on the wrong side)."""
+        record = self.sync_status(order_id)
+        if record.status not in (OrderStatus.PENDING, OrderStatus.TRIGGERED):
+            raise PreTradeCheckError(f"order {order_id} is {record.status}, not resting")
+        broker = self._broker_for_record(record)
+        broker.modify_order(record.broker_order_id, {"trigger_price": trigger_price})
+        self._db.execute(
+            "UPDATE orders SET trigger_price=? WHERE order_id=?", (trigger_price, order_id)
+        )
+        self._db.commit()
+        from observability.emit import emit
+
+        emit(
+            "decision",
+            "order_modified",
+            source="order",
+            order_id=order_id,
+            symbol=record.symbol,
+            trigger_from=record.trigger_price,
+            trigger_to=trigger_price,
+        )
+        return self._load_order(order_id)
+
     def cancel(self, order_id: str) -> OrderRecord:
         """Cancel at the broker, then record what the broker says actually happened.
 

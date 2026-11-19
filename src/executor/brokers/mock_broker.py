@@ -105,8 +105,18 @@ class MockBroker(Broker):
         return broker_order_id
 
     def modify_order(self, broker_order_id: str, changes: dict) -> str:
-        if broker_order_id in self._orders:
-            self._orders[broker_order_id].update(changes)
+        order = self._orders.get(broker_order_id)
+        if order is None:
+            return broker_order_id
+        bar = self._current_bars.get(order["symbol"])
+        if bar and self._is_stop(order["order_type"]) and "trigger_price" in changes:
+            # Like Kite: a modify that puts the trigger on the wrong side of the
+            # last price is refused and the order keeps its old trigger (#71).
+            proposed = self._order_to_request({**order, **changes})
+            reason = self._stop_rejection(proposed, bar.close)
+            if reason:
+                raise ValueError(f"modify rejected: {reason}")
+        order.update(changes)
         return broker_order_id
 
     def cancel_order(self, broker_order_id: str) -> None:
