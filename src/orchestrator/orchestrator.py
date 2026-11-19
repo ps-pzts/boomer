@@ -43,6 +43,7 @@ class Orchestrator:
         intraday_runner: object | None = None,
         reconciler: object | None = None,
         brokers: list | None = None,
+        feed: object | None = None,
     ) -> None:
         self._db_path = db_path
         self._run_store = TaskRunStore(db_path)
@@ -54,6 +55,7 @@ class Orchestrator:
             intraday_runner=intraday_runner,
             reconciler=reconciler,
             brokers=brokers or [],
+            feed=feed,
         )
         self._scheduler = Scheduler(
             task_registry=self._tasks,
@@ -200,6 +202,8 @@ def main() -> None:
     run_migrations(db_path, migrations_dir)
 
     brokers = _build_brokers()
+    feed = _build_feed(brokers)
+    _log_trading_mode(db_path)
 
     orc = Orchestrator(
         db_path=db_path,
@@ -207,6 +211,7 @@ def main() -> None:
         backup_dir=backup_dir,
         poll_interval=poll_interval,
         brokers=brokers,
+        feed=feed,
     )
     log_boot_sequence(db_path, poll_interval)
     orc.start()
@@ -238,6 +243,37 @@ def _build_brokers() -> list:
         )
 
     return brokers
+
+
+def _build_feed(brokers: list) -> object | None:
+    """One KiteFeed per process, sharing KiteBroker's instrument cache. Not connected
+    here: at boot (03:00 restart) the token is yesterday's and already expired.
+    pre_market_executor_setup connects it at 08:45 after the token refresh."""
+    from src.executor.brokers.feeds.kite_feed import KiteFeed
+    from src.executor.models import BrokerName
+
+    kite = next((b for b in brokers if b.broker_id == BrokerName.KITE), None)
+    if kite is None:
+        logging.getLogger(__name__).warning("market_feed_not_configured — no Kite broker")
+        return None
+    feed = KiteFeed(instruments=kite.instruments)
+    kite.attach_feed(feed)
+    return feed
+
+
+def _log_trading_mode(db_path: str) -> None:
+    """Resolve and log paper/live at boot. Execution broker wiring lands in B7 PR 4;
+    until then nothing places orders, whatever the mode."""
+    from src.executor.trading_mode import (
+        ENV_VAR,
+        LiveTradingAuthorisationStore,
+        resolve_trading_mode,
+    )
+
+    decision = resolve_trading_mode(os.environ.get(ENV_VAR), LiveTradingAuthorisationStore(db_path))
+    logging.getLogger(__name__).info(
+        "boot_trading_mode mode=%s reason=%s", decision.mode, decision.reason
+    )
 
 
 if __name__ == "__main__":

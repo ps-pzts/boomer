@@ -195,15 +195,27 @@ table (migration `0008`). The feed subscribes those symbols plus NIFTY 50 at 09:
 - Fix `_intraday_cycle`: call `run_cycle()` with no arguments. The pipeline reads IST time itself.
 - Start the cycle at **09:30** (the first `*/30` slot after the ORB window closes). The 09:00
   slot already falls through to monitoring only.
+- *(PR 1)* `pre_market_executor_setup` moves from 09:20 to **08:45** with no dependencies (it only
+  ran after the recommendations because the removed `gtt_dispatch` followed it). It refreshes
+  the token, then subscribes NIFTY 50 and (re)connects the feed. The feed is never connected at
+  boot: the 03:00 restart still holds yesterday's expired token. A new **09:17
+  `feed_health_check`** sends a CRITICAL alert unless the feed is connected with a tick under
+  60 s old.
 - `intraday_squareoff` (15:14) also cancels open stop/target legs before the MARKET exit.
 - `PaperBroker` needs `price_source` to be a `MarketDataFeed`, not a `Broker`. This is a small
   refactor.
 
 ## 5. Mode switch
 
-`BOOMER_TRADING_MODE` (`paper` is the default; `live` needs both the env var **and** a
-`risk_config.live_trading_enabled = 1` row written by a migration or dashboard action). If
-either is missing, the mode is paper. The startup banner and every Telegram decision message
+`BOOMER_TRADING_MODE` (`paper` is the default; `live` needs both the env var **and** the latest
+row of the append-only `live_trading_authorisation` table (migration `0008`) having
+`enabled = 1`, with the actor and reason recorded). If either is missing, or the check errors,
+the mode is paper.
+
+*Deviation from the first draft (PR 1):* the draft put this flag in `risk_config`. That table is
+versioned by copying rows with an explicit column list (`update_live_backtest_ratio`), so a new
+column would silently reset to its default on the next config update. A dedicated table avoids
+that and gives an audit trail of who enabled live trading and why. The startup banner and every Telegram decision message
 show the mode.
 
 ## 6. What gets retired
@@ -241,7 +253,7 @@ show the mode.
 | PR | Scope |
 |----|-------|
 | 0 | ~~`hotfix/`: remove `gtt_dispatch`, MIS-only pre-trade check~~: PR #26 |
-| 1 | `MarketDataFeed` + `Tick` + `KiteFeed` adapter (FULL mode for depth) + capability/health check + `BOOMER_TRADING_MODE` + `PaperBroker` on the feed |
+| 1 | `MarketDataFeed` + `Tick` + `KiteFeed` adapter (FULL mode for depth) + capability/health check + `BOOMER_TRADING_MODE` + `PaperBroker` on the feed. **Done 2026-11-19** |
 | 2 | `LiveBarStore` + parquet flush + `LiveFeatureComputer` (worked-example tests) |
 | 3 | `intraday_watchlist` task + migration `0008` + retire intraday GTT and morning-recommendation path |
 | 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes |

@@ -9,10 +9,20 @@ from .tasks_brain import _compute_market_regime
 logger = logging.getLogger(__name__)
 
 
+# Feed must be streaming before the 09:15 open: the opening range is 09:15-09:29.
+_FEED_MAX_TICK_AGE_SECONDS = 60
+
+
 def _pre_market_executor_setup(
-    run_date: str, run_id: int, db_path: str, brokers: list | None = None, **_: object
+    run_date: str,
+    run_id: int,
+    db_path: str,
+    brokers: list | None = None,
+    feed: object | None = None,
+    **_: object,
 ) -> None:
-    """Refresh broker tokens via TOTP auto-login then re-authenticate broker objects."""
+    """08:45 IST: refresh broker tokens via TOTP auto-login, re-authenticate broker
+    objects, then (re)connect the market-data feed with the fresh token."""
     brokers = brokers or []
     logger.info("pre_market_executor_setup run_date=%s — refreshing broker tokens", run_date)
 
@@ -44,7 +54,7 @@ def _pre_market_executor_setup(
                         get_alerter().critical(
                             f"Broker re-auth failed — {broker.broker_id}",
                             f"Token was refreshed but broker.authenticate() failed: {exc}. "
-                            "GTT dispatch at 09:25 will abort. Check broker credentials.",
+                            "Orders and market data will fail today. Check broker credentials.",
                             source_task_id="pre_market_executor_setup",
                         )
                     except Exception:
@@ -56,6 +66,80 @@ def _pre_market_executor_setup(
             )
     except Exception as exc:
         logger.error("pre_market_executor_setup: auto_login error — %s", exc)
+
+    if feed is not None:
+        _connect_market_feed(feed)
+
+
+def _connect_market_feed(feed: object) -> None:
+    """(Re)connect the feed with whatever token is now in the environment and make
+    sure the NIFTY 50 heartbeat instrument is subscribed. reauthenticate() also
+    works from cold (no ticker yet), and replaces yesterday's expired session."""
+    from src.executor.brokers.feeds.base import NIFTY_50
+
+    try:
+        feed.subscribe([NIFTY_50])  # type: ignore[attr-defined]
+        feed.reauthenticate()  # type: ignore[attr-defined]
+        logger.info("pre_market_executor_setup: market feed connecting")
+    except Exception as exc:
+        logger.error("pre_market_executor_setup: market feed connect failed — %s", exc)
+        _alert_critical(
+            "Market data feed failed to connect",
+            f"{exc}. The live intraday pipeline cannot run without ticks.",
+            "pre_market_executor_setup",
+        )
+
+
+def _feed_health_check(
+    run_date: str, run_id: int, feed: object | None = None, now: object = None, **_: object
+) -> None:
+    """09:17 IST: CRITICAL alert unless the feed is connected and ticking.
+
+    Design §3.1: never fall back silently. If this fires, the intraday pipeline
+    (B7 PR 4) will see the same stale health and refuse new entries.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    if feed is None:
+        logger.warning("feed_health_check: no market feed configured (Kite credentials unset)")
+        _alert_critical(
+            "No market data feed configured",
+            "KITE_API_KEY / KITE_ACCESS_TOKEN not set at startup. Intraday cannot run today.",
+            "feed_health_check",
+        )
+        return
+
+    now_ist = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    health = feed.health()  # type: ignore[attr-defined]
+    age = health.tick_age_seconds(now_ist)
+    if health.is_fresh(now_ist, _FEED_MAX_TICK_AGE_SECONDS):
+        logger.info(
+            "feed_health_check ok connected=%s subscribed=%d tick_age_s=%.0f",
+            health.connected,
+            health.subscribed,
+            age,
+        )
+        return
+    detail = (
+        f"connected={health.connected} subscribed={health.subscribed} "
+        f"last_tick_age_s={'never' if age is None else round(age)}"
+    )
+    logger.error("feed_health_check failed %s", detail)
+    _alert_critical(
+        "Market data feed not ticking after open",
+        f"{detail}. No new intraday entries until ticks resume.",
+        "feed_health_check",
+    )
+
+
+def _alert_critical(title: str, body: str, source_task_id: str) -> None:
+    try:
+        from src.alerts.alerter import get_alerter
+
+        get_alerter().critical(title, body, source_task_id=source_task_id)
+    except Exception as exc:
+        logger.error("alert_send_failed title=%s error=%s", title, exc)
 
 
 def _intraday_cycle(

@@ -23,6 +23,7 @@ from .tasks_brain import (
 )
 from .tasks_collector import _early_morning_data_check, _nightly_eod_collector
 from .tasks_executor import (
+    _feed_health_check,
     _intraday_cycle,
     _intraday_squareoff,
     _position_review,
@@ -46,11 +47,13 @@ def build_task_registry(
     intraday_runner: object | None = None,
     reconciler: object | None = None,
     brokers: list | None = None,
+    feed: object | None = None,
 ) -> dict[str, TaskDefinition]:
     """Return all task definitions wired with runtime dependencies."""
     common = {"db_path": db_path, "archive_dir": archive_dir, "backup_dir": backup_dir}
     intraday_deps = {"intraday_runner": intraday_runner}
-    broker_deps = {"brokers": brokers or []}
+    broker_deps = {"brokers": brokers or [], "feed": feed}
+    feed_deps = {"feed": feed}
     eod_deps = {"reconciler": reconciler, "brokers": brokers or []}
 
     def _wrap(fn: object, extra: dict) -> object:
@@ -107,9 +110,20 @@ def build_task_registry(
         "pre_market_executor_setup": TaskDefinition(
             task_id="pre_market_executor_setup",
             fn=_wrap(_pre_market_executor_setup, broker_deps),  # type: ignore[arg-type]
-            schedule="20 9 * * 1-5",  # 09:20 IST
-            dependencies=["morning_batch_recommendations"],
+            # 08:45 IST: token refresh + feed connect must finish before the 09:15
+            # open (opening range = 09:15-09:29). Was 09:20, after recommendations,
+            # only because the removed gtt_dispatch task followed it.
+            schedule="45 8 * * 1-5",
+            dependencies=[],
             timeout_seconds=300,
+            retry_policy=RetryPolicy(max_attempts=2, backoff_seconds=[300]),
+        ),
+        "feed_health_check": TaskDefinition(
+            task_id="feed_health_check",
+            fn=_wrap(_feed_health_check, feed_deps),  # type: ignore[arg-type]
+            schedule="17 9 * * 1-5",  # 09:17 IST: 2 min after open, ticks must be flowing
+            dependencies=["pre_market_executor_setup"],
+            timeout_seconds=60,
             retry_policy=RetryPolicy(max_attempts=1),
         ),
         "intraday_cycle": TaskDefinition(
