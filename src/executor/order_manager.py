@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -12,6 +13,7 @@ from executor.models import (
     BrokerName,
     OrderRecord,
     OrderRequest,
+    OrderSide,
     OrderStatus,
     OrderType,
     PreTradeCheckError,
@@ -45,11 +47,13 @@ class OrderManager:
         brokers: dict[BrokerName, Broker],
         ltp_cache: dict[str, float],
         alerter: object | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
         self._brokers = brokers
         self._ltp = ltp_cache  # shared in-memory LTP dict updated by KiteBroker.on_tick
         self._alerter = alerter
+        self._clock = clock or (lambda: datetime.now(IST))
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -87,13 +91,32 @@ class OrderManager:
             )
         return order_id
 
-    def cancel(self, order_id: str) -> None:
-        record = self._load_order(order_id)
+    def cancel(self, order_id: str) -> OrderRecord:
+        """Cancel at the broker, then record what the broker says actually happened.
+
+        An order can fill between our last status check and the cancel (a stop
+        firing as we cancel it). Marking it CANCELLED regardless would hide a real
+        fill, so the final state comes from the broker: FILLED/PARTIAL fills are
+        recorded, anything else becomes CANCELLED. Returns the final record.
+        """
+        record = self.sync_status(order_id)
         if record.status in TERMINAL_STATUSES:
-            return
+            return record
         broker = self._broker_for_record(record)
-        broker.cancel_order(record.broker_order_id)
-        self._transition(order_id, OrderStatus.CANCELLED, rule="cancel_requested")
+        try:
+            broker.cancel_order(record.broker_order_id)
+        except Exception as exc:  # e.g. Kite: "order already complete"
+            logger.warning("cancel_failed order_id=%s error=%s", order_id, exc)
+        raw = broker.get_order_status(record.broker_order_id) or {}
+        if raw.get("filled_quantity", 0) > record.filled_quantity:
+            self._record_execution(record, raw)
+        # Anything short of a complete fill ends CANCELLED; a partial fill's quantity
+        # was recorded above and the unfilled remainder is what got cancelled.
+        if raw.get("status") == OrderStatus.FILLED:
+            self._transition(order_id, OrderStatus.FILLED, rule="filled_before_cancel")
+        else:
+            self._transition(order_id, OrderStatus.CANCELLED, rule="cancel_confirmed")
+        return self._load_order(order_id)
 
     def sync_status(self, order_id: str) -> OrderRecord:
         """Poll broker for current status and update DB."""
@@ -204,10 +227,11 @@ class OrderManager:
                     f"Duplicate order (idempotency_key={request.idempotency_key})"
                 )
 
-        # 4. Funds available
+        # 4. Funds available. BUY only: an MIS SELL here is an exit (stop, target,
+        # square-off) of shares already held, and must never be blocked for cash.
         funds = broker.get_funds()
         required = request.price * request.quantity if request.price else 0
-        if required > 0 and funds.available_cash < required:
+        if request.side == OrderSide.BUY and required > 0 and funds.available_cash < required:
             raise PreTradeCheckError(
                 f"Insufficient funds: need {required:.0f}, have {funds.available_cash:.0f}"
             )
@@ -218,7 +242,7 @@ class OrderManager:
 
         # 6. Market hours for intraday — caller must enforce; logged here only
         if track == "intraday":
-            now = datetime.now(IST)
+            now = self._clock()
             market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
             market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
             if not (market_open <= now <= market_close):
