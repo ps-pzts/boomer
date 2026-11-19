@@ -70,6 +70,9 @@ class SimEngine:
         self.holdings_book: list[dict] = []
         # interceptor(call, params, proceed) -> result: the API hook (#87).
         self.interceptor: Callable | None = None
+        # postback_gate(payload, deliver): decides when/how often a postback reaches
+        # the listeners (delay, duplicate, drop, reorder: hostile mode #87).
+        self.postback_gate: Callable[[dict, Callable[[dict], None]], None] | None = None
         # on_change(state) after any call that changed the book (paper persistence).
         self.on_change: Callable[[dict], None] | None = None
 
@@ -145,6 +148,12 @@ class SimEngine:
         self._outbox.append(postback(order, self.config.user_id))
 
     def _deliver(self, payload: dict) -> None:
+        if self.postback_gate is not None:
+            self.postback_gate(payload, self._deliver_now)
+        else:
+            self._deliver_now(payload)
+
+    def _deliver_now(self, payload: dict) -> None:
         for cb in list(self._listeners):
             try:
                 cb(copy.deepcopy(payload))
