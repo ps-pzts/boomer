@@ -56,6 +56,9 @@ class TaskDefinition:
     # Fires more than once a day (e.g. */15). Repeating tasks run at every slot:
     # the "already succeeded today" rule only applies to once-a-day tasks (#61).
     repeats: bool = False
+    # Runs in PAUSED *and* EMERGENCY_STOP: open trades must stay managed and the
+    # 15:14 square-off is never blocked (designs/state-machines.md SM3, #63).
+    safety_task: bool = False
 
     def description(self) -> str:
         return f"{self.task_id} [{self.schedule}]"

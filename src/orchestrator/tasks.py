@@ -24,7 +24,6 @@ from .tasks_collector import _early_morning_data_check, _nightly_eod_collector
 from .tasks_executor import (
     _feed_health_check,
     _intraday_cycle,
-    _intraday_squareoff,
     _minute_bar_flush,
     _position_review,
     _pre_market_executor_setup,
@@ -36,6 +35,7 @@ from .tasks_maintenance import (
     _nightly_health_check,
     _weekly_harvest_check,
 )
+from .tasks_session import _session_tick
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +49,18 @@ def build_task_registry(
     brokers: list | None = None,
     feed: object | None = None,
     bar_recorder: object | None = None,
+    session: object | None = None,
 ) -> dict[str, TaskDefinition]:
     """Return all task definitions wired with runtime dependencies."""
     common = {"db_path": db_path, "archive_dir": archive_dir, "backup_dir": backup_dir}
     intraday_deps = {"intraday_runner": intraday_runner}
-    broker_deps = {"brokers": brokers or [], "feed": feed, "bar_recorder": bar_recorder}
+    broker_deps = {
+        "brokers": brokers or [],
+        "feed": feed,
+        "bar_recorder": bar_recorder,
+        "session": session,
+    }
+    session_deps = {"session": session}
     bar_deps = {"bar_recorder": bar_recorder}
     feed_deps = {"feed": feed}
     eod_deps = {"reconciler": reconciler, "brokers": brokers or []}
@@ -148,13 +155,17 @@ def build_task_registry(
             trailing_stop_task=True,  # runs even in paused mode
             repeats=True,  # #61
         ),
-        "intraday_squareoff": TaskDefinition(
-            task_id="intraday_squareoff",
-            fn=_wrap(_intraday_squareoff, intraday_deps),  # type: ignore[arg-type]
-            schedule="14 15 * * 1-5",  # 15:14 IST
+        "session_tick": TaskDefinition(
+            task_id="session_tick",
+            fn=_wrap(_session_tick, session_deps),  # type: ignore[arg-type]
+            # Every minute 09:00-15:59 IST: manages open trades, moves the Session
+            # machine, squares off from 15:14 (replaces intraday_squareoff, #63).
+            schedule="* 9-15 * * 1-5",
             dependencies=[],
-            timeout_seconds=300,
-            retry_policy=RetryPolicy(max_attempts=1),
+            timeout_seconds=55,
+            retry_policy=RetryPolicy(max_attempts=1),  # next tick in a minute
+            repeats=True,
+            safety_task=True,  # runs in PAUSED and EMERGENCY_STOP (SM3)
         ),
         "morning_heartbeat": TaskDefinition(
             task_id="morning_heartbeat",
