@@ -38,11 +38,13 @@ def test_generates_signal(gen):
     assert signal.track == "intraday"
 
 
-def test_liquidity_gate_10cr(gen):
-    features = {**_BASE_FEATURES, "avg_traded_value_20d": 5e9}  # ₹50 cr but below ₹10 cr
-    # ₹50 cr < ₹10 cr? No — 5e9 = ₹500 cr. Let me use a value below ₹10 cr.
-    features["avg_traded_value_20d"] = 5e7  # ₹0.5 cr
-    assert gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST)) is None
+def test_generator_does_not_gate_on_liquidity(gen):
+    """#38: the hardcoded ₹10 cr gate is gone; liquidity is risk_config's job
+    (watchlist eligibility + TradePlanGenerator), so the generator just scores."""
+    features = {**_BASE_FEATURES, "avg_traded_value_20d": 5e7}  # ₹5 cr
+    assert gen.generate(SYMBOL, EXCHANGE, features, "bull_calm", datetime.now(IST)) is not None
+    no_liquidity = {k: v for k, v in _BASE_FEATURES.items() if k != "avg_traded_value_20d"}
+    assert gen.generate(SYMBOL, EXCHANGE, no_liquidity, "bull_calm", datetime.now(IST)) is not None
 
 
 def test_large_gap_scored_zero(gen):

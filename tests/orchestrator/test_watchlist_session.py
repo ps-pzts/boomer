@@ -42,12 +42,14 @@ def alerter():
         yield fake
 
 
-def _add_stock(db_path: str, symbol: str, value_cr: float, oi_change: float | None = None) -> None:
+def _add_stock(
+    db_path: str, symbol: str, value_cr: float, oi_change: float | None = None, series: str = "EQ"
+) -> None:
     conn = sqlite3.connect(db_path)
     conn.execute(
         "INSERT INTO instruments (isin, nse_symbol, company_name, series, last_refreshed)"
-        " VALUES (?, ?, ?, 'EQ', '2026-11-19T00:00:00')",
-        (f"INE{symbol}", symbol, symbol),
+        " VALUES (?, ?, ?, ?, '2026-11-19T00:00:00')",
+        (f"INE{symbol}", symbol, symbol, series),
     )
     conn.commit()
     conn.close()
@@ -80,6 +82,13 @@ class TestIntradayWatchlistTask:
         ]
         assert feed.subscribed == {"LONGY", "LIQUID"}
         alerter.critical.assert_not_called()
+
+    def test_be_series_never_in_watchlist(self, db_path, alerter):
+        """Regression #49: BE (trade-for-trade) stocks can't be traded intraday."""
+        _add_stock(db_path, "TFT", 900, oi_change=9.0, series="BE")
+        _add_stock(db_path, "LIQUID", 900)
+        _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=None)
+        assert [e.stock_symbol for e in WatchlistStore(db_path).load(DAY)] == ["LIQUID"]
 
     def test_empty_watchlist_alerts_and_subscribes_nothing(self, db_path, alerter):
         _add_stock(db_path, "THIN", 1)
