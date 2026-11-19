@@ -97,6 +97,7 @@ def build_execution_broker(
     feed: MarketDataFeed,
     live_broker: Broker | None,
     paper_initial_cash: float,
+    paper_book: object | None = None,
 ) -> Broker:
     """Paper: simulated fills on the live feed. Live: the real broker."""
     if mode == TradingMode.LIVE:
@@ -105,4 +106,4 @@ def build_execution_broker(
         return live_broker
     if paper_initial_cash <= 0:
         raise ValueError("paper_initial_cash must be positive")
-    return PaperBroker(price_source=feed, initial_cash=paper_initial_cash)
+    return PaperBroker(price_source=feed, initial_cash=paper_initial_cash, book=paper_book)
