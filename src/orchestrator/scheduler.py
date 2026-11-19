@@ -114,10 +114,13 @@ class Scheduler:
         if not cron_matches(task.schedule, now):
             return False, "cron_no_match"
 
-        # Don't re-run a successful task for the same run_date
-        existing = self._run_store.latest_for_date(task.task_id, run_date)
-        if existing and existing.status == TaskStatus.SUCCESS:
-            return False, "already_succeeded"
+        # Don't re-run a successful once-a-day task for the same run_date. Repeating
+        # tasks run at every cron slot (#61); the orchestrator's 60 s dispatch guard
+        # still stops a double fire within one minute.
+        if not task.repeats:
+            existing = self._run_store.latest_for_date(task.task_id, run_date)
+            if existing and existing.status == TaskStatus.SUCCESS:
+                return False, "already_succeeded"
 
         dep_ok, dep_reason = dependency_met(task, run_date, self._run_store)
         if not dep_ok:

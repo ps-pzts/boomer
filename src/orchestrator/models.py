@@ -53,6 +53,9 @@ class TaskDefinition:
     retry_policy: RetryPolicy
     run_on_holiday: bool = False  # backup-type tasks run even on holidays
     trailing_stop_task: bool = False  # runs in paused mode (trailing stops)
+    # Fires more than once a day (e.g. */15). Repeating tasks run at every slot:
+    # the "already succeeded today" rule only applies to once-a-day tasks (#61).
+    repeats: bool = False
 
     def description(self) -> str:
         return f"{self.task_id} [{self.schedule}]"

@@ -31,6 +31,7 @@
 | Bug | main CI red after #48 (#51) | Symptom: Lint failed on main. Root cause: ruff 0.17's `format --check` also formats Python code blocks in Markdown; the code sketch in `designs/state-machines.md` wasn't formatted, and #48 was merged without confirming every check passed. Fix: formatted the block; gate now run for docs-only PRs and merges wait for all checks. |
 | Bug | Hidden ₹10 cr liquidity gate (#38) | Symptom: `risk_config`'s 5 cr turnover floor had no effect below 10 cr; names between 5 and 10 cr were silently dropped. Root cause: hardcoded `LIQUIDITY_GATE` in `signals/base.py` (also broke the no-hardcoded-rupees rule). Fix: gate removed; one floor in `risk_config`, now ₹10 cr (operator decision; migration 0011); missing volume/turnover now fails closed in `TradePlanGenerator`. |
 | Bug | BE stocks in intraday universe (#49) | Symptom: trade-for-trade (BE) stocks could enter the watchlist. Root cause: universe query used `series IN ('EQ','BE')`; BE is delivery-only, MIS rejected. Fix: `series = 'EQ'`. |
+| Bug | Repeating tasks ran once a day (#61) | Symptom: `minute_bar_flush` (first slot 09:00, nothing to write) never flushed again, so minute bars were never persisted; `position_review` ran once instead of hourly. Root cause: `Scheduler.should_run` skipped any task that already succeeded today. Fix: `TaskDefinition.repeats`; repeating tasks run every slot; registry test enforces the flag. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 | Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
@@ -73,6 +74,13 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Bug: repeating tasks ran only once a day (#61)
+
+- **Symptom:** `minute_bar_flush` (`*/15 9-15`, from #30) first fires at 09:00 before any bar exists, succeeds with nothing to write, and every later slot was skipped, so **minute bars were never written to parquet** (and Kite Personal has no historical candles to recover them). `position_review` ran once a day instead of hourly; `intraday_cycle` likewise.
+- **Root cause:** `Scheduler.should_run` returns `already_succeeded` for any task with a successful run for today's `run_date`, which is right only for once-a-day tasks.
+- **Fix:** `TaskDefinition.repeats`; repeating tasks skip that check (the orchestrator's 60 s dispatch guard still prevents double fires). Set on `minute_bar_flush`, `position_review`, `intraday_cycle`. A registry test fails if any task firing more than once on a weekday isn't marked `repeats` (and vice versa).
+- Found while planning SM-3, whose every-minute session task depends on this. 787 tests pass.
 
 ### 2026-11-19 — Feat: SM-2 — Trade machine on the core (#45; supersedes #46)
 
