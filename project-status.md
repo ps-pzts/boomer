@@ -77,6 +77,11 @@
 
 ## Change log
 
+### 2026-11-19 — Test: cross-machine integration scenarios on KiteSim (#88, in progress)
+
+- `tests/integration/`: `Hostile` harness (real Order + Trade machines, paper KiteBroker on KiteSim, `FaultPlan`) with invariants checked after every step: open trade has a resting stop (I1), trades' net == broker net (I2), no untracked resting order (I3), flat and terminal at EOD (I4). 10 scenarios: postbacks dropped/duplicated/reversed, fills racing expiry and square-off, lost answers, broker down.
+- Found two bugs, both xfail(strict) until fixed: #97 (lost `place_order` answer leaves an untracked entry/stop), #98 (trade closes while the surviving leg's cancel failed). Still to do: ~30 more scenarios, Hypothesis stateful runs, same-seed event-log equality, event replay, happy paths across a full day.
+
 ### 2026-11-19 — Feat: KiteSim, paper on the real KiteBroker, MockBroker deleted (#86)
 
 - **Why:** paper used its own broker and vocabulary, so paper validation proved nothing about the live order path.
