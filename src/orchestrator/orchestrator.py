@@ -249,7 +249,7 @@ def main() -> None:
     bar_recorder = _build_bar_recorder(feed)
     mode = _log_trading_mode(db_path)
     emitter = _start_event_stream(db_path, mode, feed)
-    session = _build_session(db_path, mode, feed, brokers)
+    session = _build_session(db_path, None, feed, brokers)  # mode per session (#76)
     now = datetime.datetime.now(_IST)
     resume_market_session(db_path, feed, bar_recorder, now)
     if session is not None and _SESSION_RESUME_START <= now.time() < _SESSION_RESUME_END:
@@ -384,7 +384,9 @@ def resume_market_session(
     return True
 
 
-def _build_session(db_path: str, mode: str, feed: object | None, brokers: list) -> object | None:
+def _build_session(
+    db_path: str, mode: str | None, feed: object | None, brokers: list
+) -> object | None:
     """The Session machine + execution stack (#63). None only if wiring itself
     crashes; a missing feed or capital ledger still yields a session that can't trade."""
     from src.alerts.alerter import get_alerter

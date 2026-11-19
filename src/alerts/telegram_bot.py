@@ -164,6 +164,43 @@ def handle_status(token: str, chat_id: str | int, db_path: str) -> None:
     _send(token, chat_id, _fmt_status(snap))
 
 
+def handle_mode(db_path: str, text: str) -> str:
+    """/mode [paper|live [confirm]] (#76). Applies from the next session."""
+    from src.executor.trading_mode import (
+        ENV_VAR,
+        LiveTradingAuthorisationStore,
+        paper_record,
+        request_mode,
+        resolve_trading_mode,
+        session_mode,
+    )
+
+    env = os.environ.get(ENV_VAR)
+    today = datetime.now(IST).date()
+    parts = text.split()
+    if len(parts) == 1:
+        nxt = resolve_trading_mode(env, LiveTradingAuthorisationStore(db_path)).mode.value
+        rec = paper_record(db_path)
+        return (
+            f"<b>Trading mode</b>\nToday: {session_mode(db_path, today, env).upper()}\n"
+            f"Next session: {nxt.upper()}\n"
+            f"Paper: {rec['paper_sessions_closed']} sessions closed, "
+            f"{rec['paper_trades']} trades, P&amp;L ₹{rec['paper_realised_pnl']:,.2f}, "
+            f"{rec['unprotected_exits']} unprotected exits"
+        )
+    result = request_mode(
+        db_path,
+        parts[1],
+        actor="telegram",
+        reason=f"telegram {text}",
+        env_value=env,
+        confirmed=len(parts) > 2 and parts[2] == "confirm",
+        today=today,
+    )
+    hint = "\nSend /mode live confirm to proceed." if "Repeat with" in result.message else ""
+    return ("✅ " if result.ok else "⛔ ") + result.message + hint
+
+
 # ── Polling loop ───────────────────────────────────────────────────────────────
 
 
@@ -202,14 +239,19 @@ class TelegramBot:
             return
 
         text = (msg.get("text") or "").strip().lower()
-        if text in ("/status", "/status@boomerbot"):
+        if text == "/mode" or text.startswith("/mode "):
+            _send(self._token, msg["chat"]["id"], handle_mode(self._db_path, text))
+        elif text in ("/status", "/status@boomerbot"):
             handle_status(self._token, msg["chat"]["id"], self._db_path)
         elif text in ("/help", "/start"):
             _send(
                 self._token,
                 msg["chat"]["id"],
                 "<b>Boomer Bot Commands</b>\n\n"
-                "/status — system snapshot: mode, broker session, signals, queued GTTs, P&amp;L\n",
+                "/status — system snapshot: mode, broker session, signals, queued GTTs, P&amp;L\n"
+                "/mode — paper or live: today's (locked) and the next session's\n"
+                "/mode paper — switch to paper from the next session\n"
+                "/mode live confirm — switch to LIVE (real money) from the next session\n",
             )
 
     def run_forever(self) -> None:

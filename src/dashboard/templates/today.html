@@ -16,11 +16,39 @@
     {% endif %}
     {% if snap.bot_mode != 'emergency_stop' %}
       <button name="mode" value="emergency_stop" class="btn btn-red"
-              onclick="return confirm('Flip to EMERGENCY STOP? All scheduled tasks will halt immediately.')">
+              onclick="return confirm('EMERGENCY STOP: cancels every order and exits EVERY MIS position at market now, then ends trading for today. Continue?')">
         EMERGENCY STOP
       </button>
     {% endif %}
   </form>
+</section>
+
+<!-- Paper / live (#76): applies from the next session; today's mode is locked -->
+<section class="mode-section">
+  {% if trading.error %}
+    <div class="alert-banner alert-critical">Trading mode unavailable: {{ trading.error }}</div>
+  {% else %}
+    <div class="mode-badge mode-{{ 'emergency_stop' if trading.today == 'live' else 'auto' }}">
+      TODAY: {{ trading.today.upper() }}
+    </div>
+    <span style="margin-left:0.5rem;">Next session: <strong>{{ trading.next.upper() }}</strong>
+      {% if not trading.armed %}(server not armed for live){% endif %}</span>
+    <form method="post" action="/trading-mode" style="display:inline-flex;gap:0.5rem;margin-left:1rem;">
+      <input name="reason" placeholder="reason" required>
+      {% if trading.next == 'live' %}
+        <button name="target" value="paper" class="btn btn-green">Switch to PAPER</button>
+      {% else %}
+        <label><input type="checkbox" name="confirm" value="yes"> I accept real-money trading</label>
+        <button name="target" value="live" class="btn btn-red">Switch to LIVE</button>
+      {% endif %}
+    </form>
+    <div style="margin-top:0.25rem;font-size:0.9em;">
+      Paper record: {{ trading.record.paper_sessions_closed }} sessions closed (≥ 20 needed),
+      {{ trading.record.paper_trades }} trades, P&amp;L ₹{{ trading.record.paper_realised_pnl }},
+      {{ trading.record.unprotected_exits }} unprotected exits (0 needed)
+    </div>
+    {% if mode_msg %}<div class="alert-banner">{{ mode_msg }}</div>{% endif %}
+  {% endif %}
 </section>
 
 <!-- Missed critical alerts banner -->

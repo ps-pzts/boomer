@@ -84,6 +84,20 @@ Live-only bugs that paper could never show (MockBroker uses our own statuses):
 - **Order tags** are now alphanumeric only.
 - **`cancel()`** waits up to ~1 s for Kite's final answer, so a fill racing a `CANCEL PENDING` is recorded.
 
+### 2026-11-19 — Feat: paper/live toggle (#76)
+
+- **Operator request:** a toggle to switch between paper and live.
+- **Controls:**
+  - Telegram: `/mode` shows today's and the next session's mode plus the paper record; `/mode paper`; `/mode live confirm`.
+  - Dashboard: a panel on Today with a reason field and a real-money checkbox for live.
+- **Rules:**
+  - The env var `BOOMER_TRADING_MODE=live` stays the server-level arm; without it, live is refused. The toggle writes the audited `live_trading_authorisation` row (actor + reason).
+  - Switching to live shows the paper record against the §9 Q5 criteria and needs confirmation.
+  - The mode is **locked into the day's session row** at session start: a toggle or restart mid-day applies from the next session only, so paper positions never meet the live broker.
+- **Execution:** rebuilt per session day in that day's mode, never while a trade is active.
+- The dashboard's emergency-stop confirmation now says what it does (flattens everything).
+- 970 tests pass.
+
 ### 2026-11-19 — Feat: orders at the broker that no trade tracks (#65)
 
 - **Before:** the reconcile-before-resume check couldn't see an order working at the broker that nothing tracks (an order placed by hand, or one left by a crash), so it could fire later and open a position nobody manages. An emergency stop couldn't cancel such orders either.

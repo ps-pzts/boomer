@@ -65,10 +65,13 @@ class SessionController:
         alerter: object | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(IST),
         lock: threading.RLock | None = None,
-        execution_factory: Callable[[], tuple | None] | None = None,
+        execution_factory: Callable[[str], tuple | None] | None = None,
     ) -> None:
         self._conn = conn
-        self._mode = mode
+        # A str (fixed) or a resolver day -> mode (#76). Read once, when the day's
+        # session row is created; after that the row's mode is the truth.
+        self._mode_for = mode if callable(mode) else (lambda _d, m=mode: m)
+        self._exec_day: date | None = None
         self._feed = feed
         self._sup = supervisor
         self._broker = broker
@@ -112,19 +115,20 @@ class SessionController:
             if current is not None:
                 return current
             now = self._clock().replace(tzinfo=None).isoformat()
+            mode = str(self._mode_for(day))
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 self._conn.execute(
                     "INSERT INTO trading_sessions (session_date, mode, state, created_at,"
                     " updated_at) VALUES (?, ?, ?, ?, ?)",
-                    (day.isoformat(), self._mode, sm.PRE_OPEN, now, now),
+                    (day.isoformat(), mode, sm.PRE_OPEN, now, now),
                 )
                 record_created(
                     self._conn,
                     sm.SESSION_SPEC,
                     day.isoformat(),
                     rule="session_start",
-                    inputs={"mode": self._mode},
+                    inputs={"mode": mode},
                 )
                 self._conn.commit()
             except BaseException:
@@ -168,7 +172,7 @@ class SessionController:
             state = self.ensure(day)
             if state in sm.TERMINAL:
                 return state
-            self._ensure_execution()
+            self._ensure_execution(day)
             if self._sup is not None:
                 self._sup.reconcile()  # type: ignore[attr-defined]
             ctx = self._context(day, now)
@@ -408,17 +412,33 @@ class SessionController:
 
     # ── Plumbing ──────────────────────────────────────────────────────────────
 
-    def _ensure_execution(self) -> None:
-        if self._sup is not None or self._execution_factory is None:
+    def mode(self, day: date) -> str | None:
+        row = self._conn.execute(
+            "SELECT mode FROM trading_sessions WHERE session_date=?", (day.isoformat(),)
+        ).fetchone()
+        return row[0] if row else None
+
+    def _ensure_execution(self, day: date) -> None:
+        """Build execution for `day` in the session's locked mode (#74, #76).
+        Rebuilt when the day changes, never while a trade is active."""
+        if self._execution_factory is None:
             return
+        if self._sup is not None:
+            if self._exec_day == day:
+                return
+            if self._sup.active_count():  # type: ignore[attr-defined]
+                return  # MIS can't span days; never swap the broker under a trade
+            self._sup = self._broker = self._om = None
+        mode = self.mode(day) or str(self._mode_for(day))
         try:
-            built = self._execution_factory()
+            built = self._execution_factory(mode)
         except Exception:
-            logger.exception("execution_build_failed")
+            logger.exception("execution_build_failed mode=%s", mode)
             return
         if built is not None:
             self._sup, self._broker, self._om = built
-            logger.info("execution_ready")
+            self._exec_day = day
+            logger.info("execution_ready mode=%s day=%s", mode, day)
 
     def _fire(
         self,

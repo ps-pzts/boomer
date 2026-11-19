@@ -233,6 +233,8 @@ column would silently reset to its default on the next config update. A dedicate
 that and gives an audit trail of who enabled live trading and why. The startup banner and every Telegram decision message
 show the mode.
 
+*Toggle (#76, 2026-11-19):* the operator switches with Telegram `/mode paper|live confirm` or the dashboard. Each switch writes the audited row; the env var remains the server-level arm. The mode is locked into each day's `trading_sessions` row at session start, so a switch applies from the next session. Execution is built per session day.
+
 ## 6. What gets retired
 
 - `gtt_dispatch` for intraday recommendations (removed from the registry, with a

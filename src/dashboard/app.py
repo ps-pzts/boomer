@@ -116,7 +116,38 @@ async def boomer_redirect(_: AuthDep) -> RedirectResponse:
 @app.get("/", response_class=HTMLResponse)
 async def today(request: Request, _: AuthDep) -> HTMLResponse:
     snap = get_today_snapshot(DB_PATH, _run_date())
-    return templates.TemplateResponse(request, "today.html", {"snap": snap})
+    return templates.TemplateResponse(
+        request,
+        "today.html",
+        {
+            "snap": snap,
+            "trading": _trading_mode_view(),
+            "mode_msg": request.query_params.get("mode_msg", ""),
+        },
+    )
+
+
+def _trading_mode_view() -> dict:
+    """Paper/live: today's locked mode, what the next session will use (#76)."""
+    from src.executor.trading_mode import (
+        ENV_VAR,
+        LiveTradingAuthorisationStore,
+        paper_record,
+        resolve_trading_mode,
+        session_mode,
+    )
+
+    env = os.environ.get(ENV_VAR)
+    today = datetime.datetime.now(IST).date()
+    try:
+        return {
+            "today": session_mode(DB_PATH, today, env),
+            "next": resolve_trading_mode(env, LiveTradingAuthorisationStore(DB_PATH)).mode.value,
+            "armed": (env or "").strip().lower() == "live",
+            "record": paper_record(DB_PATH),
+        }
+    except Exception as exc:  # never break the page over this panel
+        return {"error": str(exc)}
 
 
 # ─── View 2: Positions ─────────────────────────────────────────────────────────
@@ -194,6 +225,32 @@ async def set_mode(mode: Annotated[str, Form()], _: AuthDep) -> RedirectResponse
     finally:
         conn.close()
     return RedirectResponse("/", status_code=303)
+
+
+# ─── Paper / live toggle (#76) ────────────────────────────────────────────────
+
+
+@app.post("/trading-mode")
+async def set_trading_mode(
+    target: Annotated[str, Form()],
+    reason: Annotated[str, Form()],
+    _: AuthDep,
+    confirm: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    import urllib.parse
+
+    from src.executor.trading_mode import ENV_VAR, request_mode
+
+    result = request_mode(
+        DB_PATH,
+        target,
+        actor="dashboard",
+        reason=reason.strip() or f"dashboard switch to {target}",
+        env_value=os.environ.get(ENV_VAR),
+        confirmed=confirm == "yes",
+        today=datetime.datetime.now(IST).date(),
+    )
+    return RedirectResponse("/?mode_msg=" + urllib.parse.quote(result.message), status_code=303)
 
 
 # ─── Acknowledge missed critical ──────────────────────────────────────────────

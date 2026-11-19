@@ -373,10 +373,46 @@ def test_lazy_execution_unblocks_the_open(tmp_path):
     d = Day(tmp_path, supervisor=False)
     ready = {"ok": False}
     d.ctl._broker = None
-    d.ctl._execution_factory = lambda: (d.h.sup, d.h.paper, d.h.om) if ready["ok"] else None
+    d.ctl._execution_factory = lambda mode: (d.h.sup, d.h.paper, d.h.om) if ready["ok"] else None
     d.at(9, 0)
     d.at(9, 1)
     assert d.at(9, 15) == sm.READY  # blocked: execution_unavailable
     ready["ok"] = True  # e.g. the 08:45 setup bootstrapped the capital ledger late
     assert d.at(9, 16) == sm.TRADING
     assert d.ctl.supervisor is d.h.sup
+
+
+def test_mode_locked_per_day_and_execution_rebuilt_next_day(tmp_path):
+    """#76: the day's mode is fixed at session start; a new day rebuilds execution
+    in that day's mode, but never while a trade is still active."""
+    d = Day(tmp_path, supervisor=False)
+    modes = {"next": "paper"}
+    built = []
+    d.ctl._mode_for = lambda day: modes["next"]
+    d.ctl._broker = None
+
+    def factory(mode):
+        built.append(mode)
+        return (d.h.sup, d.h.paper, d.h.om)
+
+    d.ctl._execution_factory = factory
+    d.at(9, 0)
+    modes["next"] = "live"  # operator toggles mid-day
+    d.at(9, 1)
+    assert (d.ctl.mode(DAY), built) == ("paper", ["paper"])  # today unchanged, built once
+    d.h.clock.now = d.h.clock.now.replace(day=20, hour=9, minute=0)
+    d.ctl.tick()
+    assert built == ["paper", "live"]  # next day: rebuilt in the new mode
+    assert d.ctl.mode(DAY.replace(day=20)) == "live"
+
+
+def test_execution_never_swapped_under_an_active_trade(tmp_path):
+    d = Day(tmp_path)
+    built = []
+    d.ctl._execution_factory = lambda mode: built.append(mode) or (d.h.sup, d.h.paper, d.h.om)
+    d.ctl._exec_day = DAY
+    d.trading()
+    d.h.sup.open_trade(_req())
+    d.at(10, 0)  # trade open
+    d.ctl._ensure_execution(DAY.replace(day=20))  # a new day while it's still open
+    assert built == []  # kept: MIS can't span days, and the broker is never swapped under it

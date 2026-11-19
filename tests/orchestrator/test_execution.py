@@ -18,6 +18,7 @@ from src.orchestrator.tasks_session import _session_tick
 
 IST = ZoneInfo("Asia/Kolkata")
 MIGRATIONS = Path(__file__).parents[2] / "migrations"
+DAY = datetime.date(2026, 11, 19)
 
 
 def _db(tmp_path: Path, capital: bool = True) -> str:
@@ -38,14 +39,14 @@ def test_feed_ltp_reads_latest_tick():
 
 def _built(db, mode="paper", feed="new"):
     s = build_session(db, mode, ManualFeed() if feed == "new" else feed, brokers=[])
-    s._ensure_execution()
+    s._ensure_execution(DAY)
     return s
 
 
 def test_paper_session_has_paper_execution(tmp_path):
     s = build_session(_db(tmp_path), "paper", ManualFeed(), brokers=[])
     assert s.supervisor is None  # lazy (#74): built on the first tick
-    s._ensure_execution()
+    s._ensure_execution(DAY)
     assert s._sup is not None
     assert str(s._broker.broker_id) == "paper"
 
@@ -61,10 +62,10 @@ def test_no_capital_ledger_fails_closed_then_builds_once_it_exists(tmp_path):
     s = _built(db)
     assert s._sup is None
     CapitalStateManager(db).initialise(Decimal("1000000"), datetime.date(2026, 11, 18))
-    s._ensure_execution()
+    s._ensure_execution(DAY)
     assert s._sup is not None
     first = s._sup
-    s._ensure_execution()
+    s._ensure_execution(DAY)
     assert s._sup is first  # built once, never replaced mid-session
 
 
