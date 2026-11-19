@@ -90,7 +90,7 @@ class OrderManager:
         record = self._load_order(order_id)
         if record.status in TERMINAL_STATUSES:
             return
-        broker = self._brokers[record.broker_id]
+        broker = self._broker_for_record(record)
         broker.cancel_order(record.broker_order_id)
         self._transition(order_id, OrderStatus.CANCELLED)
 
@@ -99,7 +99,7 @@ class OrderManager:
         record = self._load_order(order_id)
         if record.status in TERMINAL_STATUSES:
             return record
-        broker = self._brokers[record.broker_id]
+        broker = self._broker_for_record(record)
         raw = broker.get_order_status(record.broker_order_id)
         if not raw:
             return record
@@ -321,6 +321,21 @@ class OrderManager:
         if broker is None:
             raise RuntimeError(f"No broker registered for {BrokerName.KITE}")
         return broker
+
+    def _broker_for_record(self, record: OrderRecord) -> Broker:
+        """The broker that placed this order (#41).
+
+        Orders are submitted through the KITE slot, which holds whichever execution
+        broker the trading mode chose, but each row records that broker's own id
+        (e.g. `paper`). Match the registry key first, then each broker's own id.
+        """
+        broker = self._brokers.get(record.broker_id)
+        if broker is not None:
+            return broker
+        for candidate in self._brokers.values():
+            if candidate.broker_id == record.broker_id:
+                return candidate
+        raise RuntimeError(f"No registered broker matches order broker_id={record.broker_id}")
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> OrderRecord:
