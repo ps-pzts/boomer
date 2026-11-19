@@ -7,6 +7,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
+from executor.brokers.feeds.base import MarketDataFeed
+from executor.brokers.kite_instruments import InstrumentCache
 from executor.models import (
     BrokerFunds,
     BrokerName,
@@ -65,7 +67,8 @@ class KiteBroker(Broker):
 
     Handles:
     - All intraday (MIS) order placement
-    - Tick feed (WebSocket) as the authoritative LTP source (Q4-1)
+    - LTP: fresh ticks from the attached MarketDataFeed (KiteFeed owns the WebSocket),
+      falling back to REST
     - Historical OHLCV for morning batch and backtesting
     - GTT (single and OCO) for positions managed on Kite
 
@@ -73,18 +76,16 @@ class KiteBroker(Broker):
     Mid-day session death: re-authenticate automatically (Loophole 6).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, feed: MarketDataFeed | None = None) -> None:
         self._kite = None
-        self._ticker = None
+        self._feed = feed
         self._ltp: dict[str, float] = {}
         self._ltp_timestamp: dict[str, datetime] = {}
-        self._order_callbacks: list[Callable[[dict], None]] = []
-        self._tick_subscriptions: list[tuple[list[str], Callable[[str, float], None]]] = []
         self._LTP_STALENESS_SECONDS = 300  # Q4-1: 5-minute staleness threshold
-        self._token_to_symbol: dict[int, str] = {}  # instrument_token → tradingsymbol
-        self._subscribed_tokens: set[int] = set()
-        self._instruments_cache: dict[str, dict[str, int]] = {}  # exchange → {symbol: token}
-        self._ticker_connected = False
+        self.instruments = InstrumentCache(self._load_instruments)
+
+    def attach_feed(self, feed: MarketDataFeed) -> None:
+        self._feed = feed
 
     @property
     def broker_id(self) -> BrokerName:
@@ -186,16 +187,24 @@ class KiteBroker(Broker):
         )
 
     def on_order_update(self, callback: Callable[[dict], None]) -> None:
-        self._order_callbacks.append(callback)
-        if self._ticker:
-            self._ticker.on_order_update = self._dispatch_order_update
+        # Order updates arrive on the same WebSocket as ticks, which the feed owns.
+        if self._feed is None:
+            raise RuntimeError("KiteBroker has no feed attached — order updates unavailable")
+        self._feed.on_order_update(callback)
 
     def on_tick(self, symbols: list[str], callback: Callable[[str, float], None]) -> None:
-        self._tick_subscriptions.append((symbols, callback))
-        self._start_ticker_if_needed(symbols)
+        if self._feed is None:
+            raise RuntimeError("KiteBroker has no feed attached — ticks unavailable")
+        wanted = set(symbols)
+        self._feed.subscribe(symbols)
+        self._feed.on_tick(lambda t: callback(t.symbol, t.ltp) if t.symbol in wanted else None)
 
     def get_ltp(self, symbol: str, exchange: str) -> float | None:
         now = datetime.now(IST)
+        # Tier 0: fresh tick from the live feed
+        tick = self._feed.latest(symbol) if self._feed else None
+        if tick and (now - tick.received_at).total_seconds() < self._LTP_STALENESS_SECONDS:
+            return tick.ltp
         ts = self._ltp_timestamp.get(symbol)
         if ts and (now - ts).total_seconds() < self._LTP_STALENESS_SECONDS:
             return self._ltp.get(symbol)
@@ -219,7 +228,9 @@ class KiteBroker(Broker):
                     return float(p["last_price"])
         except Exception:
             pass
-        # Tier 3: last known tick (may be stale — better than None)
+        # Tier 3: last known price (stale tick or old REST value — better than None)
+        if tick:
+            return tick.ltp
         return self._ltp.get(symbol)
 
     # ── GTT methods ───────────────────────────────────────────────────────────
@@ -328,101 +339,9 @@ class KiteBroker(Broker):
         if self._kite is None:
             raise RuntimeError("KiteBroker not authenticated — call authenticate() first")
 
+    def _load_instruments(self, exchange: str) -> list[dict]:
+        self._ensure_authenticated()
+        return self._kite.instruments(exchange=exchange)
+
     def _resolve_instrument_token(self, symbol: str, exchange: str) -> int:
-        # Cache the instrument list per exchange for the session — it doesn't change intraday.
-        cache = self._instruments_cache.get(exchange)
-        if cache is None:
-            self._ensure_authenticated()
-            instruments = self._kite.instruments(exchange=exchange)
-            cache = {inst["tradingsymbol"]: int(inst["instrument_token"]) for inst in instruments}
-            self._instruments_cache[exchange] = cache
-        token = cache.get(symbol)
-        if token is None:
-            raise ValueError(f"Instrument not found: {exchange}:{symbol}")
-        return token
-
-    def _start_ticker_if_needed(self, symbols: list[str]) -> None:
-        # Resolve any new symbols to instrument tokens (cached instrument list).
-        for symbol in symbols:
-            try:
-                token = self._resolve_instrument_token(symbol, "NSE")
-                self._token_to_symbol[token] = symbol
-            except Exception as exc:
-                logger.warning("KiteTicker: cannot resolve token for %s: %s", symbol, exc)
-
-        if self._ticker is not None:
-            # Ticker already exists, but connect() is async (threaded=True) — the
-            # WebSocket handshake may not have completed yet. Subscribing before
-            # self._ticker.ws exists raises inside the kiteconnect SDK. If we're not
-            # connected yet, leave new tokens in _token_to_symbol: _on_ticker_connect
-            # subscribes everything known once the handshake completes (and again on
-            # every auto-reconnect, which is idempotent).
-            new_tokens = [t for t in self._token_to_symbol if t not in self._subscribed_tokens]
-            if new_tokens and self._ticker_connected:
-                try:
-                    self._ticker.subscribe(new_tokens)
-                    self._ticker.set_mode(self._ticker.MODE_QUOTE, new_tokens)
-                    self._subscribed_tokens.update(new_tokens)
-                except Exception as exc:
-                    logger.error(
-                        "KiteTicker: subscribe failed for %d tokens: %s", len(new_tokens), exc
-                    )
-            return
-
-        try:
-            from kiteconnect import KiteTicker  # type: ignore[import-untyped]
-
-            api_key = os.environ["KITE_API_KEY"]
-            access_token = os.environ["KITE_ACCESS_TOKEN"]
-            self._ticker = KiteTicker(api_key, access_token)
-            self._ticker.on_ticks = self._on_ticks_received
-            self._ticker.on_order_update = self._dispatch_order_update
-            self._ticker.on_connect = self._on_ticker_connect
-            self._ticker.on_close = self._on_ticker_close
-            self._ticker.connect(threaded=True)
-        except Exception as exc:
-            logger.error("Failed to start KiteTicker: %s", exc)
-
-    def _on_ticker_connect(self, ws: object, response: object) -> None:
-        """Subscribe all known instruments once the WebSocket handshake completes.
-
-        Fires on the initial connect and again on every auto-reconnect, so it
-        re-subscribes everything each time — safe since subscribe() is idempotent.
-        """
-        self._ticker_connected = True
-        tokens = list(self._token_to_symbol.keys())
-        if tokens:
-            try:
-                self._ticker.subscribe(tokens)
-                self._ticker.set_mode(self._ticker.MODE_QUOTE, tokens)
-                self._subscribed_tokens.update(tokens)
-                logger.info("KiteTicker: subscribed %d instruments", len(tokens))
-            except Exception as exc:
-                logger.error("KiteTicker: subscribe on connect failed: %s", exc)
-
-    def _on_ticker_close(self, ws: object, code: object, reason: object) -> None:
-        """Reset connected state so pending subscriptions wait for the next connect."""
-        self._ticker_connected = False
-        self._subscribed_tokens.clear()
-
-    def _on_ticks_received(self, ws: object, ticks: list[dict]) -> None:
-        now = datetime.now(IST)
-        for tick in ticks:
-            token = tick.get("instrument_token")
-            # Primary: token→symbol map built at subscription time.
-            # Fallback: tradingsymbol field present in MODE_QUOTE/MODE_FULL ticks.
-            symbol = self._token_to_symbol.get(token, tick.get("tradingsymbol", ""))
-            if not symbol:
-                continue
-            ltp = float(tick.get("last_price", 0))
-            if ltp <= 0:
-                continue
-            self._ltp[symbol] = ltp
-            self._ltp_timestamp[symbol] = now
-            for sub_symbols, callback in self._tick_subscriptions:
-                if symbol in sub_symbols:
-                    callback(symbol, ltp)
-
-    def _dispatch_order_update(self, ws: object, data: dict) -> None:
-        for callback in self._order_callbacks:
-            callback(data)
+        return self.instruments.token(symbol, exchange)

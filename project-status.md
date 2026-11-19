@@ -36,7 +36,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). Next: PR 1 (market-data feed + trading-mode switch).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. Next: PR 2 (LiveBarStore + minute-bar parquet + LiveFeatureComputer).
 
 ---
 
@@ -65,6 +65,17 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: B7 PR 1 — market-data feed, paper/live switch, pre-open feed connect
+
+- **Why:** design `designs/intraday-live-pipeline.md` §3.1, §4, §5. The live intraday pipeline needs a tick feed that paper mode and live mode share, and an explicit, fail-closed paper/live switch.
+- New `src/executor/brokers/feeds/`: `MarketDataFeed` ABC, provider-neutral `Tick`, `FeedMode`, `FeedHealth`/`FeedCapabilities`; `KiteFeed` (the single owner of the Kite WebSocket, FULL mode for depth); `ManualFeed` (push-driven, for tests and replay). `parse_kite_tick` treats Kite's 0-for-missing prices as `None`.
+- **Ticker code moved, not copied**, out of `KiteBroker` into `KiteFeed`, keeping the #22/#23 fixes (deferred subscribe until handshake, re-subscribe on every reconnect). `KiteBroker` now takes an optional feed: `get_ltp` tier 0 is a fresh feed tick, `on_tick`/`on_order_update` delegate to the feed. Per-exchange instrument cache extracted to `executor/brokers/kite_instruments.py`, shared by both.
+- `KiteFeed.reauthenticate()` closes and reconnects with the current env token, keeping subscriptions (loophole L6). Verified against the installed kiteconnect SDK: `close()` leaves the Twisted reactor running and `connect()` only starts it if it is not running, so reconnecting is safe.
+- `PaperBroker` now takes a `MarketDataFeed`; every feed tick drives simulated fills, even without an `on_tick()` call. `authenticate()` is a no-op.
+- New `src/executor/trading_mode.py` + migration `0008_live_trading_authorisation.sql`: live needs `BOOMER_TRADING_MODE=live` **and** an enabled, attributed row in the append-only table. Anything else, including a DB error, resolves to paper. Mode is logged at boot. Nothing places orders yet in either mode (execution wiring is PR 4). Dedicated table instead of a `risk_config` column: documented deviation in design §5.
+- Orchestrator: `pre_market_executor_setup` moved 09:20 → **08:45**, no dependencies (feed must stream before the 09:15 open); after the token refresh it subscribes NIFTY 50 and (re)connects the feed. New **09:17 `feed_health_check`** task: CRITICAL alert unless connected with a tick under 60 s old. Feed is built at boot but never connected then (03:00 restart holds an expired token).
+- Tests: `tests/executor/brokers/feeds/` (KiteFeed incl. ported #23 regressions, FeedHealth boundaries, ManualFeed), `test_kite_instruments.py`, `test_trading_mode.py`, `tests/orchestrator/test_tasks_executor.py`, `test_orchestrator_boot.py`; KiteBroker and PaperBroker tests updated to the feed. 583 tests pass, lint and format clean.
 
 ### 2026-11-19 — Chore: `ruff format` the codebase so CI's format gate passes
 
