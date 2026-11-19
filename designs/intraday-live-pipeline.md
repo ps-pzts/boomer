@@ -1,6 +1,6 @@
 # Intraday Live Pipeline (Blocker B7)
 
-> **Status:** DRAFT, waiting for operator review. Nothing in this doc is implemented yet.
+> **Status:** DRAFT, waiting for operator review. Q1 and Q2 resolved 2026-11-19; Q3 to Q5 open.
 > **Author date:** 2026-11-19
 > **Supersedes:** the intraday sections of the retired Phase 3/4 docs (`designs/` was deleted 2026-09-06; recover via `git show e20ea00^:designs/`).
 > **Source of truth:** once approved, this doc wins over the code (CLAUDE.md rule 8).
@@ -31,15 +31,24 @@ When `KITE_API_KEY`/`KITE_ACCESS_TOKEN` are set, `gtt_dispatch` (09:25) sends ev
 CLAUDE.md §10 ("never convert an intraday position to swing or long-term"). There is no
 paper-mode switch: if credentials are present, orders are real.
 
-**Proposed:** a `hotfix/` PR before any B7 work that makes `gtt_dispatch` refuse to submit to a
-live broker (paper/mock only), with a regression test. B7 then retires the task entirely (§6).
-*Waiting for operator decision.*
+**Resolved 2026-11-19 (operator):** only MIS orders with a stop-loss, never long-validity orders.
+Hotfix PR #26 removes `gtt_dispatch` and adds an `OrderManager` pre-trade check that rejects any
+non-MIS product.
 
 ### 1b. The data constraint
 
-The Kite account is on the **free Personal plan**. That plan has order APIs but **no market data
-API**: no WebSocket ticks, no `quote`/`ltp`, no historical candles. Every live feature below,
-and `PaperBroker`'s simulated fills, need a live price source. **This is blocking question Q1 (§9).**
+**Resolved 2026-11-19 (operator):** the Kite Personal account provides everything needed live:
+WebSocket ticks, quotes/LTP, order APIs, and a registered postback (webhook) for order updates.
+It does **not** provide historical candles. Consequences:
+
+- The data feed is Kite only. No second provider.
+- `KiteBroker.get_historical_ohlcv()` cannot be used anywhere. Daily history keeps coming from
+  NSE bhavcopy (`prices` table); intraday history only exists if we record it ourselves
+  (§3.2), so minute-bar recording is a **hard requirement**, not a nice-to-have.
+- Any feature that needs past intraday data (e.g. "20-day average opening range") must either
+  wait for our own recorded bars or use a daily-data proxy (Q4).
+- The startup capability check (§3.1) stays, so a plan or permission change fails loudly instead
+  of silently degrading.
 
 ---
 
@@ -48,6 +57,8 @@ and `PaperBroker`'s simulated fills, need a live price source. **This is blockin
 **Goals (v1)**
 - A 30-minute cycle, 09:30 to 14:30 IST, that scores a watchlist using fresh live features and
   turns approved signals into same-day **MIS** entries with broker-side protective stops.
+- **Operator rule: MIS only, and every entry has a stop-loss.** No CNC, no GTT, no order whose
+  validity extends past the session. Enforced by `OrderManager` check #0 (PR #26) and L9.
 - Execution goes through `PaperBroker` by default (real ticks, simulated fills), behind an
   explicit `BOOMER_TRADING_MODE=paper|live` switch that defaults to `paper`.
 - Every approve/reject/modify decision is logged with rule, inputs and outcome (CLAUDE.md §9).
@@ -86,8 +97,11 @@ and `PaperBroker`'s simulated fills, need a live price source. **This is blockin
 
 ### 3.1 `MarketDataFeed` (new abstraction)
 
-Market data is separated from order execution, because on the free plan they may come from
-different providers.
+Market data is separated from order execution so paper mode can use the live feed while orders go
+to `PaperBroker`, and so tests can drive the pipeline with a fake feed. v1 has one adapter:
+`KiteFeed`, built from the existing `KiteBroker` ticker code (including the #23 race fixes).
+Order updates arrive through the existing WebSocket `on_order_update`; the registered postback
+URL is a second channel that can be added later if the WebSocket proves unreliable.
 
 ```python
 class MarketDataFeed(ABC):
@@ -213,7 +227,7 @@ show the mode.
 | L6 | Kite session expires mid-day | Existing gap (#23 note): re-auth does not reconnect the ticker. The feed adapter owns reconnect-with-fresh-token |
 | L7 | Process restart mid-session loses `LiveBarStore` | On restart, ORB features for that day are `None` (sub-signal skipped, not guessed). Incremental parquet flush every 15 min limits the loss |
 | L8 | Gap greater than 2.5% | No entry (signal layer scores 0, classifier returns `[]`), as today |
-| L9 | Stop leg rejected after the entry fills (unprotected position) | Immediate MARKET exit plus a CRITICAL alert. Never leave an MIS position without a stop |
+| L9 | Stop leg rejected after the entry fills (unprotected position) | Operator rule: every entry has a stop. The trade plan's stop price is validated **before** the entry is sent (an entry with no valid stop is never placed). The SL-M is placed immediately on fill; if it is rejected, immediate MARKET exit plus a CRITICAL alert. Never leave an MIS position without a stop |
 | L10 | Lookahead via the date-granular feature store | Live features are never written to `features` (§3.4) |
 | L11 | Stop moved against the trade | Stops only trail favourably (CLAUDE.md §10); `trail_stop` is reused with an MIS-aware path |
 | L12 | Partial fill on entry | Stop and target are sized to the filled quantity; the remainder is cancelled at validity expiry |
@@ -226,8 +240,8 @@ show the mode.
 
 | PR | Scope |
 |----|-------|
-| 0 | `hotfix/`: `gtt_dispatch` refuses live brokers (§1a), *pending decision* |
-| 1 | `MarketDataFeed` + `Tick` + chosen provider adapter + capability/health check + `BOOMER_TRADING_MODE` + `PaperBroker` on the feed |
+| 0 | ~~`hotfix/`: remove `gtt_dispatch`, MIS-only pre-trade check~~: PR #26 |
+| 1 | `MarketDataFeed` + `Tick` + `KiteFeed` adapter (FULL mode for depth) + capability/health check + `BOOMER_TRADING_MODE` + `PaperBroker` on the feed |
 | 2 | `LiveBarStore` + parquet flush + `LiveFeatureComputer` (worked-example tests) |
 | 3 | `intraday_watchlist` task + migration `0008` + retire intraday GTT and morning-recommendation path |
 | 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes |
@@ -239,8 +253,8 @@ show the mode.
 
 | ID | Question | Blocks | Recommendation |
 |----|----------|--------|----------------|
-| Q1 | **Live data source.** Personal plan has no market data. Options: **(A)** upgrade to paid Kite Connect (about ₹500/month as of early 2025, *verify current pricing*): same SDK, existing `KiteBroker` ticker code works, includes historical candles. **(B)** a free market-data API from a second broker (e.g. Upstox or Angel One SmartAPI, *verify current terms*): ₹0, but a second SDK, a second daily login/TOTP flow, and second-provider risk (the Fyers MPIN experience). **(C)** scraped or delayed sources: rejected, unreliable and likely against ToS | PR 1 onward | **A.** Lowest complexity, one vendor, and the cost is small relative to what the system is meant to trade |
-| Q2 | Ship the §1a hotfix now? | PR 0 | Yes |
+| Q1 | ~~Live data source~~ | | **Resolved 2026-11-19:** Kite Personal provides live ticks/quotes; no historical candles (§1b) |
+| Q2 | ~~Fix the §1a GTT hazard now?~~ | | **Resolved 2026-11-19:** yes, MIS-only. PR #26 |
 | Q3 | Watchlist size N | PR 3 | 50 (well under any per-connection subscription limit; keeps per-cycle compute trivial) |
-| Q4 | ORB ratio definition: the original "vs 20-day average ORB range" needs 20 sessions of our own minute bars. Use `orb_range / atr_14d` permanently, or as a bootstrap until 20 sessions exist? | PR 2 | Permanent `orb_range / atr_14d`: no warm-up, and comparable across stocks |
+| Q4 | ORB ratio definition: the original "vs 20-day average ORB range" needs 20 sessions of our own minute bars (Kite Personal has no historical candles to backfill). Use `orb_range / atr_14d` permanently, or as a bootstrap until 20 sessions exist? | PR 2 | Permanent `orb_range / atr_14d`: no warm-up, and comparable across stocks |
 | Q5 | Exit criteria from paper to live | Going live | At least 20 paper sessions, no unprotected-position incidents, fill-simulation slippage within the backtester's assumption, positive expectancy after costs, and B4 (SEBI) resolved |
