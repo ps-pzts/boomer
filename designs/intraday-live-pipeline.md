@@ -1,6 +1,6 @@
 # Intraday Live Pipeline (Blocker B7)
 
-> **Status:** DRAFT, waiting for operator review. Q1 and Q2 resolved 2026-11-19; Q3 to Q5 open.
+> **Status:** APPROVED 2026-11-19. All open questions (Q1 to Q5) resolved by the operator.
 > **Author date:** 2026-11-19
 > **Supersedes:** the intraday sections of the retired Phase 3/4 docs (`designs/` was deleted 2026-09-06; recover via `git show e20ea00^:designs/`).
 > **Source of truth:** once approved, this doc wins over the code (CLAUDE.md rule 8).
@@ -136,7 +136,7 @@ silently to the batch path.
 |---------|-----------|--------|
 | `premarket_gap_pct` | `(day_open − prev_close) / prev_close × 100` | tick `ohlc.open` after 09:15; `prev_close` from `prices` table |
 | `orb_high`, `orb_low` | max high / min low of the 09:15 to 09:29 1-min bars | LiveBarStore |
-| `orb_range_vs_20d_avg_ratio` | see Q4: v1 proposes `(orb_high − orb_low) / atr_14d` | LiveBarStore + batch `atr_14d` |
+| `orb_range_vs_atr` | `(orb_high − orb_low) / atr_14d` (Q4) | LiveBarStore + batch `atr_14d` |
 | `vwap_current` | provider `avg_traded_price` | tick |
 | `price_vs_open_pct` | `(ltp − day_open) / day_open × 100` | tick |
 | `nifty_intraday_direction` | `+1` if NIFTY 50 is above prev close by more than 0.10%, `−1` if below by more than 0.10%, else `0` | index tick |
@@ -182,7 +182,7 @@ The class `IntradayPipeline._signal_runner` has always expected. Per cycle:
 A full-universe stream (~2,400 symbols) is unnecessary and heavy. The 09:10 task becomes
 `intraday_watchlist`: rank the pre-market universe by batch score (F&O OI, news, beta) with
 liquidity filters (`avg_traded_value_20d`, `min_stock_price` from `risk_config`, so no hard-coded
-rupees), take the **top N** (Q3, proposed N = 50), and persist them to a new `intraday_watchlist`
+rupees), take the **top N = 50** (Q3), and persist them to a new `intraday_watchlist`
 table (migration `0008`). The feed subscribes those symbols plus NIFTY 50 at 09:14.
 
 ---
@@ -255,6 +255,6 @@ show the mode.
 |----|----------|--------|----------------|
 | Q1 | ~~Live data source~~ | | **Resolved 2026-11-19:** Kite Personal provides live ticks/quotes; no historical candles (§1b) |
 | Q2 | ~~Fix the §1a GTT hazard now?~~ | | **Resolved 2026-11-19:** yes, MIS-only. PR #26 |
-| Q3 | Watchlist size N | PR 3 | 50 (well under any per-connection subscription limit; keeps per-cycle compute trivial) |
-| Q4 | ORB ratio definition: the original "vs 20-day average ORB range" needs 20 sessions of our own minute bars (Kite Personal has no historical candles to backfill). Use `orb_range / atr_14d` permanently, or as a bootstrap until 20 sessions exist? | PR 2 | Permanent `orb_range / atr_14d`: no warm-up, and comparable across stocks |
-| Q5 | Exit criteria from paper to live | Going live | At least 20 paper sessions, no unprotected-position incidents, fill-simulation slippage within the backtester's assumption, positive expectancy after costs, and B4 (SEBI) resolved |
+| Q3 | ~~Watchlist size N~~ | | **Resolved 2026-11-19:** N = 50 |
+| Q4 | ~~ORB ratio definition~~ | | **Resolved 2026-11-19:** permanently `orb_range_vs_atr = (orb_high − orb_low) / atr_14d`. The feature is renamed from `orb_range_vs_20d_avg_ratio` in `IntradaySignalGenerator` and `track_intraday.py` (PR 2) so the name matches what it measures |
+| Q5 | ~~Paper → live exit criteria~~ | | **Resolved 2026-11-19:** all of: at least 20 paper sessions; zero positions ever left without a stop; simulated slippage within the backtester's assumption; positive expectancy after costs; B4 (SEBI) resolved |
