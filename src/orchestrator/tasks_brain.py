@@ -73,26 +73,16 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
     at signal time, not here.
     """
     import datetime as _dt
-    import sqlite3
 
     from src.brain.feature_store import FeatureStore
     from src.brain.features.runner import run_track_computers
     from src.brain.features.track_intraday import INTRADAY_COMPUTERS
+    from src.brain.universe import intraday_universe
 
     as_of_date = _dt.date.fromisoformat(run_date)
     fs = FeatureStore(db_path)
-
-    conn = sqlite3.connect(db_path, timeout=5)
-    conn.row_factory = sqlite3.Row
-    # instruments table uses nse_symbol; series column distinguishes EQ/BE from FO/etc.
-    symbols = [
-        r[0]
-        for r in conn.execute(
-            "SELECT DISTINCT nse_symbol FROM instruments"
-            " WHERE series = 'EQ' AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
-        ).fetchall()
-    ]
-    conn.close()
+    # Only the F&O universe can ever be traded (#50): no point computing the rest.
+    symbols = intraday_universe(db_path, as_of_date).symbols
 
     for sym in symbols:
         try:
@@ -113,9 +103,9 @@ def _intraday_watchlist(
     recommendations scored stale data only and nothing has executed them since #26.
     """
     import datetime as _dt
-    import sqlite3
 
     from src.brain.feature_store import FeatureStore
+    from src.brain.universe import intraday_universe
     from src.brain.watchlist import WatchlistStore, select_watchlist
     from src.capital.risk_config import RiskConfigStore
 
@@ -125,15 +115,22 @@ def _intraday_watchlist(
     regime = _compute_market_regime(db_path, run_date)
     fs = FeatureStore(db_path)
 
-    conn = sqlite3.connect(db_path, timeout=5)
-    symbols = [
-        r[0]
-        for r in conn.execute(
-            "SELECT DISTINCT nse_symbol FROM instruments"
-            " WHERE series = 'EQ' AND nse_symbol IS NOT NULL ORDER BY nse_symbol"
-        ).fetchall()
-    ]
-    conn.close()
+    universe = intraday_universe(db_path, session_date)
+    if universe.unavailable_reason:
+        # Fail closed: never fall back to the unfiltered equity universe (#50).
+        logger.error(
+            "intraday_watchlist universe_unavailable run_date=%s reason=%s",
+            run_date,
+            universe.unavailable_reason,
+        )
+        WatchlistStore(db_path).save(session_date, [])
+        _alert_critical_brain(
+            "No F&O universe: not trading today",
+            f"{universe.unavailable_reason} (F&O data as of {universe.fno_as_of}). "
+            "Check the nightly F&O bhavcopy collection.",
+        )
+        return
+    symbols = universe.symbols
 
     def _features():
         for sym in symbols:

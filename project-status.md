@@ -74,6 +74,15 @@
 
 ## Change log
 
+### 2026-11-19 — Feat: F&O-only intraday universe (#50 part 1)
+
+- **Why:** operator decision. A turnover floor can't stop pump-and-dump (manipulation creates volume); F&O stocks meet exchange eligibility criteria, have no price bands and deep books, so they're the hardest to manipulate. The F&O open-interest sub-signal only works for them anyway.
+- New `src/brain/universe.py`: `intraday_universe()` = EQ-series instruments ∩ stock-futures underlyings on the latest `fo_oi_daily` trade date **strictly before** the session (point in time); index futures drop out naturally. Fails closed when F&O data is missing or older than 5 trading days.
+- `morning_batch_features` now computes only for the universe (~200 instead of ~2,400 symbols). `intraday_watchlist` uses it; if unavailable it saves an empty watchlist, subscribes nothing and sends a CRITICAL "not trading today" alert.
+- **Part 2 (ASM/GSM exclusion) blocked:** probing NSE's surveillance API endpoints wasn't permitted from the dev environment; source to be verified by the operator. Tracked on #50.
+- Found in passing: `_parse_date` in 4 collector fetchers silently returns today's date on unparseable input (#54, deferred).
+- Tests: `tests/brain/test_universe.py` (intersection, lookahead exclusion, options-only rows, stale/missing fail-closed, trading-day age), watchlist task tests for non-F&O and no-F&O-data. 714 tests pass.
+
 ### 2026-11-19 — Bug: single ₹10 cr liquidity floor (#38) + EQ-only universe (#49)
 
 - **#38:** removed the hardcoded ₹10 cr `LIQUIDITY_GATE` from `brain/signals/base.py`; the generator now only scores. Liquidity is eligibility, enforced from `risk_config` by the watchlist and `TradePlanGenerator`. Floor set to ₹10 cr (operator decision 2026-11-19): `RISK_CONFIG_DEFAULTS` for fresh DBs, migration `0011` adds a new `risk_config` version for existing DBs with a lower floor (explicit column list; history kept). `TradePlanGenerator` now rejects missing volume/turnover (was `> 0 and <`, so missing passed).

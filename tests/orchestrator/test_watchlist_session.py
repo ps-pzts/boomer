@@ -42,9 +42,28 @@ def alerter():
         yield fake
 
 
+def _add_fno(db_path: str, symbol: str, trade_date: str = "2026-11-18") -> None:
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO fo_oi_daily (record_id, raw_id, parser_version, underlying_symbol,"
+        " instrument_type, expiry_date, trade_date, observed_at, open_interest)"
+        " VALUES (?, 'raw', 'v1', ?, 'FUT', '2026-11-26', ?, ?, 1000)",
+        (f"{symbol}-{trade_date}", symbol, trade_date, f"{trade_date}T18:00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+
 def _add_stock(
-    db_path: str, symbol: str, value_cr: float, oi_change: float | None = None, series: str = "EQ"
+    db_path: str,
+    symbol: str,
+    value_cr: float,
+    oi_change: float | None = None,
+    series: str = "EQ",
+    fno: bool = True,
 ) -> None:
+    if fno:
+        _add_fno(db_path, symbol)
     conn = sqlite3.connect(db_path)
     conn.execute(
         "INSERT INTO instruments (isin, nse_symbol, company_name, series, last_refreshed)"
@@ -96,6 +115,21 @@ class TestIntradayWatchlistTask:
         _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=feed)
         assert feed.subscribed == set()
         assert "empty" in alerter.critical.call_args.args[0]
+
+    def test_non_fno_stock_never_in_watchlist(self, db_path, alerter):
+        """#50: only stocks with stock futures are tradable intraday."""
+        _add_stock(db_path, "CASHONLY", 900, oi_change=9.0, fno=False)
+        _add_stock(db_path, "LIQUID", 900)
+        _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=None)
+        assert [e.stock_symbol for e in WatchlistStore(db_path).load(DAY)] == ["LIQUID"]
+
+    def test_no_fno_data_fails_closed_with_critical(self, db_path, alerter):
+        _add_stock(db_path, "LIQUID", 900, fno=False)
+        feed = ManualFeed()
+        _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=feed)
+        assert WatchlistStore(db_path).load(DAY) == []
+        assert feed.subscribed == set()
+        assert "No F&O universe" in alerter.critical.call_args.args[0]
 
     def test_without_feed_still_persists(self, db_path, alerter):
         _add_stock(db_path, "LIQUID", 900)
