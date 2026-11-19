@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<title>Boomer Live</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="brand-name">Boomer</span>
+    <span id="mode" class="mode" hidden></span>
+  </div>
+  <div class="top-right">
+    <span id="link" class="link" role="status" aria-live="polite"><span class="dot"></span><span id="link-text">Connecting</span></span>
+    <button id="theme" class="icon-btn" type="button" aria-label="Switch theme">◐</button>
+  </div>
+</header>
+<main id="view" tabindex="-1" aria-live="off"></main>
+<nav class="tabs" aria-label="Sections">
+  <a href="#live" data-tab="live"><span class="tab-ico" aria-hidden="true">◉</span>Live</a>
+  <a href="#trades" data-tab="trades"><span class="tab-ico" aria-hidden="true">↕</span>Trades</a>
+  <a href="#days" data-tab="days"><span class="tab-ico" aria-hidden="true">▤</span>Days</a>
+</nav>
+<noscript><p class="noscript">This page needs JavaScript to show live data.</p></noscript>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

@@ -77,7 +77,7 @@ dashboard.yourdomain.com {
 
 ### 8. Verify everything is healthy
 - Check `systemctl status boomer-orchestrator boomer-dashboard boomer-executor`
-- Open dashboard in browser — should show AUTO mode, no alerts
+- Open the web UI (Boomer Live) on your phone: the session card should read Trading, with nothing under "Needs attention"
 - Check `/var/log/boomer/orchestrator.log` for startup message
 
 ---
@@ -101,7 +101,7 @@ dashboard.yourdomain.com {
 ## Incident response
 
 ### "Broker API is down"
-1. Set bot_mode to `paused` via dashboard
+1. Set bot_mode to `paused` with Telegram `/pause` (the web UI is read-only)
 2. Confirm all open positions have broker-side GTT stops (check Kite app directly)
 3. Wait for broker to restore. Check status pages.
 4. Once restored, refresh tokens if expired, resume `auto`
