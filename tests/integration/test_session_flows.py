@@ -105,6 +105,54 @@ class TestSessionTransitionsNotFiredElsewhere:
         assert "square_off" in d.transitions()
 
 
+class TestChecksAndAbandon:
+    def test_checks_failed_from_pre_open(self, tmp_path):
+        d = make_day(tmp_path, kite_checks_passed=False)
+        fail_check(d)
+        assert d.at(9, 0) == sm.HALTED  # created, then halted in one tick
+        assert d.transitions() == ["created", "checks_failed"]
+
+    def test_checks_failed_from_ready(self, tmp_path):
+        d = make_day(tmp_path, kite_checks_passed=False)
+        d.at(9, 0)
+        assert d.at(9, 1) == sm.READY
+        fail_check(d)
+        assert d.at(9, 2) == sm.HALTED
+
+    def test_checks_failed_while_trading_leaves_open_trades_managed(self, d):
+        d.trading()
+        bid = d.h.sup.open_trade(_req())
+        d.at(10, 0)
+        kc.record(d.h.db, DAY, report("canary", False), source="scheduled")
+        assert d.at(10, 1) == sm.HALTED
+        d.at(10, 2, ltp=104.2)
+        d.at(10, 3, ltp=104.2)
+        assert d.h.bracket(bid)["state"] == "closed"
+
+    def test_operator_rerun_passing_resumes_through_reconcile(self, tmp_path):
+        d = make_day(tmp_path, kite_checks_passed=False)
+        fail_check(d)
+        assert d.at(9, 0) == sm.HALTED
+        kc.record(d.h.db, DAY, report("preflight", True), source="operator")
+        kc.record(d.h.db, DAY, report("canary", True), source="operator")
+        assert d.at(9, 20) == sm.TRADING  # checks_passed -> reconcile -> reconciled
+        assert "checks_passed" in d.transitions()
+
+    @pytest.mark.parametrize("phase", ["pre_open", "connected", "ready"])
+    def test_a_day_that_never_traded_is_abandoned(self, tmp_path, phase):
+        d = make_day(tmp_path, kite_checks_passed=False)
+        if phase == "pre_open":
+            d.h.feed.close()
+        d.at(9, 0)
+        if phase == "ready":
+            d.at(9, 1)
+        assert (
+            d.state()
+            == {"pre_open": sm.PRE_OPEN, "connected": sm.CONNECTED, "ready": sm.READY}[phase]
+        )
+        assert d.at(15, 14) == sm.ABANDONED
+
+
 class TestHandOffsUnderFaults:
     def test_halt_with_an_open_trade_keeps_managing_it(self, d):
         d.trading()

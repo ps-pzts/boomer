@@ -74,11 +74,13 @@ class TestProtectingAndStopLost:
         bid = h.sup.open_trade(_req())
         calls = [0]
 
-        def second_orders_call(params: dict) -> bool:
-            calls[0] += 1  # 1st reads the entry fill; 2nd reads the stop just placed
-            return calls[0] == 2
+        def outage_after_the_entry_fill(params: dict) -> bool:
+            calls[0] += 1  # 1st reads the entry fill; from the 2nd on the broker is down,
+            return calls[0] >= 2  # also for the settle-first reconcile inside square_off_all
 
-        h.plan.fail("orders", kex.NetworkException("down"), match=second_orders_call)
+        h.plan.fail(
+            "orders", kex.NetworkException("down"), times=2, match=outage_after_the_entry_fill
+        )
         h.sup.reconcile()
         assert h.bracket(bid)["state"] == "protecting"
         h.sup.square_off_all()

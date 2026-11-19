@@ -61,6 +61,7 @@ class TestStopLimitLifecycle:
 
     def test_trigger_then_fully_filled(self, h):
         oid = place_triggered_stop(h)
+        assert status(h, oid) == OrderStatus.TRIGGERED
         h.tick(98.0)
         assert status(h, oid) == OrderStatus.FILLED
 
