@@ -92,6 +92,43 @@ class TestOrderManagerStateMachine:
 
 
 class TestPreTradeChecks:
+    def test_cnc_product_rejected(self):
+        # Regression: gtt_dispatch sent intraday recs as CNC delivery orders.
+        # Only MIS is allowed, whatever the track.
+        om, broker = _make_om()
+        req = OrderRequest(
+            symbol="RELIANCE",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            product=ProductType.CNC,
+        )
+        with pytest.raises(PreTradeCheckError, match="only MIS"):
+            om._pre_trade_checks(req, broker, ltp=None, track="intraday")
+
+    def test_cnc_rejected_on_submit_and_never_reaches_broker(self):
+        om, broker = _make_om()
+        req = OrderRequest(
+            symbol="RELIANCE",
+            exchange="NSE",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            product=ProductType.CNC,
+        )
+        with patch.object(broker, "place_order") as place:
+            with pytest.raises(PreTradeCheckError):
+                om.submit(req, "intraday")
+            place.assert_not_called()
+        assert om._db.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+
+    def test_mis_product_passes_product_check(self):
+        om, broker = _make_om()
+        req = _intraday_req(qty=10)
+        # track="other" skips the market-hours check, so only the product check matters
+        om._pre_trade_checks(req, broker, ltp=None, track="other")
+
     def test_zero_quantity_rejected(self):
         om, broker = _make_om()
         req = _intraday_req(qty=0)

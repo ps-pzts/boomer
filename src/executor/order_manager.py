@@ -16,6 +16,7 @@ from executor.models import (
     OrderStatus,
     OrderType,
     PreTradeCheckError,
+    ProductType,
     StateMachineError,
 )
 
@@ -152,6 +153,15 @@ class OrderManager:
         ltp: float | None,
         track: str,
     ) -> None:
+        # 0. Product must be MIS. Boomer trades intraday only: every position is
+        # squared off the same day. A CNC (delivery) order would silently turn an
+        # intraday trade into a held position (CLAUDE.md §10), so refuse it here,
+        # the one choke point every order passes through.
+        if request.product != ProductType.MIS:
+            raise PreTradeCheckError(
+                f"Product {request.product} rejected — only MIS (intraday) orders are allowed"
+            )
+
         # 1. Quantity sanity
         if request.quantity <= 0:
             raise PreTradeCheckError(f"Invalid quantity: {request.quantity}")
