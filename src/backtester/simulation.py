@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import math
 import pathlib
@@ -11,6 +10,7 @@ from collections.abc import Callable, Iterator
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from backtester import run_store
 from backtester.costs import CostModel
 from backtester.models import (
     BacktestConfig,
@@ -38,10 +38,10 @@ IST = ZoneInfo("Asia/Kolkata")
 logger = logging.getLogger(__name__)
 
 # Callable type aliases (not enforced at runtime, aid readability)
-PriceLoader = Callable[[str, str, str], list[PriceBar]]      # (symbol, from_date, to_date)
-FeatureLoader = Callable[[str, str], dict[str, float]]       # (symbol, as_of_date)
+PriceLoader = Callable[[str, str, str], list[PriceBar]]  # (symbol, from_date, to_date)
+FeatureLoader = Callable[[str, str], dict[str, float]]  # (symbol, as_of_date)
 EntryDecider = Callable[[str, date, dict[str, float], PriceBar], EntryDecision | None]
-RegimeLoader = Callable[[date], str]                         # date → regime string
+RegimeLoader = Callable[[date], str]  # date → regime string
 
 
 class BacktestSimulation:
@@ -244,8 +244,12 @@ class BacktestSimulation:
 
             logger.debug(
                 "Entry: %s qty=%d fill=%.2f sl=%.2f target=%.2f track=%s",
-                symbol, quantity, fill_price,
-                decision.sl_price, decision.target_price, decision.track,
+                symbol,
+                quantity,
+                fill_price,
+                decision.sl_price,
+                decision.target_price,
+                decision.track,
             )
 
     # ── GTT trigger processing ────────────────────────────────────────────────
@@ -382,7 +386,13 @@ class BacktestSimulation:
         trades_by_track = {t: sum(1 for tr in self._trades if tr.track == t) for t in tracks}
 
         failures, passes = self._check_acceptance(
-            sharpe, max_dd, trades_by_track, expectancy, win_rate, avg_win, avg_loss,
+            sharpe,
+            max_dd,
+            trades_by_track,
+            expectancy,
+            win_rate,
+            avg_win,
+            avg_loss,
             in_sample_sharpe=self._in_sample_sharpe,
         )
 
@@ -466,101 +476,19 @@ class BacktestSimulation:
         std = math.sqrt(variance) if variance > 0 else 1e-9
         return (mean / std) * math.sqrt(252)
 
-    # ── Persistence helpers ───────────────────────────────────────────────────
+    # ── Persistence (SQL lives in backtester/run_store.py) ────────────────────
 
     def _persist_run_start(self, run_id: str, start_iso: str) -> None:
-        self._db.execute(
-            """
-            INSERT INTO backtest_runs
-            (run_id, name, code_hash, start_date, end_date, initial_capital,
-             final_capital, status, tracks, universe, created_at)
-            VALUES (?,?,?,?,?,?,0,'running',?,?,?)
-            """,
-            (
-                run_id,
-                self._config.name,
-                self._code_hash,
-                str(self._config.start_date),
-                str(self._config.end_date),
-                self._config.initial_capital,
-                json.dumps(self._config.tracks),
-                self._config.universe,
-                start_iso,
-            ),
-        )
-        self._db.commit()
+        run_store.persist_run_start(self._db, run_id, self._config, self._code_hash, start_iso)
 
     def _persist_run_complete(self, run_id: str, summary: BacktestSummary) -> None:
-        now = datetime.now(IST).replace(tzinfo=None).isoformat()
-        self._db.execute(
-            """
-            UPDATE backtest_runs SET
-                final_capital=?, total_return_pct=?, annualised_return_pct=?,
-                sharpe_ratio=?, max_drawdown_pct=?, win_rate=?, avg_win_pct=?,
-                avg_loss_pct=?, expectancy=?, total_trades=?, status='complete', completed_at=?
-            WHERE run_id=?
-            """,
-            (
-                summary.final_capital,
-                summary.total_return_pct,
-                summary.annualised_return_pct,
-                summary.sharpe_ratio,
-                summary.max_drawdown_pct,
-                summary.win_rate,
-                summary.avg_win_pct,
-                summary.avg_loss_pct,
-                summary.expectancy,
-                summary.total_trades,
-                now,
-                run_id,
-            ),
+        run_store.persist_run_complete(
+            self._db, run_id, summary, self._trades, self._daily_state_buffer
         )
-        for trade in self._trades:
-            trade_id = str(uuid.uuid4())
-            self._db.execute(
-                """
-                INSERT INTO backtest_trades
-                (trade_id, run_id, symbol, track, side, entry_date, exit_date,
-                 entry_price, exit_price, quantity, gross_pnl, transaction_costs,
-                 slippage_cost, net_pnl, hold_days, exit_reason, signal_confidence, strategy_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    trade_id, run_id, trade.symbol, trade.track, trade.side,
-                    str(trade.entry_date),
-                    str(trade.exit_date) if trade.exit_date else None,
-                    trade.entry_price, trade.exit_price, trade.quantity,
-                    trade.gross_pnl, trade.transaction_costs, trade.slippage_cost,
-                    trade.net_pnl, trade.hold_days, trade.exit_reason,
-                    trade.signal_confidence, trade.strategy_id,
-                ),
-            )
-        # Flush all buffered daily states in one go
-        for row in self._daily_state_buffer:
-            self._db.execute(
-                """
-                INSERT OR REPLACE INTO backtest_daily_state
-                (state_id, run_id, date, total_capital, deployed_capital, cash,
-                 open_positions, drawdown_from_hwm, regime)
-                VALUES (?,?,?,?,?,?,?,?,?)
-                """,
-                row,
-            )
-        self._db.commit()
 
     def _buffer_daily_state(self, run_id: str, state: BacktestDailyState) -> None:
         """Queue a daily state row; flushed in bulk at run end to avoid per-row commits."""
-        self._daily_state_buffer.append((
-            str(uuid.uuid4()),
-            run_id,
-            str(state.date),
-            state.total_capital,
-            state.deployed_capital,
-            state.cash,
-            state.open_positions,
-            state.drawdown_from_hwm,
-            state.regime,
-        ))
+        self._daily_state_buffer.append(run_store.daily_state_row(run_id, state))
 
     # ── Utilities ─────────────────────────────────────────────────────────────
 
@@ -583,7 +511,9 @@ class BacktestSimulation:
         """Hash the backtester source files so holdout tracking resets on code changes."""
         hasher = hashlib.sha256()
         base = pathlib.Path(__file__).parent
-        for fname in sorted(["simulation.py", "models.py", "costs.py", "slippage.py"]):
+        for fname in sorted(
+            ["simulation.py", "models.py", "costs.py", "slippage.py", "run_store.py"]
+        ):
             p = base / fname
             if p.exists():
                 hasher.update(p.read_bytes())
