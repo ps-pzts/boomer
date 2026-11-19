@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -24,6 +25,9 @@ from executor.order_machine import ORDER_SPEC
 from statemachine import IllegalTransition, record_created, transition
 
 logger = logging.getLogger(__name__)
+
+CANCEL_POLLS = 5  # #73: wait up to ~1 s for the broker to confirm a cancel
+CANCEL_POLL_SECONDS = 0.25
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -54,6 +58,7 @@ class OrderManager:
         self._ltp = ltp_cache  # shared in-memory LTP dict updated by KiteBroker.on_tick
         self._alerter = alerter
         self._clock = clock or (lambda: datetime.now(IST))
+        self._sleep = time.sleep
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -133,7 +138,10 @@ class OrderManager:
             broker.cancel_order(record.broker_order_id)
         except Exception as exc:  # e.g. Kite: "order already complete"
             logger.warning("cancel_failed order_id=%s error=%s", order_id, exc)
-        raw = broker.get_order_status(record.broker_order_id) or {}
+        raw = self._final_status(broker, record.broker_order_id)
+        if raw is None:  # broker still processing the cancel: decide on a later sync
+            logger.warning("cancel_unconfirmed order_id=%s", order_id)
+            return self.sync_status(order_id)
         if raw.get("filled_quantity", 0) > record.filled_quantity:
             self._record_execution(record, raw)
         # Anything short of a complete fill ends CANCELLED; a partial fill's quantity
@@ -144,6 +152,18 @@ class OrderManager:
             self._transition(order_id, OrderStatus.CANCELLED, rule="cancel_confirmed")
         return self._load_order(order_id)
 
+    def _final_status(self, broker: Broker, broker_order_id: str) -> dict | None:
+        """The order's status once the broker has processed the cancel, or None if
+        it's still in flight after CANCEL_POLLS tries (#73: Kite answers CANCEL
+        PENDING first; a fill can still land in that window)."""
+        for attempt in range(CANCEL_POLLS):
+            raw = broker.get_order_status(broker_order_id) or {}
+            if not raw or raw.get("status") is not None:
+                return raw
+            if attempt < CANCEL_POLLS - 1:
+                self._sleep(CANCEL_POLL_SECONDS)
+        return None
+
     def sync_status(self, order_id: str) -> OrderRecord:
         """Poll broker for current status and update DB."""
         record = self._load_order(order_id)
@@ -153,19 +173,21 @@ class OrderManager:
         raw = broker.get_order_status(record.broker_order_id)
         if not raw:
             return record
-        new_status = raw["status"]
-        if new_status != record.status:
+        new_status = raw.get("status")  # None: broker still processing, no change (#73)
+        if new_status is not None and new_status != record.status:
             self._transition(order_id, new_status, rule="broker_status_sync")
-            if raw.get("filled_quantity", 0) > record.filled_quantity:
-                self._record_execution(record, raw)
-                if self._alerter and new_status == OrderStatus.FILLED:
-                    avg = raw.get("average_fill_price", 0)
-                    qty = raw.get("filled_quantity", 0)
-                    self._alerter.info(
-                        f"Trade filled — {record.symbol}",
-                        f"Qty filled: {qty}  Avg price: ₹{avg:.2f}\n"
-                        f"Order ID: {order_id[:8]}…  Broker: {record.broker_id}",
-                    )
+        # Fills are recorded whenever the filled quantity grows, even if the status
+        # didn't change (Kite keeps OPEN while a partial fill accumulates, #73).
+        if raw.get("filled_quantity", 0) > record.filled_quantity:
+            self._record_execution(record, raw)
+            if self._alerter and new_status == OrderStatus.FILLED:
+                avg = raw.get("average_fill_price", 0)
+                qty = raw.get("filled_quantity", 0)
+                self._alerter.info(
+                    f"Trade filled — {record.symbol}",
+                    f"Qty filled: {qty}  Avg price: ₹{avg:.2f}\n"
+                    f"Order ID: {order_id[:8]}…  Broker: {record.broker_id}",
+                )
         return self._load_order(order_id)
 
     def handle_broker_update(self, broker_update: dict) -> None:
