@@ -259,6 +259,11 @@ show the mode.
 
 ## 8. Delivery plan (one PR each, tests mandatory)
 
+> **Re-sequenced 2026-11-19 (#47).** After 4b, delivery follows `designs/state-machines.md` §8 and
+> `designs/observability.md` §12: SM-1 (state-machine core + events table) → SM-2 (Trade machine,
+> reworks #46) → SM-3 (Session machine = 4c) → OBS-* (observability module, replaces PR 5).
+> The rows below are kept as history.
+
 | PR | Scope |
 |----|-------|
 | 0 | ~~`hotfix/`: remove `gtt_dispatch`, MIS-only pre-trade check~~: PR #26 |
