@@ -7,9 +7,11 @@ set -euo pipefail
 PIDFILE_ORC=".pids/orchestrator.pid"
 PIDFILE_DASH=".pids/dashboard.pid"
 PIDFILE_BOT=".pids/telegram_bot.pid"
+PIDFILE_FEED=".pids/telegram_feed.pid"
 LOG_ORC="data/logs/orchestrator.log"
 LOG_DASH="data/logs/dashboard.log"
 LOG_BOT="data/logs/telegram_bot.log"
+LOG_FEED="data/logs/telegram_feed.log"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -17,7 +19,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 stop_all() {
     local stopped=0
-    for pf in "$PIDFILE_ORC" "$PIDFILE_DASH" "$PIDFILE_BOT"; do
+    for pf in "$PIDFILE_ORC" "$PIDFILE_DASH" "$PIDFILE_BOT" "$PIDFILE_FEED"; do
         if [[ -f "$pf" ]]; then
             local pid; pid=$(<"$pf")
             if kill -0 "$pid" 2>/dev/null; then
@@ -111,6 +113,12 @@ if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
     nohup python -m src.alerts.telegram_bot >> "$LOG_BOT" 2>&1 &
     echo $! > "$PIDFILE_BOT"
     echo "Telegram bot  started (pid $!, log: $LOG_BOT)"
+    BOOMER_DB_PATH="$BOOMER_DB_PATH" \
+    TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+    TELEGRAM_CHAT_ID="$TELEGRAM_CHAT_ID" \
+    nohup python -m src.observability.telegram_feed >> "$LOG_FEED" 2>&1 &
+    echo $! > "$PIDFILE_FEED"
+    echo "Telegram feed started (pid $!, log: $LOG_FEED)"
 else
     echo "Telegram bot  skipped (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set in .env)"
 fi

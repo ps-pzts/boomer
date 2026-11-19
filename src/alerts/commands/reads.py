@@ -66,14 +66,14 @@ def trades(db_path: str, args: str = "") -> str:
     return "\n".join(lines)
 
 
-def pnl_numbers(db_path: str) -> dict:
+def pnl_numbers(db_path: str, day: str | None = None) -> dict:
     c = conn(db_path)
     try:
         closed = c.execute(
             "SELECT COUNT(*), COALESCE(SUM(realised_pnl), 0),"
             " COALESCE(SUM(realised_pnl > 0), 0), COALESCE(SUM(realised_pnl < 0), 0)"
             " FROM intraday_brackets WHERE session_date=? AND state='closed'",
-            (today(),),
+            (day or today(),),
         ).fetchone()
         open_row = c.execute(
             "SELECT COUNT(*), COALESCE(SUM(unrealised_pnl), 0) FROM positions"
