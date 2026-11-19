@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
+from executor.lost_orders import cancel_lost_orders
 from executor.models import (
     TERMINAL_STATUSES,
     BrokerName,
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 CANCEL_POLLS = 5  # #73: wait up to ~1 s for the broker to confirm a cancel
 CANCEL_POLL_SECONDS = 0.25
+# Statuses meaning the order is still working at the broker after a cancel attempt (#98).
+_STILL_WORKING = frozenset({OrderStatus.PENDING, OrderStatus.TRIGGERED, OrderStatus.PARTIAL})
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -83,9 +86,14 @@ class OrderManager:
         try:
             broker_order_id = broker.place_order(request)
         except Exception as exc:
-            self._transition(order_id, OrderStatus.ERROR, rule="broker_place_failed")
-            self._log_order_error(order_id, str(exc))
-            raise
+            # The broker may have accepted the order and only the answer was lost
+            # (timeout): adopt it rather than leave a working order nobody tracks (#97).
+            broker_order_id = self._find_lost_order(broker, request)
+            if broker_order_id is None:
+                self._transition(order_id, OrderStatus.ERROR, rule="broker_place_failed")
+                self._log_order_error(order_id, str(exc))
+                raise
+            logger.warning("order_adopted_after_lost_answer order_id=%s error=%s", order_id, exc)
 
         self._update_broker_order_id(order_id, broker_order_id)
         self._transition(order_id, OrderStatus.PENDING, rule="broker_accepted")
@@ -98,6 +106,21 @@ class OrderManager:
                 f"Type: {request.order_type}  Broker order: {broker_order_id}",
             )
         return order_id
+
+    def cancel_lost_orders(self) -> int:
+        """Cancel orders whose placement outcome was unknown and could not be looked up
+        then (#97). See executor/lost_orders.py."""
+        return cancel_lost_orders(self)
+
+    @staticmethod
+    def _find_lost_order(broker: Broker, request: OrderRequest) -> str | None:
+        if not request.idempotency_key:
+            return None
+        try:
+            return broker.find_order(request.idempotency_key)
+        except Exception as exc:  # broker unreachable: we cannot tell; treat as failed
+            logger.warning("find_order_failed key=%s error=%s", request.idempotency_key, exc)
+            return None
 
     def live_broker_order_ids(self) -> set[str]:
         """Broker ids of every order we still consider working (#65 reconcile)."""
@@ -170,6 +193,10 @@ class OrderManager:
         # was recorded above and the unfilled remainder is what got cancelled.
         if raw.get("status") == OrderStatus.FILLED:
             self._transition(order_id, OrderStatus.FILLED, rule="filled_before_cancel")
+        elif raw.get("status") in _STILL_WORKING:
+            # The cancel did not take (network error, refused): the order is still
+            # working at the broker. Never record CANCELLED over it (#98).
+            logger.warning("cancel_not_effective order_id=%s status=%s", order_id, raw["status"])
         else:
             self._transition(order_id, OrderStatus.CANCELLED, rule="cancel_confirmed")
         return self._load_order(order_id)
