@@ -12,7 +12,7 @@ Naming convention: feature keys match exactly what signal generators expect.
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, date, timedelta
+from datetime import date, timedelta
 
 from brain.feature_store import FeatureStore
 
@@ -427,8 +427,13 @@ def compute_overnight_news_features(
 ) -> None:
     """Compute overnight filing sentiment for intraday pre-market context.
 
-    Covers filings from 4:00 PM IST on (as_of_date - 1) to the current time.
-    Intended to run at ~9:00 AM IST on the trading day.
+    Window: [previous trading day 15:30 IST, as_of_date 09:15 IST), i.e. from the
+    last session's close to today's open, so weekend/holiday filings count and a
+    replay for a past date never sees later filings (point-in-time).
+
+    filings.observed_at is IST wall-clock written as "YYYY-MM-DDTHH:MM:SS.ffffffZ"
+    (collector.base._fmt_dt; the "Z" does NOT mean UTC, design L13). The bounds are
+    formatted the same way so the string comparison is correct.
 
     Sentiment is confidence-weighted: a filing with confidence 0.9 and label
     'positive' contributes +0.9 to the numerator.
@@ -438,14 +443,15 @@ def compute_overnight_news_features(
                                     positive = net bullish overnight filings.
                                     Not written if no overnight filings exist.
     """
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
+    from datetime import datetime, time
 
-    IST = ZoneInfo("Asia/Kolkata")
-    prev_day = as_of_date - timedelta(days=1)
-    prev_close_ist = datetime(prev_day.year, prev_day.month, prev_day.day, 16, 0, 0, tzinfo=IST)
-    prev_close_utc = prev_close_ist.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    now_utc = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    from market_calendar.nse_holidays import prev_trading_day
+
+    def _as_observed_at(d: date, t: time) -> str:
+        return datetime.combine(d, t).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
+    window_start = _as_observed_at(prev_trading_day(as_of_date), time(15, 30))
+    window_end = _as_observed_at(as_of_date, time(9, 15))
 
     with _conn(db_path) as conn:
         rows = conn.execute(
@@ -453,9 +459,9 @@ def compute_overnight_news_features(
             SELECT sentiment_label, sentiment_confidence
             FROM filings
             WHERE stock_symbol = ? AND exchange = ?
-              AND observed_at > ? AND observed_at <= ?
+              AND observed_at >= ? AND observed_at < ?
             """,
-            (stock_symbol, exchange, prev_close_utc, now_utc),
+            (stock_symbol, exchange, window_start, window_end),
         ).fetchall()
 
     if not rows:

@@ -11,6 +11,7 @@ from brain.features.computers import compute_price_features
 from brain.features.computers_market import (
     compute_beta_features,
     compute_fo_features,
+    compute_overnight_news_features,
     compute_price_mode_classifier,
     compute_sector_relative_strength,
     compute_technical_pattern_score,
@@ -293,3 +294,70 @@ class TestComputeSectorRelativeStrength:
         _seed_prices(db_path, SYM, EXC, 20)
         compute_sector_relative_strength(db_path, fs, SYM, EXC, AS_OF)
         assert fs.get_feature_as_of(SYM, EXC, "sector_relative_strength_20d", AS_OF) is None
+
+
+class TestComputeOvernightNewsFeatures:
+    """Regression tests for #35: the window was shifted 5.5 h (UTC bounds vs IST
+    strings), skipped weekends/holidays, and used wall-clock now (lookahead).
+
+    Correct window: [previous trading day 15:30 IST, as_of_date 09:15 IST).
+    observed_at is stored as IST wall-clock with a misleading "Z" (design L13).
+    """
+
+    MONDAY = date(2026, 11, 23)  # previous trading day: Friday 2026-11-20
+
+    def _filing(self, db_path, observed_at, label, conf, symbol=SYM):
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """
+            INSERT INTO filings (filing_id, raw_id, parser_version, stock_symbol, exchange,
+                                 filing_date, observed_at, category, headline,
+                                 sentiment_label, sentiment_confidence)
+            VALUES (?, 'raw', 'v1', ?, ?, ?, ?, 'other', 'h', ?, ?)
+            """,
+            (f"{symbol}-{observed_at}", symbol, EXC, observed_at[:10], observed_at, label, conf),
+        )
+        conn.commit()
+        conn.close()
+
+    def _run(self, db_path, fs, as_of):
+        compute_overnight_news_features(db_path, fs, SYM, EXC, as_of)
+        return fs.get_feature_as_of(SYM, EXC, "overnight_news_sentiment", as_of)
+
+    def test_weekend_and_pre_open_news_counted_worked_example(self, db_path, fs):
+        # Fri 15:45 positive 0.8 (+0.8), Sat 11:00 negative 0.4 (-0.4),
+        # Mon 08:40 positive 0.6 (+0.6) -> (0.8 - 0.4 + 0.6) / (0.8 + 0.4 + 0.6) = 1.0 / 1.8
+        self._filing(db_path, "2026-11-20T15:45:00.000000Z", "positive", 0.8)
+        self._filing(db_path, "2026-11-21T11:00:00.000000Z", "negative", 0.4)
+        self._filing(db_path, "2026-11-23T08:40:00.000000Z", "positive", 0.6)
+        assert self._run(db_path, fs, self.MONDAY) == pytest.approx(1.0 / 1.8)
+
+    def test_pre_open_news_is_ist_not_utc(self, db_path, fs):
+        """Old code's upper bound at 09:05 IST became '03:35', excluding this filing."""
+        self._filing(db_path, "2026-11-23T08:40:00.000000Z", "negative", 0.9)
+        assert self._run(db_path, fs, self.MONDAY) == pytest.approx(-1.0)
+
+    def test_previous_session_news_excluded(self, db_path, fs):
+        """Old code's lower bound became 10:30 IST, so mid-session news leaked in."""
+        self._filing(db_path, "2026-11-20T14:00:00.000000Z", "positive", 0.9)
+        self._filing(db_path, "2026-11-20T15:29:59.000000Z", "positive", 0.9)
+        assert self._run(db_path, fs, self.MONDAY) is None
+
+    def test_news_after_open_excluded_no_lookahead(self, db_path, fs):
+        self._filing(db_path, "2026-11-23T09:15:00.000000Z", "positive", 0.9)
+        self._filing(db_path, "2026-11-24T08:00:00.000000Z", "positive", 0.9)
+        assert self._run(db_path, fs, self.MONDAY) is None
+
+    def test_window_bounds_inclusive_start_exclusive_end(self, db_path, fs):
+        self._filing(db_path, "2026-11-20T15:30:00.000000Z", "positive", 1.0)  # included
+        self._filing(db_path, "2026-11-23T09:14:59.999999Z", "negative", 1.0)  # included
+        assert self._run(db_path, fs, self.MONDAY) == pytest.approx(0.0)
+
+    def test_holiday_extends_window_to_last_trading_day(self, db_path, fs):
+        # Mon 2026-04-06: Good Friday 04-03 is a holiday, so the window starts Thu 04-02 15:30
+        self._filing(db_path, "2026-04-03T10:00:00.000000Z", "positive", 0.7)
+        assert self._run(db_path, fs, date(2026, 4, 6)) == pytest.approx(1.0)
+
+    def test_other_symbols_ignored_and_no_news_writes_nothing(self, db_path, fs):
+        self._filing(db_path, "2026-11-23T08:40:00.000000Z", "positive", 0.9, symbol="INFY")
+        assert self._run(db_path, fs, self.MONDAY) is None
