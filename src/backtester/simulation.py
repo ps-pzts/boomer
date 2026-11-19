@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import hashlib
 import logging
-import math
-import pathlib
 import sqlite3
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from backtester import run_store
+from backtester import acceptance, run_store
+from backtester.bar_broker import BarBroker
 from backtester.costs import CostModel
 from backtester.models import (
     BacktestConfig,
@@ -20,10 +18,8 @@ from backtester.models import (
     EntryDecision,
 )
 from backtester.slippage import SlippageModel
-from executor.brokers.mock_broker import MockBroker
 from executor.models import (
     GttRequest,
-    GttStatus,
     GttType,
     OrderRequest,
     OrderSide,
@@ -31,6 +27,7 @@ from executor.models import (
     OrderType,
     PriceBar,
 )
+from executor.ticks import DEFAULT_TICK, round_to_tick
 from market_calendar.nse_holidays import trading_days
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -48,7 +45,8 @@ class BacktestSimulation:
     """
     Replay historical data through the same executor code as live trading.
 
-    Same-code principle: only the broker (MockBroker) and time source are swapped.
+    Same-code principle: orders go through the real KiteBroker on KiteSim, driven
+    by the day's bars (backtester/bar_broker.py, #86); only time is simulated.
     All cost/slippage logic runs identically to live mode.
 
     Holdout integrity: tracks a code hash derived from the actual backtester source
@@ -83,7 +81,9 @@ class BacktestSimulation:
         self._code_hash = code_hash or self._compute_code_hash()
         self._cost_model = CostModel()
         self._slippage_model = SlippageModel()
-        self._mock = MockBroker(initial_cash=config.initial_capital)
+        self._bars = BarBroker(cash=config.initial_capital)
+        self._cash = config.initial_capital  # the backtest's own ledger: fills, costs
+        self._gtt_positions: dict[str, str] = {}  # broker trigger_id -> position_id
         self._trades: list[BacktestTrade] = []
         self._daily_states: list[BacktestDailyState] = []
         self._daily_state_buffer: list[tuple] = []
@@ -121,9 +121,10 @@ class BacktestSimulation:
         bars = self._load_bars_for_date(sim_date)
         bar_by_symbol: dict[str, PriceBar] = {b.symbol: b for b in bars}
 
-        # 2. Advance MockBroker — processes resting orders and GTT triggers
+        # 2. Walk each bar through KiteSim: resting orders fill, GTTs trigger
+        self._bars.start_day(sim_date)
         for bar in bars:
-            self._mock.set_price_bar(bar)
+            self._bars.walk(bar)
 
         # 3. Process any GTTs that fired today → close matching positions
         self._process_gtt_triggers(sim_date, bar_by_symbol)
@@ -154,6 +155,7 @@ class BacktestSimulation:
         )
         self._daily_states.append(daily)
         self._buffer_daily_state(run_id, daily)
+        self._bars.end_day()  # DAY orders still working expire at the close
 
     # ── Entry generation ──────────────────────────────────────────────────────
 
@@ -178,7 +180,7 @@ class BacktestSimulation:
                 continue
 
             # Position sizing: max_position_pct of available cash
-            available = self._mock.get_funds().available_cash
+            available = self._cash
             ref_price = decision.entry_price if decision.entry_price > 0 else bar.open
             if ref_price <= 0:
                 continue
@@ -191,7 +193,7 @@ class BacktestSimulation:
             if required_cash > available * 0.98:
                 continue
 
-            # Place buy order through MockBroker
+            # Place the buy at the bar's open through KiteBroker -> KiteSim
             order_type = OrderType.LIMIT if decision.entry_price > 0 else OrderType.MARKET
             buy_req = OrderRequest(
                 symbol=symbol,
@@ -203,14 +205,14 @@ class BacktestSimulation:
                 price=decision.entry_price if order_type == OrderType.LIMIT else 0.0,
                 trigger_price=0.0,
             )
-            broker_order_id = self._mock.place_order(buy_req)
-            order_status = self._mock.get_order_status(broker_order_id)
+            order_status = self._bars.enter(buy_req, bar)
 
             if order_status.get("status") != OrderStatus.FILLED:
-                continue  # limit order didn't fill today — leave resting
+                continue  # limit not reached today: it expires at the close
 
             fill_price = order_status["average_fill_price"]
-            position_id = broker_order_id
+            self._cash -= quantity * fill_price
+            position_id = str(uuid.uuid4())
             open_symbols.add(symbol)
 
             self._open_positions[position_id] = {
@@ -227,20 +229,8 @@ class BacktestSimulation:
                 "target_price": decision.target_price,
             }
 
-            # Place OCO GTT; link back to position via parent_order_id
             if decision.sl_price > 0 and decision.target_price > 0:
-                gtt_req = GttRequest(
-                    symbol=symbol,
-                    exchange="NSE",
-                    gtt_type=GttType.OCO,
-                    quantity=quantity,
-                    sl_trigger_price=decision.sl_price,
-                    sl_limit_price=round(decision.sl_price * 0.99, 2),  # 1% below trigger
-                    target_trigger_price=decision.target_price,
-                    target_limit_price=decision.target_price,
-                    parent_order_id=position_id,
-                )
-                self._mock.place_gtt(gtt_req)
+                self._protect(position_id, quantity, decision, sim_date, bar)
 
             logger.debug(
                 "Entry: %s qty=%d fill=%.2f sl=%.2f target=%.2f track=%s",
@@ -252,32 +242,60 @@ class BacktestSimulation:
                 decision.track,
             )
 
+    def _protect(
+        self,
+        position_id: str,
+        quantity: int,
+        decision: EntryDecision,
+        sim_date: date,
+        bar: PriceBar,
+    ) -> None:
+        """OCO GTT (stop + target), prices on the tick: Kite refuses off-tick ones.
+
+        Kite also refuses an OCO whose stop is at or above the last price, or whose
+        target is at or below it (#86; the pre-#86 simulator accepted both and held
+        the position). A leg is then already breached as the position is opened, so
+        it is closed at once at the close, as the live system force-closes an
+        unprotected position: exit_reason `sl_breached` / `target_breached`."""
+        sl = round_to_tick(decision.sl_price, DEFAULT_TICK, up=True)
+        target = round_to_tick(decision.target_price, DEFAULT_TICK, up=True)
+        gtt_req = GttRequest(
+            symbol=bar.symbol,
+            exchange="NSE",
+            gtt_type=GttType.OCO,
+            quantity=quantity,
+            sl_trigger_price=sl,
+            sl_limit_price=round_to_tick(sl * 0.99, DEFAULT_TICK, up=False),  # 1% below
+            target_trigger_price=target,
+            target_limit_price=target,
+            parent_order_id=position_id,
+        )
+        try:
+            self._gtt_positions[self._bars.place_gtt(gtt_req)] = position_id
+        except Exception as exc:
+            logger.warning(
+                "backtest_gtt_refused symbol=%s sl=%.2f close=%.2f error=%s",
+                bar.symbol,
+                sl,
+                bar.close,
+                exc,
+            )
+            reason = "sl_breached" if bar.close <= sl else "target_breached"
+            self._close_position(position_id, bar.close, reason, sim_date, bar)
+
     # ── GTT trigger processing ────────────────────────────────────────────────
 
     def _process_gtt_triggers(self, sim_date: date, bar_by_symbol: dict[str, PriceBar]) -> None:
-        """Close positions whose OCO GTT fired today."""
-        for gtt in self._mock.list_gtts():
-            if gtt.get("status") != GttStatus.GTT_TRIGGERED:
-                continue
-
-            position_id = gtt.get("parent_order_id")
-            if not position_id:
-                continue
-            if position_id not in self._open_positions:
-                continue  # already closed (both GTT legs share the same parent)
-
-            triggered_leg = gtt.get("triggered_leg", "sl")
-            price_key = "sl_limit_price" if triggered_leg == "sl" else "target_limit_price"
-            exit_price = gtt.get(price_key)
-            if not exit_price:
-                continue
-
+        """Close positions whose OCO GTT fired today (Kite's `triggered` status;
+        the leg with a `result` is the one that fired)."""
+        for trigger_id, leg, exit_price in self._bars.triggered_gtts():
+            position_id = self._gtt_positions.pop(trigger_id, None)
+            if position_id is None or position_id not in self._open_positions:
+                continue  # already handled
+            triggered_leg = "sl" if leg == 0 else "target"
             pos = self._open_positions[position_id]
             bar = bar_by_symbol.get(pos["symbol"])
             self._close_position(position_id, exit_price, triggered_leg, sim_date, bar)
-
-            # Mark GTT cancelled so it won't re-trigger on future days
-            self._mock.cancel_gtt(gtt["broker_gtt_id"])
 
     def _close_position(
         self,
@@ -317,9 +335,8 @@ class BacktestSimulation:
         costs = self._cost_model.round_trip_cost(entry_price * qty, actual_exit * qty, product)
         net_pnl = gross_pnl - costs.total
 
-        # Credit exit proceeds (minus costs) back into MockBroker's cash
-        proceeds = actual_exit * qty - costs.total
-        self._mock.set_cash(self._mock.get_funds().available_cash + proceeds)
+        # Credit exit proceeds (minus costs) back into the ledger
+        self._cash += actual_exit * qty - costs.total
 
         trade = BacktestTrade(
             symbol=pos["symbol"],
@@ -342,14 +359,13 @@ class BacktestSimulation:
         self._trades.append(trade)
 
     def _compute_capital(self, bar_by_symbol: dict[str, PriceBar]) -> float:
-        funds = self._mock.get_funds()
         deployed = 0.0
         for pos in self._open_positions.values():
             bar = bar_by_symbol.get(pos["symbol"])
             ltp = bar.close if bar is not None else pos["current_price"]
             pos["current_price"] = ltp
             deployed += pos["quantity"] * ltp
-        return funds.available_cash + deployed
+        return self._cash + deployed
 
     # ── Statistics ────────────────────────────────────────────────────────────
 
@@ -367,20 +383,9 @@ class BacktestSimulation:
         sharpe = self._sharpe(daily_returns)
         max_dd = max((s.drawdown_from_hwm for s in self._daily_states), default=0.0)
 
-        winners = [t for t in self._trades if t.net_pnl > 0]
-        losers = [t for t in self._trades if t.net_pnl <= 0]
-        win_rate = len(winners) / max(1, len(self._trades))
-        avg_win = (
-            (sum(t.net_pnl for t in winners) / len(winners) / self._config.initial_capital * 100)
-            if winners
-            else 0.0
+        win_rate, avg_win, avg_loss, expectancy = acceptance.trade_stats(
+            self._trades, self._config.initial_capital
         )
-        avg_loss = (
-            (sum(abs(t.net_pnl) for t in losers) / len(losers) / self._config.initial_capital * 100)
-            if losers
-            else 0.0
-        )
-        expectancy = win_rate * avg_win - (1 - win_rate) * avg_loss
 
         tracks = self._config.tracks
         trades_by_track = {t: sum(1 for tr in self._trades if tr.track == t) for t in tracks}
@@ -428,53 +433,23 @@ class BacktestSimulation:
         avg_loss: float,
         in_sample_sharpe: float | None = None,
     ) -> tuple[list[str], bool]:
-        failures = []
-        cfg = self._config
-
-        if sharpe < cfg.min_sharpe:
-            failures.append(f"Sharpe {sharpe:.2f} < {cfg.min_sharpe}")
-
-        if max_dd > cfg.max_drawdown_pct:
-            failures.append(f"Max DD {max_dd:.1f}% > {cfg.max_drawdown_pct}%")
-
-        for track, count in trades_by_track.items():
-            if count < cfg.min_trades_per_track:
-                failures.append(f"{track} trades {count} < {cfg.min_trades_per_track}")
-
-        ev_ratio = (win_rate * avg_win) / max(1e-9, (1 - win_rate) * avg_loss)
-        if ev_ratio < cfg.min_expectancy_ratio:
-            failures.append(f"EV ratio {ev_ratio:.2f} < {cfg.min_expectancy_ratio}")
-
-        # OOS check: only evaluated when an in-sample Sharpe is provided (walk-forward run)
-        if in_sample_sharpe is not None:
-            min_oos = in_sample_sharpe * cfg.min_oos_pct_of_is
-            if sharpe < min_oos:
-                failures.append(
-                    f"OOS Sharpe {sharpe:.2f} < {min_oos:.2f}"
-                    f" ({cfg.min_oos_pct_of_is:.0%} of IS {in_sample_sharpe:.2f})"
-                )
-
-        return failures, len(failures) == 0
+        return acceptance.check(
+            self._config,
+            sharpe,
+            max_dd,
+            trades_by_track,
+            win_rate,
+            avg_win,
+            avg_loss,
+            in_sample_sharpe,
+        )
 
     def _daily_returns(self) -> list[float]:
-        returns = []
-        for i in range(1, len(self._daily_states)):
-            prev = self._daily_states[i - 1].total_capital
-            curr = self._daily_states[i].total_capital
-            if prev > 0:
-                returns.append((curr - prev) / prev)
-        return returns
+        return acceptance.daily_returns([d.total_capital for d in self._daily_states])
 
     @staticmethod
     def _sharpe(daily_returns: list[float], risk_free_annual: float = 0.065) -> float:
-        if len(daily_returns) < 2:
-            return 0.0
-        risk_free_daily = (1 + risk_free_annual) ** (1 / 252) - 1
-        excess = [r - risk_free_daily for r in daily_returns]
-        mean = sum(excess) / len(excess)
-        variance = sum((r - mean) ** 2 for r in excess) / (len(excess) - 1)
-        std = math.sqrt(variance) if variance > 0 else 1e-9
-        return (mean / std) * math.sqrt(252)
+        return acceptance.sharpe(daily_returns, risk_free_annual)
 
     # ── Persistence (SQL lives in backtester/run_store.py) ────────────────────
 
@@ -509,12 +484,4 @@ class BacktestSimulation:
     @staticmethod
     def _compute_code_hash() -> str:
         """Hash the backtester source files so holdout tracking resets on code changes."""
-        hasher = hashlib.sha256()
-        base = pathlib.Path(__file__).parent
-        for fname in sorted(
-            ["simulation.py", "models.py", "costs.py", "slippage.py", "run_store.py"]
-        ):
-            p = base / fname
-            if p.exists():
-                hasher.update(p.read_bytes())
-        return hasher.hexdigest()[:16]
+        return run_store.code_hash()
