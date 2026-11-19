@@ -99,6 +99,16 @@ _KITE_VALIDITY_MAP: dict[OrderValidity, str] = {
 }
 
 
+# Read-only SDK calls whose raw payloads pre-flight validates (#85). Nothing that
+# places, modifies or cancels belongs here.
+_RAW_READS: dict[str, Callable] = {
+    "profile": lambda k: k.profile(),
+    "margins_equity": lambda k: k.margins(segment="equity"),
+    "orders": lambda k: k.orders(),
+    "positions": lambda k: k.positions(),
+    "ltp": lambda k, *keys: k.ltp(list(keys)),
+}
+
 # Kite statuses after which an order can no longer fill (#65).
 _KITE_DONE = FINAL_ORDER_STATUSES
 
@@ -125,9 +135,31 @@ class KiteBroker(Broker):
         self._ltp_timestamp: dict[str, datetime] = {}
         self._LTP_STALENESS_SECONDS = 300  # Q4-1: 5-minute staleness threshold
         self.instruments = InstrumentCache(self._load_instruments)
+        self._recorder: Callable[[str, dict, object], None] | None = None
 
     def attach_feed(self, feed: MarketDataFeed) -> None:
         self._feed = feed
+
+    def raw_read(self, endpoint: str, *args: str) -> object:
+        """The SDK's raw payload for a read-only endpoint (#85): pre-flight checks
+        its shape and the canary records it as a fixture."""
+        fn = _RAW_READS.get(endpoint)
+        if fn is None:
+            raise ValueError(f"{endpoint!r} is not a read-only Kite endpoint")
+        self._ensure_authenticated()
+        return fn(self._kite, *args)
+
+    def set_response_recorder(self, recorder: Callable[[str, dict, object], None] | None) -> None:
+        """recorder(call, params, raw_response) after every place/modify/cancel (#85)."""
+        self._recorder = recorder
+
+    def _recorded(self, call: str, params: dict, resp: object) -> None:
+        if self._recorder is None:
+            return
+        try:
+            self._recorder(call, params, resp)
+        except Exception:  # recording must never break an order path
+            logger.exception("kite_response_recorder_failed call=%s", call)
 
     @property
     def broker_id(self) -> BrokerName:
@@ -161,22 +193,25 @@ class KiteBroker(Broker):
             # -1 lets Kite apply its automatic protection band.
             params["market_protection"] = _AUTO_MARKET_PROTECTION
         resp = self._kite.place_order(variety=self._kite.VARIETY_REGULAR, **params)
+        self._recorded("place_order", params, resp)
         # kiteconnect returns the order id itself (a str), not the response dict.
         # Indexing it raised TypeError AFTER Kite had accepted the order (#73).
         return str(resp["order_id"] if isinstance(resp, dict) else resp)
 
     def modify_order(self, broker_order_id: str, changes: dict) -> str:
         self._ensure_authenticated()
-        self._kite.modify_order(
+        resp = self._kite.modify_order(
             variety=self._kite.VARIETY_REGULAR,
             order_id=broker_order_id,
             **changes,
         )
+        self._recorded("modify_order", {"order_id": broker_order_id, **changes}, resp)
         return broker_order_id
 
     def cancel_order(self, broker_order_id: str) -> None:
         self._ensure_authenticated()
-        self._kite.cancel_order(variety=self._kite.VARIETY_REGULAR, order_id=broker_order_id)
+        resp = self._kite.cancel_order(variety=self._kite.VARIETY_REGULAR, order_id=broker_order_id)
+        self._recorded("cancel_order", {"order_id": broker_order_id}, resp)
 
     def get_order_status(self, broker_order_id: str) -> dict:
         self._ensure_authenticated()
