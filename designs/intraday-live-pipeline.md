@@ -185,6 +185,12 @@ liquidity filters (`avg_traded_value_20d`, `min_stock_price` from `risk_config`,
 rupees), take the **top N = 50** (Q3), and persist them to a new `intraday_watchlist`
 table (migration `0009`). The feed subscribes those symbols plus NIFTY 50 at 09:14.
 
+*Universe (#50, 2026-11-19, operator decision):* only **EQ-series stocks with stock futures**
+(F&O), from the latest `fo_oi_daily` trade date strictly before the session (point in time).
+Fails closed: F&O data older than 5 trading days → empty universe + CRITICAL, never the
+unfiltered equity list. Exchange-surveillance (ASM/GSM) exclusion is part 2 of #50, pending
+verification of the NSE source. `brain/universe.py`.
+
 *Implemented in PR 3 (#37):* ranking = LONG candidates by the generator's batch-only raw score,
 then the remaining slots filled with the most liquid eligible names (live features can turn a
 flat pre-market score into a trade). Eligibility = `risk_config` floors + a usable `atr_14d` +
