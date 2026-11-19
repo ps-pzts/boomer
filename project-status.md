@@ -18,6 +18,7 @@
 
 | Area | Item | Notes |
 |------|------|-------|
+| Design | `designs/state-machines.md`, `designs/observability.md` (#47) | Approved 2026-11-19. Three separate machines (Session / Trade / Order) on one shared core; every component emits to one `events` table, read only by the observability module; trading code never reads events (enforced by a test). |
 | Design | `designs/` folder (Phases 1-5, open-questions.md, design-evolution.md) | **Retired 2026-09-06** — described the 3-track (long_term/swing/intraday), dual-broker system being replaced. Deleted rather than rewritten; a fresh design doc will be written once the intraday-only system is rebuilt and validated in paper trading. Historical content still recoverable via git log/PR descriptions. |
 | Infra | CLAUDE.md | Project rules: git workflow, tests, PRs, file limits, context continuity |
 | Infra | UTC→IST migration | All timestamps now use IST (Asia/Kolkata) throughout — DB writes, market hours checks, cron comparisons, all tests. CLAUDE.md Rule 9 updated: "All timestamps use IST, never UTC." Root cause: system is India-only with no DST; UTC was unnecessary overhead. |
@@ -40,7 +41,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. Next: 4b (trade lifecycle supervisor). Open: #38 liquidity gate 5 vs 10 crore (operator decision).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47): next is SM-1 (state-machine core + one-way `events` table), then SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
 
 ---
 
@@ -69,6 +70,13 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Docs: state machines + one-way event observability (#47)
+
+- **Why:** operator wants one accurate place to watch state and positions instead of querying each subsystem, and asked whether the supervisor should be a state machine. Session logic is currently scattered across tasks, pipeline flags, breakers and clock checks.
+- `designs/state-machines.md`: Session (PRE_OPEN → CONNECTED → READY → TRADING ⇄ HALTED → NO_NEW_ENTRIES → SQUARING_OFF → CLOSED; square-off never blocked), Trade (ENTRY_PENDING → **PROTECTING** → OPEN → EXITING → CLOSED / CANCELLED), Order (existing table, now with history). Kept separate (each has its own goal; merging would multiply the states), sharing one in-house core whose `transition()` commits state + event atomically. Machines call each other directly, never through events.
+- `designs/observability.md`: every component emits to one `events` table (envelope with source, boot_id, per-source seq, mode, correlation ids); only `src/observability/` reads it, enforced by a test. Completeness via atomic transition events and seq gaps; liveness via 30 s heartbeats; truth via 60 s broker snapshots and DRIFT detection; "why not" via rejection events; no per-tick events; 30-day retention then parquet. Surfaces: `/live`, timelines, Telegram `/status`.
+- B7 delivery re-sequenced (pipeline doc §8 note). #46 (4b) to be reworked as SM-2 rather than merged as-is.
 
 ### 2026-11-19 — Bug: send market_protection on live Kite MARKET/SL-M orders (#43)
 
