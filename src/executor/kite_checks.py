@@ -11,16 +11,27 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import time as _time
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, time
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from executor.canary import CanaryConfig, run_canary
 from executor.preflight import CheckReport, CheckResult, run_preflight
 
-__all__ = ["CHECKS", "CanaryConfig", "gate", "kite_broker", "record", "run_and_record"]
+__all__ = [
+    "CHECKS",
+    "CanaryConfig",
+    "gate",
+    "kite_broker",
+    "kite_broker_from_env",
+    "record",
+    "rerun",
+    "run_and_record",
+]
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -119,3 +130,47 @@ def run_and_record(
         except Exception:
             logger.exception("kite_check_alert_failed kind=%s", kind)
     return report
+
+
+# The canary's orders only rest in the normal market: NSE pre-open rejects stop
+# orders and MIS entries close at 15:20.
+CANARY_WINDOW = (time(9, 15), time(15, 20))
+
+
+def rerun(
+    db_path: str,
+    broker: object | None,
+    *,
+    alerter: object | None = None,
+    canary_config: CanaryConfig | None = None,
+    clock: Callable[[], datetime] = lambda: datetime.now(IST),
+    sleep: Callable[[float], None] = _time.sleep,
+) -> list[CheckReport]:
+    """Operator re-run (Telegram /canary): pre-flight, then the canary if the
+    pre-flight passed and the market is in its normal session. Passing both lets a
+    session halted by a Kite check resume through RECONCILING."""
+    kw = {"alerter": alerter, "source": "operator", "clock": clock, "sleep": sleep}
+    reports = [run_and_record(db_path, "preflight", broker, **kw)]
+    now = clock()
+    in_window = now.weekday() < 5 and CANARY_WINDOW[0] <= now.time() < CANARY_WINDOW[1]
+    if reports[0].ok and in_window:
+        reports.append(run_and_record(db_path, "canary", broker, canary_config=canary_config, **kw))
+    return reports
+
+
+def kite_broker_from_env(env_path: Path | str | None = None) -> object | None:
+    """A KiteBroker for a process that didn't build one (the Telegram bot). The 08:45
+    refresh writes the day's token to .env, so it is read from there first."""
+    from executor.brokers.kite_broker import KiteBroker
+
+    path = Path(env_path) if env_path else Path(__file__).parents[2] / ".env"
+    if path.exists():
+        for line in path.read_text().splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() in ("KITE_API_KEY", "KITE_ACCESS_TOKEN") and value.strip():
+                os.environ[key.strip()] = value.strip().strip('"').strip("'")
+    if not (os.environ.get("KITE_API_KEY") and os.environ.get("KITE_ACCESS_TOKEN")):
+        return None
+    broker = KiteBroker()
+    broker.authenticate()
+    return broker
