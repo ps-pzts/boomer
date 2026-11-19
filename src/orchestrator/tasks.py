@@ -35,7 +35,7 @@ from .tasks_maintenance import (
     _nightly_health_check,
     _weekly_harvest_check,
 )
-from .tasks_session import _session_tick
+from .tasks_session import _kite_canary, _kite_preflight, _session_tick
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ def build_task_registry(
         "session": session,
     }
     session_deps = {"session": session}
+    kite_check_deps = {"brokers": brokers or [], "feed": feed}
     bar_deps = {"bar_recorder": bar_recorder}
     feed_deps = {"feed": feed}
     eod_deps = {"reconciler": reconciler, "brokers": brokers or []}
@@ -166,6 +167,24 @@ def build_task_registry(
             retry_policy=RetryPolicy(max_attempts=1),  # next tick in a minute
             repeats=True,
             safety_task=True,  # runs in PAUSED and EMERGENCY_STOP (SM3)
+        ),
+        # #85: the session can't reach TRADING until both passed today. No retry: a
+        # failure halts the session and needs an operator re-run (Telegram /canary).
+        "kite_preflight": TaskDefinition(
+            task_id="kite_preflight",
+            fn=_wrap(_kite_preflight, kite_check_deps),  # type: ignore[arg-type]
+            schedule="55 8 * * 1-5",  # 08:55 IST: after the 08:45 token refresh
+            dependencies=[],
+            timeout_seconds=120,
+            retry_policy=RetryPolicy(max_attempts=1),
+        ),
+        "kite_canary": TaskDefinition(
+            task_id="kite_canary",
+            fn=_wrap(_kite_canary, kite_check_deps),  # type: ignore[arg-type]
+            schedule="15 9 * * 1-5",  # starts 09:15:05: pre-open rejects stop orders
+            dependencies=[],
+            timeout_seconds=180,
+            retry_policy=RetryPolicy(max_attempts=1),
         ),
         "morning_heartbeat": TaskDefinition(
             task_id="morning_heartbeat",

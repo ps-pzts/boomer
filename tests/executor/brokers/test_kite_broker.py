@@ -4,12 +4,13 @@ Regression coverage for the silent bad-fallback bug:
   place_gtt() used `get_ltp() or sl_trigger_price` which caused Kite to reject
   the order with "Trigger cannot be created with one of the trigger values equal
   to the last price." when get_ltp() returned None.
+
+The SDK is an autospec'd KiteConnect fed documented responses (#84).
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -18,6 +19,8 @@ from executor.brokers.feeds.base import Tick
 from executor.brokers.feeds.manual_feed import ManualFeed
 from executor.brokers.kite_broker import KiteBroker
 from executor.models import GttRequest, GttType
+from tests import kite_fixtures as kf
+from tests.kite_sdk import respond
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -25,12 +28,17 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 @pytest.fixture()
-def broker() -> KiteBroker:
+def broker(kite_sdk) -> KiteBroker:
     b = KiteBroker()
-    b._kite = MagicMock()
-    b._kite.GTT_TYPE_SINGLE = "single"
-    b._kite.GTT_TYPE_OCO = "two-leg"
+    b._kite = kite_sdk
     return b
+
+
+def _ltp_down(broker: KiteBroker, holdings=None, positions=None) -> None:
+    """REST LTP refused (no market-data plan); tier-2 sources as given."""
+    respond(broker._kite, "ltp", kf.sdk_error("permission"))
+    respond(broker._kite, "holdings", [] if holdings is None else holdings)
+    respond(broker._kite, "positions", kf.no_positions() if positions is None else positions)
 
 
 # ── get_ltp() fallback chain ──────────────────────────────────────────────────
@@ -38,45 +46,31 @@ def broker() -> KiteBroker:
 
 class TestGetLtp:
     def test_tier1_rest_ltp_used_when_available(self, broker: KiteBroker) -> None:
-        broker._kite.ltp.return_value = {"NSE:KPEL": {"last_price": 380.5}}
-        assert broker.get_ltp("KPEL", "NSE") == 380.5
+        respond(broker._kite, "ltp", kf.sdk("ltp"))
+        assert broker.get_ltp("INFY", "NSE") == 1510.15
+        broker._kite.ltp.assert_called_once_with(["NSE:INFY"])
 
     def test_tier2_holdings_fallback_when_rest_fails(self, broker: KiteBroker) -> None:
-        broker._kite.ltp.side_effect = Exception("Insufficient permission")
-        broker._kite.holdings.return_value = [
-            {"tradingsymbol": "KPEL", "last_price": 375.0},
-        ]
-        broker._kite.positions.return_value = {"day": []}
+        _ltp_down(broker, holdings=kf.sdk("holdings"))
         assert broker.get_ltp("KPEL", "NSE") == 375.0
 
     def test_tier2_positions_fallback_when_rest_and_holdings_miss(self, broker: KiteBroker) -> None:
-        broker._kite.ltp.side_effect = Exception("Insufficient permission")
-        broker._kite.holdings.return_value = []
-        broker._kite.positions.return_value = {
-            "day": [{"tradingsymbol": "KPEL", "last_price": 362.0}]
-        }
-        assert broker.get_ltp("KPEL", "NSE") == 362.0
+        _ltp_down(broker, positions=kf.sdk("positions"))
+        assert broker.get_ltp("INFY", "NSE") == 1510.15
 
     def test_tier3_stale_tick_cache_used_as_last_resort(self, broker: KiteBroker) -> None:
-        broker._kite.ltp.side_effect = Exception("no data")
-        broker._kite.holdings.return_value = []
-        broker._kite.positions.return_value = {"day": []}
+        _ltp_down(broker)
         broker._ltp["KPEL"] = 355.0  # stale but present
         assert broker.get_ltp("KPEL", "NSE") == 355.0
 
     def test_returns_none_when_all_tiers_exhausted(self, broker: KiteBroker) -> None:
-        broker._kite.ltp.side_effect = Exception("no data")
-        broker._kite.holdings.return_value = []
-        broker._kite.positions.return_value = {"day": []}
+        _ltp_down(broker)
         assert broker.get_ltp("KPEL", "NSE") is None
 
     def test_zero_last_price_in_holdings_is_skipped(self, broker: KiteBroker) -> None:
         """Holdings entries with last_price=0 (delisted / not yet priced) must be skipped."""
-        broker._kite.ltp.side_effect = Exception("no data")
-        broker._kite.holdings.return_value = [
-            {"tradingsymbol": "KPEL", "last_price": 0},
-        ]
-        broker._kite.positions.return_value = {"day": []}
+        unpriced = kf.sdk("holdings", transform=lambda d: [{**h, "last_price": 0} for h in d])
+        _ltp_down(broker, holdings=unpriced)
         assert broker.get_ltp("KPEL", "NSE") is None
 
 
@@ -98,9 +92,7 @@ class TestPlaceGttLtpGuard:
 
     def test_raises_when_ltp_unavailable(self, broker: KiteBroker) -> None:
         """place_gtt must raise RuntimeError — not silently use sl_trigger as last_price."""
-        broker._kite.ltp.side_effect = Exception("Insufficient permission")
-        broker._kite.holdings.return_value = []
-        broker._kite.positions.return_value = {"day": []}
+        _ltp_down(broker)
 
         with pytest.raises(RuntimeError, match="LTP unavailable"):
             broker.place_gtt(self._oco_request())
@@ -109,10 +101,10 @@ class TestPlaceGttLtpGuard:
 
     def test_oco_uses_ltp_from_rest(self, broker: KiteBroker) -> None:
         """place_gtt passes the real LTP — not the sl_trigger — to the Kite SDK."""
-        broker._kite.ltp.return_value = {"NSE:KPEL": {"last_price": 360.0}}
-        broker._kite.place_gtt.return_value = {"trigger_id": 12345}
+        respond(broker._kite, "ltp", kf.ltp("KPEL", 360.0))
+        respond(broker._kite, "place_gtt", kf.sdk("place_gtt"))
 
-        broker.place_gtt(self._oco_request())
+        assert broker.place_gtt(self._oco_request()) == "123456"
 
         call_kwargs = broker._kite.place_gtt.call_args[1]
         assert call_kwargs["last_price"] == 360.0
@@ -120,19 +112,15 @@ class TestPlaceGttLtpGuard:
         assert call_kwargs["last_price"] != 338.03
 
     def test_oco_uses_ltp_from_holdings_fallback(self, broker: KiteBroker) -> None:
-        broker._kite.ltp.side_effect = Exception("no market data")
-        broker._kite.holdings.return_value = [{"tradingsymbol": "KPEL", "last_price": 360.0}]
-        broker._kite.positions.return_value = {"day": []}
-        broker._kite.place_gtt.return_value = {"trigger_id": 12345}
+        _ltp_down(broker, holdings=kf.sdk("holdings"))
+        respond(broker._kite, "place_gtt", kf.sdk("place_gtt"))
 
         broker.place_gtt(self._oco_request())
 
-        assert broker._kite.place_gtt.call_args[1]["last_price"] == 360.0
+        assert broker._kite.place_gtt.call_args[1]["last_price"] == 375.0
 
     def test_single_gtt_raises_when_ltp_unavailable(self, broker: KiteBroker) -> None:
-        broker._kite.ltp.side_effect = Exception("no market data")
-        broker._kite.holdings.return_value = []
-        broker._kite.positions.return_value = {"day": []}
+        _ltp_down(broker)
 
         req = GttRequest(
             symbol="KPEL",
@@ -170,16 +158,14 @@ class TestFeedDelegation:
         feed = ManualFeed()
         broker.attach_feed(feed)
         feed.push(_tick("KPEL", 390.0, age_seconds=600))
-        broker._kite.ltp.return_value = {"NSE:KPEL": {"last_price": 402.0}}
+        respond(broker._kite, "ltp", kf.ltp("KPEL", 402.0))
         assert broker.get_ltp("KPEL", "NSE") == 402.0
 
     def test_stale_feed_tick_is_last_resort(self, broker: KiteBroker) -> None:
         feed = ManualFeed()
         broker.attach_feed(feed)
         feed.push(_tick("KPEL", 390.0, age_seconds=600))
-        broker._kite.ltp.side_effect = Exception("no data")
-        broker._kite.holdings.return_value = []
-        broker._kite.positions.return_value = {"day": []}
+        _ltp_down(broker)
         assert broker.get_ltp("KPEL", "NSE") == 390.0
 
     def test_on_tick_subscribes_and_filters_to_requested_symbols(self, broker: KiteBroker) -> None:
@@ -197,8 +183,8 @@ class TestFeedDelegation:
         broker.attach_feed(feed)
         updates: list[dict] = []
         broker.on_order_update(updates.append)
-        feed.push_order_update({"order_id": "1", "status": "COMPLETE"})
-        assert updates == [{"order_id": "1", "status": "COMPLETE"}]
+        feed.push_order_update(kf.postback())
+        assert updates == [kf.postback()]
 
     def test_on_tick_without_feed_raises(self, broker: KiteBroker) -> None:
         with pytest.raises(RuntimeError, match="no feed"):
@@ -212,22 +198,19 @@ class TestResolveInstrumentToken:
     def test_caches_per_exchange_not_globally(self, broker: KiteBroker) -> None:
         """Regression: a single global cache would silently misresolve or fail
         lookups for a second exchange once the first exchange's list was cached."""
-        broker._kite.instruments.side_effect = [
-            [{"tradingsymbol": "KPEL", "instrument_token": 111}],  # NSE
-            [{"tradingsymbol": "KPEL", "instrument_token": 222}],  # BSE
-        ]
+        nse = kf.sdk("instruments")
+        bse = [{**r, "exchange": "BSE", "instrument_token": r["instrument_token"] + 1} for r in nse]
+        respond(broker._kite, "instruments", nse, bse)
 
         nse_token = broker._resolve_instrument_token("KPEL", "NSE")
         bse_token = broker._resolve_instrument_token("KPEL", "BSE")
 
-        assert nse_token == 111
-        assert bse_token == 222
+        assert nse_token == 2955009
+        assert bse_token == 2955010
         assert broker._kite.instruments.call_count == 2
 
     def test_second_lookup_same_exchange_uses_cache(self, broker: KiteBroker) -> None:
-        broker._kite.instruments.return_value = [
-            {"tradingsymbol": "KPEL", "instrument_token": 111},
-        ]
+        respond(broker._kite, "instruments", kf.sdk("instruments"))
 
         broker._resolve_instrument_token("KPEL", "NSE")
         broker._resolve_instrument_token("KPEL", "NSE")
@@ -258,7 +241,7 @@ class TestPlaceOrderParams:
     and SL (stop-limit) orders were sent with price 0."""
 
     def _sent(self, broker: KiteBroker, request) -> dict:
-        broker._kite.place_order.return_value = "1"  # kiteconnect returns the id string
+        respond(broker._kite, "place_order", kf.sdk("place_order"))  # the bare id string
         broker.place_order(request)
         return broker._kite.place_order.call_args.kwargs
 
@@ -291,3 +274,33 @@ class TestPlaceOrderParams:
         assert sent["order_type"] == "SL"
         assert (sent["price"], sent["trigger_price"]) == (97.5, 98.0)
         assert "market_protection" not in sent
+
+
+class TestInjectedKite:
+    """#86: KiteBroker(kite=..., broker_name=...) is how paper runs on KiteSim."""
+
+    def test_defaults_are_live(self):
+        from executor.models import BrokerName
+
+        assert KiteBroker().broker_id == BrokerName.KITE
+
+    def test_injected_kite_needs_no_login_and_labels_rows(self):
+        from executor.models import BrokerName
+        from tests.kitesim_kit import make_sim
+
+        sim = make_sim()
+        b = KiteBroker(kite=sim, broker_name=BrokerName.PAPER)
+        assert b.authenticate() is None and b._kite is sim  # never replaced by a real login
+        sim.on_price("INFY", "NSE", 100.0)
+        sim.place_order("regular", "NSE", "INFY", "BUY", 5, "MIS", "MARKET", market_protection=-1)
+        assert [p.broker_id for p in b.list_positions()] == [BrokerName.PAPER]
+        assert b.get_funds().broker_id == BrokerName.PAPER
+
+    def test_ltp_cache_staleness_uses_the_injected_clock(self, kite_sdk):
+        now = [datetime(2026, 11, 19, 10, 0, tzinfo=IST)]
+        b = KiteBroker(kite=kite_sdk, clock=lambda: now[0])
+        respond(kite_sdk, "ltp", kf.ltp("INFY", 100.0), kf.ltp("INFY", 101.0))
+        assert b.get_ltp("INFY", "NSE") == 100.0
+        assert b.get_ltp("INFY", "NSE") == 100.0  # cached: same instant
+        now[0] += timedelta(minutes=6)  # past the 5-minute staleness window
+        assert b.get_ltp("INFY", "NSE") == 101.0

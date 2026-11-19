@@ -117,6 +117,15 @@ class BracketStore:
             "SELECT * FROM intraday_brackets WHERE bracket_id=?", (bracket_id,)
         ).fetchone()
 
+    def exit_attempts(self, b: sqlite3.Row) -> int:
+        """Exit orders ever created for this trade, failed ones included (#101): the
+        next attempt needs a key no earlier attempt used."""
+        row = self._db.execute(
+            "SELECT COUNT(*) FROM orders WHERE idempotency_key LIKE ?",
+            (f"{b['bracket_id']}-exit%",),
+        ).fetchone()
+        return int(row[0])
+
     def existing_order_id(self, b: sqlite3.Row, leg: str) -> str | None:
         """A leg submitted before a crash, found by its idempotency key (restart safety)."""
         row = self._db.execute(

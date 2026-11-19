@@ -1,17 +1,22 @@
-"""#64: the paper broker's book survives a mid-session restart."""
+"""#64: the paper broker's book survives a mid-session restart.
+
+#86: the book is now KiteSim's whole state (versioned); a pre-#86 row is
+ignored with a log line instead of being half-restored.
+"""
 
 from __future__ import annotations
 
 from datetime import date
 
+from executor.brokers.kitesim.paper import build_paper_broker
 from executor.brokers.paper_book import PaperBook
-from executor.brokers.paper_broker import PaperBroker
 from executor.models import BrokerName
 from executor.order_manager import OrderManager
 from executor.position_manager import PositionManager
 from executor.session_inputs import net_by_symbol
 from executor.trade_lifecycle import TradeSupervisor
-from tests.executor.test_trade_lifecycle import Harness, _filled_and_protected
+from tests.executor.test_trade_lifecycle import Harness, _filled_and_protected, _req
+from tests.kitesim_kit import fixture_instruments
 
 DAY = date(2026, 11, 19)
 
@@ -22,8 +27,12 @@ def _db_path(h: Harness) -> str:
 
 def _with_book(h: Harness) -> Harness:
     """Swap the harness's paper broker for one that persists its book."""
-    h.paper = PaperBroker(
-        price_source=h.feed, initial_cash=1_000_000, book=PaperBook(_db_path(h), DAY)
+    h.paper = build_paper_broker(
+        h.feed,
+        1_000_000,
+        instruments=fixture_instruments(),
+        book=PaperBook(_db_path(h), DAY),
+        clock=h.clock,
     )
     h.om = OrderManager(h.db, {BrokerName.KITE: h.paper}, ltp_cache={}, clock=h.clock)
     h.pm = PositionManager(h.db, gtt_manager=None, order_manager=h.om)
@@ -66,9 +75,32 @@ def test_open_trade_survives_a_restart(tmp_path):
     assert h.paper.list_positions() == []
 
 
-def test_cash_restored(tmp_path):
+def test_funds_restored(tmp_path):
+    """Kite's margins: the opening cash stays; the open position's MIS margin
+    (10 x 100 x 20% = 200) is what's used, and it survives the restart.
+    (the pre-#86 simulator debited the full 10 x 100 from cash.)"""
     h = _with_book(Harness(tmp_path))
     _filled_and_protected(h)
-    cash = h.paper.get_funds().available_cash
-    assert cash == 1_000_000 - 10 * 100.0
-    assert _restart(h).paper.get_funds().available_cash == cash
+    funds = h.paper.get_funds()
+    assert (funds.available_cash, funds.used_margin) == (1_000_000, 10 * 100.0 * 0.20)
+    again = _restart(h).paper.get_funds()
+    assert (again.available_cash, again.used_margin) == (funds.available_cash, funds.used_margin)
+
+
+def test_order_ids_never_repeat_after_a_restart(tmp_path):
+    h = _with_book(Harness(tmp_path))
+    _filled_and_protected(h)
+    before = {o["order_id"] for o in h.paper._kite.orders()}
+    h = _restart(h)
+    h.tick(100.0)
+    h.sup.open_trade(_req())
+    after = {o["order_id"] for o in h.paper._kite.orders()}
+    assert before < after
+
+
+def test_mockbroker_era_row_is_ignored(tmp_path, caplog):
+    h = Harness(tmp_path)
+    PaperBook(_db_path(h), DAY).save({"cash": 5.0, "orders": {}, "positions": {}})
+    h = _with_book(h)
+    assert "kitesim_state_ignored" in caplog.text
+    assert h.paper.get_funds().available_cash == 1_000_000

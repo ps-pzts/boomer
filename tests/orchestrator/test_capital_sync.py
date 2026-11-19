@@ -41,7 +41,7 @@ def _seed_position(db_path: Path, track: str, qty: int, entry_price: float) -> N
             "NSE",
             track,
             f"bucket-{track}",
-            "mock",
+            "paper",
             qty,
             entry_price,
             entry_price,
@@ -56,13 +56,25 @@ def _seed_position(db_path: Path, track: str, qty: int, entry_price: float) -> N
     conn.close()
 
 
+def _broker(cash: float):
+    """A KiteBroker on KiteSim holding `cash` (#86)."""
+    from tests.kitesim_kit import live_shaped_broker, make_sim
+
+    return live_shaped_broker(make_sim(cash=cash), checked=False)
+
+
+def _api_down(call, params, proceed):
+    import kiteconnect
+
+    raise kiteconnect.exceptions.NetworkException("Gateway timed out.")
+
+
 class TestSyncEodCapital:
     def test_initialises_ledger_on_first_run(self, db_path: Path) -> None:
-        from executor.brokers.mock_broker import MockBroker
         from src.capital.state import CapitalStateManager
         from src.orchestrator.capital_sync import sync_eod_capital
 
-        broker = MockBroker(initial_cash=80_000.0)
+        broker = _broker(80_000.0)
         sync_eod_capital(str(db_path), [broker], "2026-05-11")
 
         mgr = CapitalStateManager(db_path)
@@ -72,12 +84,11 @@ class TestSyncEodCapital:
         assert ledger.total_capital == Decimal("80000.0")
 
     def test_sums_cash_across_two_brokers(self, db_path: Path) -> None:
-        from executor.brokers.mock_broker import MockBroker
         from src.capital.state import CapitalStateManager
         from src.orchestrator.capital_sync import sync_eod_capital
 
-        broker_a = MockBroker(initial_cash=50_000.0)
-        broker_b = MockBroker(initial_cash=30_000.0)
+        broker_a = _broker(50_000.0)
+        broker_b = _broker(30_000.0)
         sync_eod_capital(str(db_path), [broker_a, broker_b], "2026-05-11")
 
         mgr = CapitalStateManager(db_path)
@@ -87,13 +98,12 @@ class TestSyncEodCapital:
 
     def test_deployed_capital_included_in_total(self, db_path: Path) -> None:
         """₹80k cash + 10 shares × ₹200 = ₹82k total capital."""
-        from executor.brokers.mock_broker import MockBroker
         from src.capital.state import CapitalStateManager
         from src.orchestrator.capital_sync import sync_eod_capital
 
         _seed_position(db_path, "intraday", qty=10, entry_price=200.0)
 
-        broker = MockBroker(initial_cash=80_000.0)
+        broker = _broker(80_000.0)
         sync_eod_capital(str(db_path), [broker], "2026-05-11")
 
         mgr = CapitalStateManager(db_path)
@@ -103,16 +113,15 @@ class TestSyncEodCapital:
         assert ledger.intraday_deployed == Decimal("2000.0")
 
     def test_updates_existing_ledger(self, db_path: Path) -> None:
-        from executor.brokers.mock_broker import MockBroker
         from src.capital.state import CapitalStateManager
         from src.orchestrator.capital_sync import sync_eod_capital
 
         # First run: initialise
-        broker = MockBroker(initial_cash=80_000.0)
+        broker = _broker(80_000.0)
         sync_eod_capital(str(db_path), [broker], "2026-05-10")
 
         # Second run: update — capital grew
-        broker2 = MockBroker(initial_cash=85_000.0)
+        broker2 = _broker(85_000.0)
         sync_eod_capital(str(db_path), [broker2], "2026-05-11")
 
         mgr = CapitalStateManager(db_path)
@@ -123,16 +132,12 @@ class TestSyncEodCapital:
 
     def test_broker_failure_does_not_crash(self, db_path: Path) -> None:
         """A broker that raises on get_funds() is skipped; other brokers still counted."""
-        from executor.brokers.mock_broker import MockBroker
         from src.capital.state import CapitalStateManager
         from src.orchestrator.capital_sync import sync_eod_capital
 
-        class FailingBroker(MockBroker):
-            def get_funds(self):
-                raise RuntimeError("API down")
-
-        bad = FailingBroker(initial_cash=999.0)
-        good = MockBroker(initial_cash=50_000.0)
+        bad = _broker(999.0)
+        bad._kite.interceptor = _api_down
+        good = _broker(50_000.0)
         sync_eod_capital(str(db_path), [bad, good], "2026-05-11")
 
         mgr = CapitalStateManager(db_path)

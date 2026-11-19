@@ -287,7 +287,7 @@ class TestCashAccounting:
         captured: list[float] = []
 
         def tracking_decider(symbol, sim_date, features, bar):
-            captured.append(sim._mock.get_funds().available_cash)
+            captured.append(sim._cash)
             if len(captured) == 1:  # only enter on very first call
                 return EntryDecision(
                     entry_price=0.0,

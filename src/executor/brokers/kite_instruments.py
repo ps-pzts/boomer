@@ -16,6 +16,7 @@ class InstrumentCache:
         self._loader = loader
         self._by_exchange: dict[str, dict[str, int]] = {}
         self._ticks: dict[str, dict[str, float]] = {}
+        self._rows: dict[str, dict[str, dict]] = {}
 
     def _load(self, exchange: str) -> dict[str, int]:
         cache = self._by_exchange.get(exchange)
@@ -27,6 +28,7 @@ class InstrumentCache:
                 for inst in rows
                 if inst.get("tick_size")
             }
+            self._rows[exchange] = {inst["tradingsymbol"]: inst for inst in rows}
             self._by_exchange[exchange] = cache
         return cache
 
@@ -41,6 +43,17 @@ class InstrumentCache:
         self._load(exchange)
         return self._ticks.get(exchange, {}).get(symbol)
 
+    def row(self, symbol: str, exchange: str) -> dict | None:
+        """The raw dump row (for the pre-flight shape check, #85); None if unknown."""
+        self._load(exchange)
+        return self._rows.get(exchange, {}).get(symbol)
+
+    def rows(self, exchange: str) -> list[dict]:
+        """Every dump row for the exchange (paper mode's KiteSim reads these, #86)."""
+        self._load(exchange)
+        return [dict(r) for r in self._rows.get(exchange, {}).values()]
+
     def clear(self) -> None:
         self._by_exchange.clear()
         self._ticks.clear()
+        self._rows.clear()

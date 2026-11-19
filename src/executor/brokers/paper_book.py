@@ -1,11 +1,14 @@
 """Persistence for the paper broker's book (#64).
 
-The simulator (MockBroker) keeps orders, MIS positions and cash in memory. A
+The simulator keeps orders, MIS positions and cash in memory. A
 restart used to lose them: the new process found open trades in our tables but
 an empty paper broker, so the session halted with reconcile_mismatch and the
 paper trades could no longer be managed. Now the whole book is written as one
 JSON row per session day after every change, and restored when the paper broker
 is built.
+
+#86: the book is KiteSim's `to_state()` (versioned JSON); see
+executor/brokers/kitesim/paper.py. The table is unchanged, so no migration.
 """
 
 from __future__ import annotations

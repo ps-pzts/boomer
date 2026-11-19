@@ -1,0 +1,38 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "tradingsymbol": "KPEL",
+      "exchange": "NSE",
+      "instrument_token": 2955009,
+      "isin": "INE0EG401011",
+      "product": "CNC",
+      "price": 0,
+      "quantity": 18,
+      "used_quantity": 0,
+      "t1_quantity": 0,
+      "realised_quantity": 18,
+      "authorised_quantity": 0,
+      "authorised_date": "2024-06-10 00:00:00",
+      "authorisation": {},
+      "opening_quantity": 18,
+      "short_quantity": 0,
+      "collateral_quantity": 0,
+      "collateral_type": "",
+      "discrepancy": false,
+      "average_price": 355.2,
+      "last_price": 375.0,
+      "close_price": 371.4,
+      "pnl": 356.4,
+      "day_change": 3.6,
+      "day_change_percentage": 0.9693053311793215,
+      "mtf": {
+        "quantity": 0,
+        "used_quantity": 0,
+        "average_price": 0,
+        "value": 0,
+        "initial_margin": 0
+      }
+    }
+  ]
+}

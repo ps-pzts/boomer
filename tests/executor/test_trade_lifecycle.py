@@ -1,7 +1,7 @@
 """Tests for executor/trade_lifecycle.py — TradeSupervisor (#45).
 
 End to end on a migrated DB with the real OrderManager, PositionManager,
-PaperBroker and ManualFeed; the clock is fixed inside market hours.
+paper KiteBroker on KiteSim (#86) and ManualFeed; the clock is fixed inside market hours.
 
 Worked numbers (qty 10, entry 100, stop 98, target 104):
   target hit  -> (104 - 100) x 10 = +40
@@ -21,11 +21,12 @@ import pytest
 from db.migrations import run_migrations
 from executor.brokers.feeds.base import Tick
 from executor.brokers.feeds.manual_feed import ManualFeed
-from executor.brokers.paper_broker import PaperBroker
+from executor.brokers.kitesim.paper import build_paper_broker
 from executor.models import BrokerName, OrderStatus
 from executor.order_manager import OrderManager
 from executor.position_manager import PositionManager
 from executor.trade_lifecycle import TradeRequest, TradeSupervisor, validate
+from tests.kitesim_kit import fixture_instruments
 
 IST = ZoneInfo("Asia/Kolkata")
 _MIGRATIONS = Path(__file__).parents[2] / "migrations"
@@ -47,7 +48,9 @@ class Harness:
         self.db.row_factory = sqlite3.Row
         self.clock = _Clock()
         self.feed = ManualFeed()
-        self.paper = PaperBroker(price_source=self.feed, initial_cash=1_000_000)
+        self.paper = build_paper_broker(
+            self.feed, 1_000_000, instruments=fixture_instruments(), clock=self.clock
+        )
         self.om = OrderManager(
             self.db, {BrokerName.KITE: self.paper}, ltp_cache={}, clock=self.clock
         )
@@ -170,11 +173,13 @@ class TestEntryLifecycle:
 
 
 class TestGuards:
-    def test_stop_rejected_exits_at_market_and_alerts(self, h):
-        """L9: price fell through the stop before it could be placed."""
+    def test_stop_through_the_market_exits_at_market_and_alerts(self, h):
+        """L9: price fell through the stop before it could be placed. Kite refuses the
+        SELL stop above LTP with an InputException (no order is created), so the
+        stop is `not submitted` (#86: the pre-#86 simulator returned a REJECTED order instead)."""
         h.tick(100.0)
         bid = h.sup.open_trade(_req())
-        h.tick(97.0)  # below the 98 stop: Kite (and paper) reject a SELL stop above LTP
+        h.tick(97.0)  # below the 98 stop
         h.sup.reconcile()
         assert h.bracket(bid)["state"] == "exiting"
         assert h.position(bid)["unprotected_flag"] == 1
@@ -183,8 +188,32 @@ class TestGuards:
         b = h.bracket(bid)
         assert (b["state"], b["exit_reason"], b["realised_pnl"]) == (
             "closed",
-            "stop_rejected",
+            "stop_not_submitted",
             -30.0,
+        )
+        assert h.paper.list_positions() == []
+
+    def test_stop_rejected_by_rms_exits_at_market_and_alerts(self, h):
+        """The stop is accepted, then RMS rejects it (status REJECTED)."""
+        sim = h.paper._kite
+
+        def reject_stops(call, params, proceed):
+            oid = proceed()
+            if call == "place_order" and params["order_type"] == "SL-M":
+                sim._advance(sim._order(oid), "REJECTED", status_message="RMS:Blocked")
+            return oid
+
+        h.tick(100.0)
+        bid = h.sup.open_trade(_req())
+        sim.interceptor = reject_stops
+        h.sup.reconcile()
+        assert any("UNPROTECTED" in t for t in h.critical_titles())
+        h.sup.reconcile()
+        b = h.bracket(bid)
+        assert (b["state"], b["exit_reason"], b["realised_pnl"]) == (
+            "closed",
+            "stop_rejected",
+            0.0,
         )
         assert h.paper.list_positions() == []
 

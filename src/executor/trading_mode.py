@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.brokers.feeds.base import MarketDataFeed
-from executor.brokers.paper_broker import PaperBroker
+from executor.brokers.kitesim.paper import build_paper_broker
 
 logger = logging.getLogger(__name__)
 
@@ -99,19 +99,20 @@ def build_execution_broker(
     paper_initial_cash: float,
     paper_book: object | None = None,
 ) -> Broker:
-    """Paper: simulated fills on the live feed, Kite's tick sizes when a live broker
-    is configured (#75). Live: the real broker."""
+    """Paper: the real KiteBroker on KiteSim, fed by the live feed, with the live
+    broker's instrument dump when one is configured (#86). Live: the real broker."""
     if mode == TradingMode.LIVE:
         if live_broker is None:
             raise RuntimeError("live mode requested but no live broker is configured")
         return live_broker
     if paper_initial_cash <= 0:
         raise ValueError("paper_initial_cash must be positive")
-    return PaperBroker(
-        price_source=feed,
-        initial_cash=paper_initial_cash,
+    cache = getattr(live_broker, "instruments", None)
+    return build_paper_broker(
+        feed,
+        paper_initial_cash,
+        instruments=cache.rows if cache is not None else None,
         book=paper_book,
-        tick_size=live_broker.tick_size if live_broker is not None else None,
     )
 
 

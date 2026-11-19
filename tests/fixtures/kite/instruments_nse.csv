@@ -1,0 +1,6 @@
+instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick_size,lot_size,instrument_type,segment,exchange
+408065,1594,INFY,INFOSYS,0,,0,0.1,1,EQ,NSE,NSE
+738561,2885,RELIANCE,RELIANCE INDUSTRIES,0,,0,0.1,1,EQ,NSE,NSE
+2955009,11543,KPEL,K.P. ENERGY,0,,0,0.05,1,EQ,NSE,NSE
+3677697,14366,IDEA,VODAFONE IDEA,0,,0,0.01,1,EQ,NSE,NSE
+256265,0,NIFTY 50,,0,,0,0,0,EQ,INDICES,NSE

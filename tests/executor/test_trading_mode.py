@@ -8,14 +8,16 @@ from pathlib import Path
 import pytest
 
 from executor.brokers.feeds.manual_feed import ManualFeed
-from executor.brokers.mock_broker import MockBroker
-from executor.brokers.paper_broker import PaperBroker
+from executor.brokers.kite_broker import KiteBroker
+from executor.brokers.kitesim import KiteSim
+from executor.models import BrokerName
 from executor.trading_mode import (
     LiveTradingAuthorisationStore,
     TradingMode,
     build_execution_broker,
     resolve_trading_mode,
 )
+from tests.kitesim_kit import fixture_instruments, live_shaped_broker, make_sim
 
 
 @pytest.fixture()
@@ -68,22 +70,43 @@ class TestResolveTradingMode:
 
 
 class TestBuildExecutionBroker:
-    def test_paper_builds_paper_broker_on_feed(self):
+    def test_paper_builds_kite_broker_on_kitesim(self):
+        """#86: paper is the real KiteBroker talking to KiteSim, labelled paper."""
         broker = build_execution_broker(TradingMode.PAPER, ManualFeed(), None, 250_000.0)
-        assert isinstance(broker, PaperBroker)
+        assert isinstance(broker, KiteBroker) and isinstance(broker._kite, KiteSim)
+        assert broker.broker_id == BrokerName.PAPER
         assert broker.get_funds().available_cash == pytest.approx(250_000.0)
 
     def test_paper_never_returns_live_broker(self):
-        live = MockBroker()
+        live = live_shaped_broker(make_sim())
         broker = build_execution_broker(TradingMode.PAPER, ManualFeed(), live, 1.0)
         assert broker is not live
+        assert broker._kite is not live._kite
+
+    def test_paper_uses_the_live_brokers_instrument_dump(self):
+        """Tick sizes come from the dump live KiteBroker loads (INFY 0.10 here)."""
+        live = KiteBroker()
+        live.instruments._loader = fixture_instruments(synthesize_unknown=False).rows
+        broker = build_execution_broker(TradingMode.PAPER, ManualFeed(), live, 1e6)
+        assert broker.tick_size("INFY", "NSE") == 0.1
+        assert broker._kite._instruments.row("INFY", "NSE")["tick_size"] == 0.1
+
+    def test_paper_feed_ticks_drive_the_simulator(self):
+        from datetime import datetime
+
+        from executor.brokers.feeds.base import Tick
+
+        feed = ManualFeed()
+        broker = build_execution_broker(TradingMode.PAPER, feed, None, 1e6)
+        feed.push(Tick("INFY", "NSE", 1500.0, datetime(2026, 11, 19, 10, 0)))
+        assert broker._kite.ltp("NSE:INFY")["NSE:INFY"]["last_price"] == 1500.0
 
     def test_paper_requires_positive_cash(self):
         with pytest.raises(ValueError):
             build_execution_broker(TradingMode.PAPER, ManualFeed(), None, 0.0)
 
     def test_live_returns_live_broker(self):
-        live = MockBroker()
+        live = live_shaped_broker(make_sim())
         assert build_execution_broker(TradingMode.LIVE, ManualFeed(), live, 1.0) is live
 
     def test_live_without_broker_raises(self):

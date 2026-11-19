@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from executor.brokers.mock_broker import MockBroker
+from executor.brokers.kitesim import KiteSim
 from executor.models import (
     ALLOWED_TRANSITIONS,
     BrokerName,
@@ -15,22 +15,22 @@ from executor.models import (
     OrderSide,
     OrderStatus,
     OrderType,
-    PriceBar,
     ProductType,
     StateMachineError,
 )
 from executor.order_machine import ORDER_SPEC
 from executor.order_manager import OrderManager
+from tests.kitesim_kit import make_sim, paper_broker
 
 
-def _om() -> tuple[OrderManager, MockBroker, sqlite3.Connection]:
+def _om() -> tuple[OrderManager, KiteSim, sqlite3.Connection]:
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     for f in ("0001_initial_schema", "0004_executor_schema", "0012_events"):
         with open(f"migrations/{f}.sql") as fh:
             db.executescript(fh.read())
-    broker = MockBroker(initial_cash=1_000_000)
-    return OrderManager(db, {BrokerName.KITE: broker}, ltp_cache={}), broker, db
+    sim = make_sim()
+    return OrderManager(db, {BrokerName.KITE: paper_broker(sim)}, ltp_cache={}), sim, db
 
 
 def _req(order_type=OrderType.LIMIT, price=99.0) -> OrderRequest:
@@ -68,10 +68,10 @@ class TestSpec:
 
 class TestHistory:
     def test_full_lifecycle_recorded_in_order(self):
-        om, broker, db = _om()
-        broker.set_price_bar(PriceBar("INFY", "", 100, 100, 100, 100, 0))
+        om, sim, db = _om()
+        sim.on_price("INFY", "NSE", 100.0)
         oid = om.submit(_req(), track="other")  # resting LIMIT 99 below 100
-        broker.set_price_bar(PriceBar("INFY", "", 98.5, 98.5, 98.5, 98.5, 0))
+        sim.on_price("INFY", "NSE", 98.5)
         om.sync_status(oid)
         assert _history(db, oid) == [
             (None, "created", "created"),

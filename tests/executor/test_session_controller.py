@@ -1,6 +1,6 @@
 """SessionController end to end on the paper broker (#63, designs/state-machines.md §4).
 
-Real OrderManager / PositionManager / TradeSupervisor / PaperBroker / ManualFeed
+Real OrderManager / PositionManager / TradeSupervisor / the paper broker / ManualFeed
 (the Trade machine harness), with the clock moved through one trading day.
 """
 
@@ -17,6 +17,7 @@ from executor import session_machine as sm
 from executor.brokers.feeds.base import NIFTY_50, Tick
 from executor.models import OrderRequest, OrderSide, OrderType, ProductType
 from executor.session_controller import SessionController
+from tests.executor.test_kite_checks import record_passes
 from tests.executor.test_session_inputs import DAY, _ledger
 from tests.executor.test_trade_lifecycle import Harness, _req
 
@@ -24,8 +25,16 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 class Day:
-    def __init__(self, tmp_path, supervisor: bool = True) -> None:
-        self.h = Harness(tmp_path)
+    def __init__(
+        self,
+        tmp_path,
+        supervisor: bool = True,
+        kite_checks_passed: bool = True,
+        harness_cls: type[Harness] = Harness,
+    ) -> None:
+        self.h = harness_cls(tmp_path)
+        if kite_checks_passed:  # #85: today's Kite pre-flight + canary gate TRADING
+            record_passes(self.h.db, DAY)
         self.h.feed.connect()
         self.bot_mode = "auto"
         self.watchlist = 50

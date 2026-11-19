@@ -152,6 +152,10 @@ class TradeSupervisor:
 
     def reconcile(self) -> None:
         """Advance every active trade one step. Safe to call any time, any number of times."""
+        try:  # an order whose placement outcome was unknown must not keep resting (#97)
+            self._om.cancel_lost_orders()  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("cancel_lost_orders_failed")
         for b in self._store.active():
             try:
                 step = {
@@ -217,6 +221,8 @@ class TradeSupervisor:
             self._on_entry_filled(b, entry)
         elif entry.status in _DEAD:
             self._end_entry(b, trigger="entry_rejected", entry=entry)
+        elif entry.filled_quantity > 0:  # #99: shares exist: cancel the rest, protect them
+            self._end_entry(b, trigger="entry_partial")
         elif self._clock() >= datetime.fromisoformat(b["entry_expires_at"]):
             self._end_entry(b, trigger="entry_expired")
 
@@ -224,6 +230,9 @@ class TradeSupervisor:
         """Entry is over (expired, rejected, square-off). Keep any partial fill (L12)."""
         if entry is None or entry.status not in _DEAD:
             entry = self._om.cancel(b["entry_order_id"])  # records a fill that raced it
+            if entry.status in _RESTING:  # #98: cancel not confirmed; the rest could still fill
+                logger.warning("entry_cancel_unconfirmed bracket=%s", b["bracket_id"])
+                return
         if entry.filled_quantity > 0:
             self._on_entry_filled(b, entry)
             return
@@ -371,8 +380,15 @@ class TradeSupervisor:
 
     def _settle(self, b: sqlite3.Row) -> None:
         """Bring the net position to zero from actual fills, or close if it already is."""
+        still_resting = self._cancel_resting_legs(b)
         net, cash = self._net_and_cash(b)
         if net == 0:
+            if still_resting:  # #98: never close over a leg that could still fill
+                self._critical(
+                    f"Leg still working — {b['symbol']}",
+                    f"Cancel of {still_resting} not confirmed; trade stays EXITING and retries.",
+                )
+                return
             self._close(b, realised=cash)
             return
         side = OrderSide.SELL if net > 0 else OrderSide.BUY
@@ -381,7 +397,7 @@ class TradeSupervisor:
                 f"Oversold {b['symbol']} by {-net} — buying back",
                 "Both exit legs filled before the other could be cancelled.",
             )
-        n = len(json.loads(b["exit_order_ids"])) + 1
+        n = self._store.exit_attempts(b) + 1  # #101: failed attempts burn their key too
         exit_id = self._submit(
             b["symbol"],
             b["exchange"],
@@ -398,6 +414,20 @@ class TradeSupervisor:
             severity="critical" if net < 0 else "info",
             exit_order_ids=json.dumps([*json.loads(b["exit_order_ids"]), exit_id]),
         )
+
+    def _cancel_resting_legs(self, b: sqlite3.Row) -> list[str]:
+        """Cancel whatever stop/target still rests (an exit must never race a leg).
+        Returns the order ids the broker still shows working afterwards (#98)."""
+        left = []
+        for leg in ("stop_order_id", "target_order_id"):
+            oid = b[leg]
+            if (
+                oid
+                and self._om.sync_status(oid).status in _RESTING
+                and self._om.cancel(oid).status in _RESTING
+            ):
+                left.append(oid)
+        return left
 
     def _net_and_cash(self, b: sqlite3.Row) -> tuple[int, float]:
         ids = [

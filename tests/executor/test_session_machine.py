@@ -124,3 +124,58 @@ class TestGuards:
         assert g({"active_trades": 1, "broker_open_symbols": []}) == "trades_active"
         assert g({"active_trades": 0, "broker_open_symbols": ["INFY"]}) == "broker_not_flat"
         assert g({"active_trades": 0, "broker_open_symbols": []}) is None
+
+
+class TestKiteChecks:
+    """#85: daily Kite pre-flight + canary gate the session."""
+
+    def test_check_halts_are_not_auto_resumable(self):
+        assert {"preflight_failed", "canary_failed"} == sm.KITE_CHECK_HALTS
+        assert not sm.KITE_CHECK_HALTS & sm.RESUMABLE
+        g = _guard(sm.HALTED, "recover")
+        ctx = {"halt_reason": "canary_failed", "blocker": None, "before_cutoff": True}
+        assert g(ctx) == "not_resumable:canary_failed"
+
+    def test_a_failed_check_halts_from_every_pre_entry_state(self):
+        for s in (sm.PRE_OPEN, sm.CONNECTED, sm.READY, sm.TRADING, sm.RECONCILING):
+            t = SESSION_SPEC.find(s, "checks_failed")
+            assert t is not None and t.target == sm.HALTED and t.guard is None
+        assert SESSION_SPEC.find(sm.NO_NEW_ENTRIES, "checks_failed") is None
+
+    def test_passing_rerun_resumes_through_reconciling(self):
+        assert SESSION_SPEC.find(sm.HALTED, "checks_passed").target == sm.RECONCILING
+
+    @pytest.mark.parametrize(
+        "ctx, blocked",
+        [
+            ({"halt_reason": "feed_stale", "kite_checks": None}, "not_a_check_halt:feed_stale"),
+            (
+                {"halt_reason": "canary_failed", "kite_checks": "canary_failed"},
+                "checks_not_passed:canary_failed",
+            ),
+            (
+                {"halt_reason": "canary_failed", "kite_checks": None, "market_open": False},
+                "before_open",
+            ),
+            (
+                {
+                    "halt_reason": "preflight_failed",
+                    "kite_checks": None,
+                    "market_open": True,
+                    "before_cutoff": False,
+                },
+                "after_cutoff",
+            ),
+            (
+                {
+                    "halt_reason": "preflight_failed",
+                    "kite_checks": None,
+                    "market_open": True,
+                    "before_cutoff": True,
+                },
+                None,
+            ),
+        ],
+    )
+    def test_checks_passed_guard(self, ctx, blocked):
+        assert _guard(sm.HALTED, "checks_passed")(ctx) == blocked

@@ -18,6 +18,8 @@
 
 | Area | Item | Notes |
 |------|------|-------|
+| Executor | KiteSim: paper and the backtester run the real `KiteBroker` (#86) | `executor/brokers/kitesim/` is an in-process Kite (`KiteConnect` signatures, Kite statuses and payload shapes, RMS rejections, Kite exceptions, partial fills, postbacks). Paper is `KiteBroker(kite=KiteSim, broker_name=PAPER)`, so 20 paper sessions exercise the live translation layer. `MockBroker`, `PaperBroker` and `FakeKite` deleted; the backtester uses a bar-driven `BarBroker` on KiteSim. Canary recordings replay into KiteSim as a conformance test. Hostile mode (`FaultPlan`, #87): seeded API failures (incl. timeout after the effect), fill-races-cancel, MODIFY PENDING, and held/reordered/duplicated/dropped postbacks. |
+| Executor | Daily Kite pre-flight (08:55) + order canary (09:15) gate the session (#85) | Paper never exercises the live Kite path, so every trading day (paper days too) `kite_preflight` checks token, funds, instrument dump, orders, positions, LTP (raw payloads shape-checked via `kite_contract.check_shape`) and the feed; `kite_canary` (09:15:05, NSE pre-open rejects stops) places an SL-M SELL + LIMIT BUY qty 1 MIS 3% below LTP on the real KiteBroker, modifies, cancels and verifies CANCELLED/no fill/nothing left (drift guard, cleanup of every `CNRY`-tagged order, raw responses recorded under `data/kite_recordings/`). Results in `kite_daily_checks` (migration 0017). Session can't reach TRADING until both passed today; a failure → `checks_failed` → HALTED(`preflight_failed`/`canary_failed`), not auto-resumable; Telegram `/canary` re-run passing → `checks_passed` → RECONCILING. Opt-in live tests in `tests/live` (`BOOMER_LIVE_KITE=1`). |
 | Design | `designs/state-machines.md`, `designs/observability.md` (#47) | Approved 2026-11-19. Three separate machines (Session / Trade / Order) on one shared core; every component emits to one `events` table, read only by the observability module; trading code never reads events (enforced by a test). |
 | Design | `designs/` folder (Phases 1-5, open-questions.md, design-evolution.md) | **Retired 2026-09-06** — described the 3-track (long_term/swing/intraday), dual-broker system being replaced. Deleted rather than rewritten; a fresh design doc will be written once the intraday-only system is rebuilt and validated in paper trading. Historical content still recoverable via git log/PR descriptions. |
 | Infra | CLAUDE.md | Project rules: git workflow, tests, PRs, file limits, context continuity |
@@ -74,6 +76,47 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Test: mutation testing of the money-critical modules (#89, in progress)
+
+- `scripts/mutation.py` (AST mutation runner: comparison/arith/boolean/constant/condition/return mutants, one at a time, file always restored) and `scripts/mutation_all.sh`. Slow, run by hand, not in CI. Reports in `reports/mutation/*.json`.
+- First scores: `ticks.py` 56.8% -> 83.8% after new edge tests (the 6 survivors are an unused constant and 5 equivalent mutants); `trailing.py` 78.7% (37/47) and `sizing.py` 78.9% (15/19), survivors listed in their JSON, not yet killed. Still to run: pre_trade, circuit_breakers, trade/session machines, session_inputs, status mapping, kitesim rules, trade_lifecycle.
+
+### 2026-11-19 — Bugs: four stranded-position bugs found by the integration suite (#97, #98, #99, #101)
+
+- **#97** symptom: a `place_order` answer lost to a timeout left a working order nobody tracked (entry or stop). Root cause: any exception became ERROR, and Kite tags were the UUID truncated to 20 chars, so every order of a trade shared one tag. Fix: tags are hashed when long; `find_order(key)` looks the order up and `OrderManager.submit` adopts it; if the broker is unreachable `cancel_lost_orders()` (run each reconcile) cancels it later, or flattens it if it already filled.
+- **#98** symptom: after a failed cancel the order was recorded CANCELLED while still working at Kite, and the trade closed over a resting leg. Fix: `cancel()` never records CANCELLED while the broker says working; `_settle` cancels resting legs first and will not close while one remains (stays EXITING, retries, alerts).
+- **#99** symptom: a part-filled entry had no stop until the 30-min expiry. Fix: the first partial fill cancels the remainder and protects what filled (design L12 changed).
+- **#101** symptom: a failed exit placement was never retried (`-exit1` reused, refused as duplicate), stranding the position. Fix: the key counts every exit order ever created (`BracketStore.exit_attempts`).
+- Regression tests: `tests/executor/test_lost_orders.py` plus the former xfail scenarios, now passing; random days and the Hypothesis machine run with all four faults on (75 extra seeds and a 120-example run clean). #100 (Order spec drift) is still open.
+
+### 2026-11-19 — Test: cross-machine integration suite on KiteSim (#88, in progress)
+
+- `tests/integration/`: `Hostile` harness (real Order + Trade + Session machines, paper KiteBroker on KiteSim, `FaultPlan`, fake clock). Invariants after every step: I1 open trade has a resting stop, I2 trades' net == broker net, I3 no untracked resting order, I5 stop never lowered (per order), I6 every long covered by resting stops, I4 flat and terminal at EOD. The observer reads ground truth (`plan.suspended()`), not the faulty wire.
+- Suites: scenarios (postbacks, fill races, lost answers, partial entry, trailing under MODIFY PENDING, restarts), Order paths, Trade paths, Session flows (a day on a fake clock through `SessionController`), process restarts (KiteSim rebuilt from the paper book), decision-cycle cap, 15 seeded random days, a Hypothesis stateful machine, same-seed event-log equality, and replay of `state_transition` events rebuilding every machine row's state.
+- **Transition-coverage gate** (`test_zz_transition_coverage.py`): every Session/Trade/Order spec transition is fired by an integration test or listed in `spec_only.py` against an issue. Integration alone now fires 29/29 Session, 14/14 Trade and 12/23 Order; the other 11 Order transitions are spec-only (#100).
+- Bugs found: #97, #98, #99, #101 (all fixed, see above), #100 (spec drift, open).
+- Known limits: event timestamps use the wall clock, not the injected fake clock; replay checks machine state per row, not every column; `hypothesis` added to the dev extras.
+
+### 2026-11-19 — Feat: KiteSim, paper on the real KiteBroker, MockBroker deleted (#86)
+
+- **Why:** paper used its own broker and vocabulary, so paper validation proved nothing about the live order path.
+- `src/executor/brokers/kitesim/`: `KiteSim` (engine, rules, portfolio, GTT, payloads, instruments, `SimFeed`, `build_paper_broker`). `KiteBroker` now takes an injected Kite client; GTT code moved to `kite_gtt.py` to stay under the file limit. `BrokerName.MOCK` removed (old DB comment only; no code writes it).
+- `src/backtester/bar_broker.py`: the backtester places orders through `KiteBroker` on KiteSim, walking each daily bar open → nearer extreme → farther extreme → close. `acceptance.py` split out of `simulation.py`; `code_hash` covers both.
+- **Bug found (#86):** `OrderManager.cancel` recorded a cancel twice when the broker's postback landed before `cancel_order` returned. Fixed by re-reading the order after the cancel; regression test in `test_order_manager.py`.
+- Verification: ruff check/format clean, 1340 tests pass (1 skipped, 2 live-Kite deselected). Run with `PYTHONPATH=src` from a worktree (see #94). Design doc `intraday-live-pipeline.md` updated; `PaperBroker` mentions struck through.
+
+### 2026-11-19 — Bug: `KiteBroker.modify_gtt` could never succeed (found by #84)
+
+- **Symptom (latent; live GTTs only):** every GTT trail (`GttManager.trail_stop`) would raise `TypeError` at the SDK. **Root cause:** `modify_gtt` passed GttManager's `{"leg1": {...}}` straight to `KiteConnect.modify_gtt`, which takes the full trigger (type, symbol, exchange, trigger_values, last_price, orders); a bare `MagicMock` accepted it. **Fix:** read the GTT back with `get_gtt`, change only the named legs, resend it with a live LTP (refuses, like `place_gtt`, when no LTP). Regression tests in `test_kite_broker_sdk.py`.
+
+### 2026-11-19 — Feat: Kite SDK contract, autospec + documented response fixtures (#84)
+
+- **Why:** Kite tests used a bare `MagicMock()` with hand-typed responses, which only confirmed our own assumptions and hid the #73 `place_order` bug.
+- `src/executor/brokers/kite_contract.py`: the one source of truth for what Kite returns (order, order_postback, position(s), holding(s), margins_equity, ltp, instrument(s), gtt(s), gtt_ack, place_order, session, historical), Kite's order-status / enum vocabulary and exception classes. `check_shape(kind, payload) -> list[str]` (used by the canary, #85). `kite_broker.py` now takes its status sets from it.
+- `tests/fixtures/kite/`: documented wire responses (order lifecycle incl. two realistic REJECTED messages, positions, holdings, margins, LTP, instruments CSV, GTT, session, candles, WebSocket postback, error bodies). Provenance in `_meta.json`; to be replaced by canary recordings.
+- `tests/kite_fixtures.py`: `load` / `data` / `sdk(method)`; `sdk` runs the real `KiteConnect` method over a fixture via a fake HTTP session, so values have the SDK's exact Python shape.
+- `tests/kite_sdk.py` + `kite_sdk` fixture (`tests/conftest.py`): `create_autospec(KiteConnect, instance=True)` with the SDK's constants. Every response (via `respond()` or `.return_value`) is checked against the contract at call time and again at teardown (so a violation swallowed by e.g. `get_ltp`'s fallback chain still fails); exceptions must be kiteconnect/requests ones; an unconfigured SDK call is a failure. All Kite SDK fakes moved onto it (`test_kite_broker`, `test_kite_order_status`, `test_untracked_orders`, `test_ticks`, `test_auto_login`); new `test_kite_broker_sdk.py` covers positions, holdings, funds, every lifecycle order, modify/cancel, historical, GTT.
 
 ### 2026-11-19 — Bug: Kite order handling would have broken live trading (#73)
 

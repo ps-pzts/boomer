@@ -10,13 +10,19 @@ from src.collector.live_bars import SessionBarRecorder
 from src.executor.brokers.feeds.kite_feed import KiteFeed
 from src.executor.brokers.feeds.manual_feed import ManualFeed
 from src.executor.brokers.kite_broker import KiteBroker
-from src.executor.brokers.mock_broker import MockBroker
 from src.orchestrator.orchestrator import _build_bar_recorder, _build_feed, _log_trading_mode
+
+
+def _paper() -> KiteBroker:
+    """A paper-labelled KiteBroker (#86): never the one the feed is built from."""
+    from src.executor.models import BrokerName
+
+    return KiteBroker(kite=object(), broker_name=BrokerName.PAPER)
 
 
 def test_build_feed_attaches_kite_feed_sharing_instrument_cache():
     kite = KiteBroker()
-    feed = _build_feed([MockBroker(), kite])
+    feed = _build_feed([_paper(), kite])
     assert isinstance(feed, KiteFeed)
     assert kite._feed is feed
     assert feed._instruments is kite.instruments
@@ -24,7 +30,7 @@ def test_build_feed_attaches_kite_feed_sharing_instrument_cache():
 
 
 def test_build_feed_without_kite_returns_none():
-    assert _build_feed([MockBroker()]) is None
+    assert _build_feed([_paper()]) is None
     assert _build_feed([]) is None
 
 

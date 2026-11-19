@@ -2,6 +2,7 @@
 
 Supported commands:
   /status  — snapshot: mode, broker session health, signals, queued GTTs, P&L
+  /canary  — re-run the daily Kite pre-flight + order canary (#85)
 
 Uses Telegram Bot API (long-polling getUpdates). No SDK; stdlib urllib only.
 Run as a standalone process alongside the orchestrator.
@@ -201,6 +202,33 @@ def handle_mode(db_path: str, text: str) -> str:
     return ("✅ " if result.ok else "⛔ ") + result.message + hint
 
 
+def handle_canary(db_path: str) -> str:
+    """/canary (#85): re-run today's Kite pre-flight and (09:15-15:20) order canary
+    on the real Kite account. Safe at any time; both passing lets a session halted
+    by a failed check resume (through a broker reconcile)."""
+    from src.executor import kite_checks
+
+    try:
+        broker = kite_checks.kite_broker_from_env()
+    except Exception as exc:
+        return f"⛔ Could not connect to Kite: {exc}"
+    if broker is None:
+        return "⛔ Kite not configured: set KITE_API_KEY and KITE_ACCESS_TOKEN."
+    reports = kite_checks.rerun(db_path, broker)
+    lines = ["<b>Kite checks re-run</b>"]
+    for r in reports:
+        if r.ok:
+            lines.append(f"✅ {r.kind} passed")
+        else:
+            lines.append(f"⛔ {r.kind} FAILED: " + "; ".join(r.failures()))
+    if len(reports) == 1:
+        why = "pre-flight failed" if not reports[0].ok else "only 09:15-15:20 on a trading day"
+        lines.append(f"canary not run ({why})")
+    elif all(r.ok for r in reports):
+        lines.append("Trading may resume after the next clean reconcile.")
+    return "\n".join(lines)
+
+
 # ── Polling loop ───────────────────────────────────────────────────────────────
 
 
@@ -241,6 +269,8 @@ class TelegramBot:
         text = (msg.get("text") or "").strip().lower()
         if text == "/mode" or text.startswith("/mode "):
             _send(self._token, msg["chat"]["id"], handle_mode(self._db_path, text))
+        elif text in ("/canary", "/canary@boomerbot"):
+            _send(self._token, msg["chat"]["id"], handle_canary(self._db_path))
         elif text in ("/status", "/status@boomerbot"):
             handle_status(self._token, msg["chat"]["id"], self._db_path)
         elif text in ("/help", "/start"):
@@ -251,7 +281,9 @@ class TelegramBot:
                 "/status — system snapshot: mode, broker session, signals, queued GTTs, P&amp;L\n"
                 "/mode — paper or live: today's (locked) and the next session's\n"
                 "/mode paper — switch to paper from the next session\n"
-                "/mode live confirm — switch to LIVE (real money) from the next session\n",
+                "/mode live confirm — switch to LIVE (real money) from the next session\n"
+                "/canary — re-run today's Kite pre-flight + order canary (clears a "
+                "failed-check halt if both pass)\n",
             )
 
     def run_forever(self) -> None:

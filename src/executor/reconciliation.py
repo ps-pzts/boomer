@@ -47,7 +47,7 @@ class ReconciliationLoop:
         """
         alerts: list[str] = []
         for broker_id, broker in self._brokers.items():
-            if broker_id in (BrokerName.MOCK, BrokerName.PAPER):
+            if broker_id == BrokerName.PAPER:
                 continue
             try:
                 broker_positions = broker.list_positions() + broker.list_holdings()
@@ -65,7 +65,7 @@ class ReconciliationLoop:
         """
         alerts: list[str] = []
         for broker_id, broker in self._brokers.items():
-            if broker_id in (BrokerName.MOCK, BrokerName.PAPER):
+            if broker_id == BrokerName.PAPER:
                 continue
             try:
                 broker_positions = broker.list_positions() + broker.list_holdings()

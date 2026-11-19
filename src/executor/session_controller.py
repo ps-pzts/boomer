@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 from executor import session_machine as sm
 from executor.brokers.feeds.base import NIFTY_50
+from executor.kite_checks import gate as kite_gate
 from executor.session_inputs import (
     LegStatus,
     ReconcileReport,
@@ -66,8 +67,12 @@ class SessionController:
         clock: Callable[[], datetime] = lambda: datetime.now(IST),
         lock: threading.RLock | None = None,
         execution_factory: Callable[[str], tuple | None] | None = None,
+        kite_checks: Callable[[date], str | None] | None = None,
     ) -> None:
         self._conn = conn
+        # #85: today's Kite pre-flight + canary; None = both passed. Defaults to the
+        # kite_daily_checks table on this connection (written by other processes too).
+        self._kite_checks = kite_checks or (lambda d: kite_gate(self._conn, d))
         # A str (fixed) or a resolver day -> mode (#76). Read once, when the day's
         # session row is created; after that the row's mode is the truth.
         self._mode_for = mode if callable(mode) else (lambda _d, m=mode: m)
@@ -187,6 +192,13 @@ class SessionController:
             self._end_of_day(day, state, ctx)
         elif t >= ENTRY_CUTOFF and state in (sm.TRADING, sm.HALTED, sm.RECONCILING):
             self._fire(day, "entry_cutoff", rule="entry_cutoff_1430")
+        elif ctx["kite_checks"] in sm.KITE_CHECK_HALTS and state in sm.CHECKS_HALT_FROM:
+            self._halt(day, ctx["kite_checks"], ctx, trigger="checks_failed")
+        elif state == sm.HALTED and ctx["halt_reason"] in sm.KITE_CHECK_HALTS:
+            if not ctx["kite_checks"] and self._fire(
+                day, "checks_passed", rule="kite_checks_rerun_passed", ctx=ctx
+            ):
+                self._reconcile(day, ctx)
         elif state == sm.PRE_OPEN:
             self._fire(day, "setup_ok", rule="feed_connected", ctx=ctx)
         elif state == sm.CONNECTED:
@@ -272,11 +284,11 @@ class SessionController:
             )
             logger.error("emergency_flatten %s", actions)
 
-    def _halt(self, day: date, reason: str, ctx: dict) -> None:
+    def _halt(self, day: date, reason: str, ctx: dict, trigger: str = "halt") -> None:
         resumable = reason in sm.RESUMABLE
         self._fire(
             day,
-            "halt",
+            trigger,
             rule=reason,
             inputs=dict(ctx),
             severity="warn" if resumable else "critical",
@@ -286,6 +298,8 @@ class SessionController:
         body = (
             "Resumes after a clean reconcile once the cause clears."
             if resumable
+            else "Kite check failed: fix it, then re-run with /canary (resumes only if it passes)."
+            if reason in sm.KITE_CHECK_HALTS
             else "No new entries for the rest of the day. Open trades stay managed."
         )
         self._alert("warn" if resumable else "critical", title, body)
@@ -378,6 +392,7 @@ class SessionController:
             "halt_reason": row[0] if row else None,
             "mismatch_acked": bool(row and row[1]),
             "active_trades": self._active_trades(),
+            "kite_checks": self._kite_check_state(day),
         }
         ctx["blocker"] = _blocker(ctx, has_execution=self._sup is not None)
         return ctx
@@ -401,6 +416,13 @@ class SessionController:
         except Exception as exc:  # fail closed: an unreadable breaker blocks entries
             logger.exception("session_breakers_failed")
             return [f"breakers_unavailable:{type(exc).__name__}"]
+
+    def _kite_check_state(self, day: date) -> str | None:
+        try:
+            return self._kite_checks(day)
+        except Exception:  # fail closed: unreadable checks block entries
+            logger.exception("kite_checks_unavailable")
+            return "kite_checks_unavailable"
 
     def _active_trades(self) -> int:
         return self._sup.active_count() if self._sup is not None else 0  # type: ignore[attr-defined]
@@ -493,6 +515,8 @@ def _blocker(ctx: dict, *, has_execution: bool) -> str | None:
     hard = [b for b in ctx["breakers"] if b not in sm.RESUMABLE]
     if hard:
         return hard[0]
+    if ctx.get("kite_checks"):  # #85: today's Kite pre-flight + canary not both passed
+        return ctx["kite_checks"]
     if not has_execution:
         return "execution_unavailable"
     if "breaker:nifty_move" in ctx["breakers"]:

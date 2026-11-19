@@ -6,7 +6,9 @@ delegating methods so the simulation loop reads the same as before.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import pathlib
 import sqlite3
 import uuid
 from datetime import datetime
@@ -141,3 +143,25 @@ def daily_state_row(run_id: str, state: BacktestDailyState) -> DailyStateRow:
         state.drawdown_from_hwm,
         state.regime,
     )
+
+
+_HASHED_SOURCES = (
+    "simulation.py",
+    "models.py",
+    "costs.py",
+    "slippage.py",
+    "run_store.py",
+    "bar_broker.py",
+    "acceptance.py",
+)
+
+
+def code_hash() -> str:
+    """Hash the backtester source files so holdout tracking resets on code changes."""
+    hasher = hashlib.sha256()
+    base = pathlib.Path(__file__).parent
+    for fname in sorted(_HASHED_SOURCES):
+        p = base / fname
+        if p.exists():
+            hasher.update(p.read_bytes())
+    return hasher.hexdigest()[:16]

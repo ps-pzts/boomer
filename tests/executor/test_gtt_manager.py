@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from executor.brokers.mock_broker import MockBroker
 from executor.gtt_manager import GttManager
 from executor.models import (
     BrokerName,
@@ -15,6 +14,7 @@ from executor.models import (
     GttType,
     PositionRecord,
 )
+from tests.kitesim_kit import make_sim, paper_broker
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -64,11 +64,20 @@ def _make_position(
     )
 
 
+def _broker():
+    """Paper KiteBroker on KiteSim with prices for the instruments these tests use
+    (Kite's GTT needs a last price, #86)."""
+    sim = make_sim()
+    for symbol, ltp in (("RELIANCE", 2500.0), ("SAIL", 92.0)):
+        sim.on_price(symbol, "NSE", ltp)
+    return paper_broker(sim), sim
+
+
 class TestGttManagerPlacement:
     def test_place_single_gtt_creates_record(self):
         db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
+        broker, sim = _broker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.PAPER: broker})
         pos = _make_position()
         req = GttRequest(
             symbol="RELIANCE",
@@ -86,8 +95,8 @@ class TestGttManagerPlacement:
 
     def test_place_oco_gtt_creates_record(self):
         db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
+        broker, sim = _broker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.PAPER: broker})
         pos = _make_position()
         req = GttRequest(
             symbol="RELIANCE",
@@ -108,8 +117,8 @@ class TestGttManagerPlacement:
 
     def test_duplicate_gtt_raises(self):
         db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
+        broker, sim = _broker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.PAPER: broker})
         pos = _make_position()
         req = GttRequest(
             symbol="RELIANCE",
@@ -127,8 +136,8 @@ class TestGttManagerPlacement:
 class TestGttManagerTrailingStop:
     def test_trail_stop_moves_up_when_price_gains_2atr(self):
         db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
+        broker, sim = _broker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.PAPER: broker})
         pos = _make_position(atr=20.0)
 
         # Place OCO GTT
@@ -154,11 +163,14 @@ class TestGttManagerTrailingStop:
         ).fetchone()
         # New SL = 2400 + 1×20 = 2420
         assert row["sl_trigger_price"] == pytest.approx(2420.0)
+        # ... and the broker's GTT moved with it, target leg untouched (#84, #86)
+        (gtt,) = sim.get_gtts()
+        assert gtt["condition"]["trigger_values"] == [2420.0, 2700.0]
 
     def test_trail_stop_does_not_move_when_gain_less_than_2atr(self):
         db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
+        broker, sim = _broker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.PAPER: broker})
         pos = _make_position(atr=20.0)
 
         req = GttRequest(
@@ -186,8 +198,8 @@ class TestGttManagerTrailingStop:
 class TestGttManagerDailyReconcile:
     def test_reconcile_marks_triggered_gtt(self):
         db = _make_db()
-        broker = MockBroker()
-        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.MOCK: broker})
+        broker, sim = _broker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.PAPER: broker})
 
         # Place a GTT and then simulate it triggering via the broker
         from executor.models import PriceBar
@@ -201,12 +213,50 @@ class TestGttManagerDailyReconcile:
             limit_price=89.0,
         )
         pos = _make_position(symbol="SAIL")
-        pos.broker_id = BrokerName.MOCK
+        pos.broker_id = BrokerName.PAPER
         gtt_id = gm.place_gtt_for_position(pos, GttType.SINGLE, req)
 
         # Simulate GTT triggering via bar
         bar = PriceBar("SAIL", "2024-01-02", 92, 93, 88, 91, 500_000)
-        broker.set_price_bar(bar)
+        sim.on_bar(bar)
 
-        triggered = gm.daily_reconcile(BrokerName.MOCK)
+        triggered = gm.daily_reconcile(BrokerName.PAPER)
         assert gtt_id in triggered
+
+
+class TestGttNoLongerProtecting:
+    """#92: Kite's 'rejected' / 'disabled' GTTs protect nothing; they used to read as ACTIVE."""
+
+    @pytest.mark.parametrize("kite_status", ["rejected", "disabled", "cancelled", "deleted"])
+    def test_dead_gtt_is_marked_cancelled_and_alerted(self, kite_status):
+        db = _make_db()
+        broker, sim = _broker()
+        gm = GttManager(db=db, brokers={BrokerName.KITE: broker, BrokerName.PAPER: broker})
+        req = GttRequest(
+            symbol="SAIL",
+            exchange="NSE",
+            gtt_type=GttType.SINGLE,
+            quantity=10,
+            trigger_price=90.0,
+            limit_price=89.0,
+        )
+        pos = _make_position(symbol="SAIL")
+        pos.broker_id = BrokerName.PAPER
+        gtt_id = gm.place_gtt_for_position(pos, GttType.SINGLE, req)
+        (broker_gtt,) = sim._gtts.values()
+        broker_gtt["status"] = kite_status  # Kite moved it there (no API does)
+
+        assert gm.daily_reconcile(BrokerName.PAPER) == []
+        status = db.execute("SELECT status FROM gtt_orders WHERE gtt_id=?", (gtt_id,)).fetchone()
+        assert status[0] == GttStatus.GTT_CANCELLED
+        alerts = db.execute("SELECT bot_value FROM reconciliation_alerts").fetchall()
+        assert len(alerts) == 1 and kite_status in alerts[0][0]
+
+    @pytest.mark.parametrize("kite_status", ["active", "triggered", "expired"])
+    def test_normalise_keeps_live_statuses(self, kite_status):
+        expected = {
+            "active": GttStatus.GTT_ACTIVE,
+            "triggered": GttStatus.GTT_TRIGGERED,
+            "expired": GttStatus.GTT_EXPIRED,
+        }[kite_status]
+        assert GttManager._normalise_gtt_status({"status": kite_status}) == expected

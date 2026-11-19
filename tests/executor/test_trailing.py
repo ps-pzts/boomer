@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 
+import kiteconnect
 import pytest
 
 from executor.models import OrderStatus
@@ -160,7 +161,7 @@ class TestModifyTrigger:
 
     def test_paper_refuses_wrong_side_like_kite(self, h):
         bid = _open(h)
-        with pytest.raises(ValueError, match="modify rejected"):
+        with pytest.raises(kiteconnect.exceptions.InputException, match="stoploss sell"):
             h.om.modify_trigger(h.bracket(bid)["stop_order_id"], 100.5)  # above LTP 100
         stop = h.om.sync_status(h.bracket(bid)["stop_order_id"])
         assert (stop.status, stop.trigger_price) == (OrderStatus.PENDING, 98.0)

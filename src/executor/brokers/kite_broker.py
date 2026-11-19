@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -9,13 +10,14 @@ from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.brokers.feeds.base import MarketDataFeed
+from executor.brokers.kite_contract import FINAL_ORDER_STATUSES, IN_FLIGHT_ORDER_STATUSES
+from executor.brokers.kite_gtt import gtt_modified_legs, gtt_place_params
 from executor.brokers.kite_instruments import InstrumentCache
 from executor.models import (
     BrokerFunds,
     BrokerName,
     BrokerPosition,
     GttRequest,
-    GttType,
     OrderRequest,
     OrderSide,
     OrderStatus,
@@ -39,24 +41,20 @@ _KITE_FINAL: dict[str, OrderStatus] = {
     "CANCELLED AMO": OrderStatus.CANCELLED,
     "REJECTED": OrderStatus.REJECTED,
 }
-_KITE_IN_FLIGHT = frozenset(
-    {
-        "PUT ORDER REQ RECEIVED",
-        "VALIDATION PENDING",
-        "OPEN PENDING",
-        "MODIFY VALIDATION PENDING",
-        "MODIFY PENDING",
-        "MODIFIED",
-        "CANCEL PENDING",
-        "AMO REQ RECEIVED",
-    }
-)
+_KITE_IN_FLIGHT = IN_FLIGHT_ORDER_STATUSES
 _KITE_STOP_TYPES = frozenset({"SL", "SL-M"})
 
 
 def _kite_tag(raw: str) -> str:
-    """Kite tags are alphanumeric, max 20 chars; ours carry UUID hyphens (#73)."""
-    return re.sub(r"[^A-Za-z0-9]", "", raw or "")[:20]
+    """Kite tags are alphanumeric, max 20 chars; ours carry UUID hyphens (#73).
+
+    A key that does not fit is hashed, not truncated: truncating the UUID gave every
+    order of one trade (entry, stop, target, exits) the same tag, so no order could
+    be found by its key (#97)."""
+    clean = re.sub(r"[^A-Za-z0-9]", "", raw or "")
+    if len(clean) <= 20:
+        return clean
+    return hashlib.sha1((raw or "").encode()).hexdigest()[:20]  # noqa: S324 - not security
 
 
 def map_kite_status(status: str, order_type: str, filled: int, quantity: int) -> OrderStatus | None:
@@ -109,8 +107,18 @@ _KITE_VALIDITY_MAP: dict[OrderValidity, str] = {
 }
 
 
+# Read-only SDK calls whose raw payloads pre-flight validates (#85). Nothing that
+# places, modifies or cancels belongs here.
+_RAW_READS: dict[str, Callable] = {
+    "profile": lambda k: k.profile(),
+    "margins_equity": lambda k: k.margins(segment="equity"),
+    "orders": lambda k: k.orders(),
+    "positions": lambda k: k.positions(),
+    "ltp": lambda k, *keys: k.ltp(list(keys)),
+}
+
 # Kite statuses after which an order can no longer fill (#65).
-_KITE_DONE = frozenset({"COMPLETE", "CANCELLED", "CANCELLED AMO", "REJECTED"})
+_KITE_DONE = FINAL_ORDER_STATUSES
 
 
 class KiteBroker(Broker):
@@ -128,22 +136,56 @@ class KiteBroker(Broker):
     Mid-day session death: re-authenticate automatically (Loophole 6).
     """
 
-    def __init__(self, feed: MarketDataFeed | None = None) -> None:
-        self._kite = None
+    def __init__(
+        self,
+        feed: MarketDataFeed | None = None,
+        kite: object | None = None,
+        broker_name: BrokerName = BrokerName.KITE,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        # #86: paper mode injects KiteSim as `kite` and labels its rows `paper`.
+        self._kite = kite
+        self._injected = kite is not None
+        self._broker_name = broker_name
+        self._clock = clock or (lambda: datetime.now(IST))
         self._feed = feed
         self._ltp: dict[str, float] = {}
         self._ltp_timestamp: dict[str, datetime] = {}
         self._LTP_STALENESS_SECONDS = 300  # Q4-1: 5-minute staleness threshold
         self.instruments = InstrumentCache(self._load_instruments)
+        self._recorder: Callable[[str, dict, object], None] | None = None
 
     def attach_feed(self, feed: MarketDataFeed) -> None:
         self._feed = feed
 
+    def raw_read(self, endpoint: str, *args: str) -> object:
+        """The SDK's raw payload for a read-only endpoint (#85): pre-flight checks
+        its shape and the canary records it as a fixture."""
+        fn = _RAW_READS.get(endpoint)
+        if fn is None:
+            raise ValueError(f"{endpoint!r} is not a read-only Kite endpoint")
+        self._ensure_authenticated()
+        return fn(self._kite, *args)
+
+    def set_response_recorder(self, recorder: Callable[[str, dict, object], None] | None) -> None:
+        """recorder(call, params, raw_response) after every place/modify/cancel (#85)."""
+        self._recorder = recorder
+
+    def _recorded(self, call: str, params: dict, resp: object) -> None:
+        if self._recorder is None:
+            return
+        try:
+            self._recorder(call, params, resp)
+        except Exception:  # recording must never break an order path
+            logger.exception("kite_response_recorder_failed call=%s", call)
+
     @property
     def broker_id(self) -> BrokerName:
-        return BrokerName.KITE
+        return self._broker_name
 
     def authenticate(self) -> None:
+        if self._injected:  # KiteSim (paper): nothing to log in to
+            return
         from kiteconnect import KiteConnect  # type: ignore[import-untyped]
 
         api_key = os.environ["KITE_API_KEY"]
@@ -171,22 +213,25 @@ class KiteBroker(Broker):
             # -1 lets Kite apply its automatic protection band.
             params["market_protection"] = _AUTO_MARKET_PROTECTION
         resp = self._kite.place_order(variety=self._kite.VARIETY_REGULAR, **params)
+        self._recorded("place_order", params, resp)
         # kiteconnect returns the order id itself (a str), not the response dict.
         # Indexing it raised TypeError AFTER Kite had accepted the order (#73).
         return str(resp["order_id"] if isinstance(resp, dict) else resp)
 
     def modify_order(self, broker_order_id: str, changes: dict) -> str:
         self._ensure_authenticated()
-        self._kite.modify_order(
+        resp = self._kite.modify_order(
             variety=self._kite.VARIETY_REGULAR,
             order_id=broker_order_id,
             **changes,
         )
+        self._recorded("modify_order", {"order_id": broker_order_id, **changes}, resp)
         return broker_order_id
 
     def cancel_order(self, broker_order_id: str) -> None:
         self._ensure_authenticated()
-        self._kite.cancel_order(variety=self._kite.VARIETY_REGULAR, order_id=broker_order_id)
+        resp = self._kite.cancel_order(variety=self._kite.VARIETY_REGULAR, order_id=broker_order_id)
+        self._recorded("cancel_order", {"order_id": broker_order_id}, resp)
 
     def get_order_status(self, broker_order_id: str) -> dict:
         self._ensure_authenticated()
@@ -217,10 +262,11 @@ class KiteBroker(Broker):
                 average_price=p["average_price"],
                 last_price=p.get("last_price", 0.0),
                 product=ProductType.MIS,
-                broker_id=BrokerName.KITE,
+                broker_id=self.broker_id,
             )
-            for p in raw.get("day", [])
-            if p["quantity"] != 0
+            # #93: 'net' filtered to MIS; 'day' also holds same-day CNC trades.
+            for p in raw.get("net", [])
+            if p["quantity"] != 0 and p.get("product") == "MIS"
         ]
 
     def list_holdings(self) -> list[BrokerPosition]:
@@ -234,7 +280,7 @@ class KiteBroker(Broker):
                 average_price=h["average_price"],
                 last_price=h.get("last_price", 0.0),
                 product=ProductType.CNC,
-                broker_id=BrokerName.KITE,
+                broker_id=self.broker_id,
             )
             for h in raw
             if h["quantity"] > 0
@@ -246,7 +292,7 @@ class KiteBroker(Broker):
         return BrokerFunds(
             available_cash=data["available"]["cash"],
             used_margin=data["utilised"]["debits"],
-            broker_id=BrokerName.KITE,
+            broker_id=self.broker_id,
         )
 
     def on_order_update(self, callback: Callable[[dict], None]) -> None:
@@ -263,7 +309,7 @@ class KiteBroker(Broker):
         self._feed.on_tick(lambda t: callback(t.symbol, t.ltp) if t.symbol in wanted else None)
 
     def get_ltp(self, symbol: str, exchange: str) -> float | None:
-        now = datetime.now(IST)
+        now = self._clock()
         # Tier 0: fresh tick from the live feed
         tick = self._feed.latest(symbol) if self._feed else None
         if tick and (now - tick.received_at).total_seconds() < self._LTP_STALENESS_SECONDS:
@@ -306,53 +352,32 @@ class KiteBroker(Broker):
                 f"Cannot place GTT for {request.symbol}: LTP unavailable. "
                 "Ensure the tick feed is subscribed or the market data plan is active."
             )
-        if request.gtt_type == GttType.SINGLE:
-            params = {
-                "trigger_type": self._kite.GTT_TYPE_SINGLE,
-                "tradingsymbol": request.symbol,
-                "exchange": request.exchange,
-                "trigger_values": [request.trigger_price],
-                "last_price": last_price,
-                "orders": [
-                    {
-                        "transaction_type": "SELL",
-                        "quantity": request.quantity,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "price": request.limit_price,
-                    }
-                ],
-            }
-        else:
-            params = {
-                "trigger_type": self._kite.GTT_TYPE_OCO,
-                "tradingsymbol": request.symbol,
-                "exchange": request.exchange,
-                "trigger_values": [request.sl_trigger_price, request.target_trigger_price],
-                "last_price": last_price,
-                "orders": [
-                    {
-                        "transaction_type": "SELL",
-                        "quantity": request.quantity,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "price": request.sl_limit_price,
-                    },
-                    {
-                        "transaction_type": "SELL",
-                        "quantity": request.quantity,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "price": request.target_limit_price,
-                    },
-                ],
-            }
+        params = gtt_place_params(self._kite, request, last_price)
         resp = self._kite.place_gtt(**params)
         return str(resp["trigger_id"])
 
     def modify_gtt(self, broker_gtt_id: str, changes: dict) -> None:
+        """Apply `{"legN": {"stopPrice", "limitPrice"}}` changes (GttManager's format).
+
+        Kite's modify_gtt replaces the whole trigger, so the current GTT is read
+        back and resent with only the named legs changed (#84: passing `leg1`
+        straight to the SDK raised TypeError on every live trail)."""
         self._ensure_authenticated()
-        self._kite.modify_gtt(trigger_id=int(broker_gtt_id), **changes)
+        current = self._kite.get_gtt(trigger_id=int(broker_gtt_id))
+        cond = current["condition"]
+        trigger_values, orders = gtt_modified_legs(current, changes)
+        last_price = self.get_ltp(cond["tradingsymbol"], cond["exchange"])
+        if not last_price:  # same guard as place_gtt: never a stale or made-up price
+            raise RuntimeError(f"Cannot modify GTT {broker_gtt_id}: LTP unavailable.")
+        self._kite.modify_gtt(
+            trigger_id=int(broker_gtt_id),
+            trigger_type=current["type"],
+            tradingsymbol=cond["tradingsymbol"],
+            exchange=cond["exchange"],
+            trigger_values=trigger_values,
+            last_price=last_price,
+            orders=orders,
+        )
 
     def cancel_gtt(self, broker_gtt_id: str) -> None:
         self._ensure_authenticated()
@@ -425,6 +450,15 @@ class KiteBroker(Broker):
                 }
             )
         return out
+
+    def find_order(self, idempotency_key: str) -> str | None:
+        """Newest order carrying our tag (the idempotency key, as Kite accepts it) (#97)."""
+        tag = _kite_tag(idempotency_key)
+        if not tag:
+            return None
+        self._ensure_authenticated()
+        found = [o for o in self._kite.orders() if o.get("tag") == tag]
+        return str(found[-1]["order_id"]) if found else None
 
     def tick_size(self, symbol: str, exchange: str) -> float:
         """From Kite's instrument dump; 0.05 only if the instrument isn't listed (#75)."""
