@@ -246,3 +246,39 @@ class TestBrokerResolution:
         om._brokers = {BrokerName.MOCK: MockBroker()}
         with pytest.raises(RuntimeError, match="broker_id=paper"):
             om.sync_status(oid)
+
+
+class TestFundsAndClock:
+    def test_sell_exit_not_blocked_by_funds(self):
+        """Regression (#45): a target LIMIT sell of qty x price failed 'Insufficient
+        funds' after the entry had used the cash, blocking exits."""
+        om, broker = _make_om()
+        broker.set_cash(0.0)
+        req = OrderRequest(
+            symbol="RELIANCE",
+            exchange="NSE",
+            side=OrderSide.SELL,
+            order_type=OrderType.LIMIT,
+            quantity=10,
+            product=ProductType.MIS,
+            price=2600.0,
+        )
+        om._pre_trade_checks(req, broker, ltp=None, track="other")  # must not raise
+
+    def test_buy_still_needs_funds(self):
+        om, broker = _make_om()
+        broker.set_cash(0.0)
+        with pytest.raises(PreTradeCheckError, match="Insufficient funds"):
+            om._pre_trade_checks(_intraday_req(price=2500.0), broker, ltp=None, track="other")
+
+    def test_market_hours_use_injected_clock(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        ist = ZoneInfo("Asia/Kolkata")
+        om, broker = _make_om()
+        om._clock = lambda: datetime(2026, 11, 19, 10, 0, tzinfo=ist)
+        om._pre_trade_checks(_intraday_req(), broker, ltp=None, track="intraday")
+        om._clock = lambda: datetime(2026, 11, 19, 15, 31, tzinfo=ist)
+        with pytest.raises(PreTradeCheckError, match="market hours"):
+            om._pre_trade_checks(_intraday_req(), broker, ltp=None, track="intraday")
