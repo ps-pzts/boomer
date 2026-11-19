@@ -66,6 +66,11 @@
 
 ## Change log
 
+### 2026-11-19 — Docs: issue-per-PR traceability rule (#31)
+
+- **Why:** operator request: every PR and bug must be traceable via a GitHub issue stating aim/why, consequences if not done, how it advances the end goal, and architecture changes.
+- `CLAUDE.md` §11 added (issue lifecycle + body structure + end-goal statement); §6 PR format now starts with `Closes #<issue>` and its checklist gains an issue-update item; §10 gains "never open a PR or fix a bug without a linked issue". Appended as §11 rather than renumbered because code comments cite §9/§10.
+- New `.github/ISSUE_TEMPLATE/work-item.md` and `.github/pull_request_template.md`.
 ### 2026-11-19 — Feat: B7 PR 2 — minute bars to parquet + live feature computer
 
 - **Why:** design `designs/intraday-live-pipeline.md` §3.2-3.4. Kite Personal has no historical candles, so self-recorded minute bars are the only intraday history; and 4 of 6 intraday sub-signals read live features nothing computed (B7).
