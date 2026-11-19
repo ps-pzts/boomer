@@ -77,12 +77,20 @@
 
 ## Change log
 
+### 2026-11-19 — Bugs: four stranded-position bugs found by the integration suite (#97, #98, #99, #101)
+
+- **#97** symptom: a `place_order` answer lost to a timeout left a working order nobody tracked (entry or stop). Root cause: any exception became ERROR, and Kite tags were the UUID truncated to 20 chars, so every order of a trade shared one tag. Fix: tags are hashed when long; `find_order(key)` looks the order up and `OrderManager.submit` adopts it; if the broker is unreachable `cancel_lost_orders()` (run each reconcile) cancels it later, or flattens it if it already filled.
+- **#98** symptom: after a failed cancel the order was recorded CANCELLED while still working at Kite, and the trade closed over a resting leg. Fix: `cancel()` never records CANCELLED while the broker says working; `_settle` cancels resting legs first and will not close while one remains (stays EXITING, retries, alerts).
+- **#99** symptom: a part-filled entry had no stop until the 30-min expiry. Fix: the first partial fill cancels the remainder and protects what filled (design L12 changed).
+- **#101** symptom: a failed exit placement was never retried (`-exit1` reused, refused as duplicate), stranding the position. Fix: the key counts every exit order ever created (`BracketStore.exit_attempts`).
+- Regression tests: `tests/executor/test_lost_orders.py` plus the former xfail scenarios, now passing; random days and the Hypothesis machine run with all four faults on (75 extra seeds and a 120-example run clean). #100 (Order spec drift) is still open.
+
 ### 2026-11-19 — Test: cross-machine integration suite on KiteSim (#88, in progress)
 
 - `tests/integration/`: `Hostile` harness (real Order + Trade + Session machines, paper KiteBroker on KiteSim, `FaultPlan`, fake clock). Invariants after every step: I1 open trade has a resting stop, I2 trades' net == broker net, I3 no untracked resting order, I5 stop never lowered (per order), I6 every long covered by resting stops, I4 flat and terminal at EOD. The observer reads ground truth (`plan.suspended()`), not the faulty wire.
 - Suites: scenarios (postbacks, fill races, lost answers, partial entry, trailing under MODIFY PENDING, restarts), Order paths, Trade paths, Session flows (a day on a fake clock through `SessionController`), process restarts (KiteSim rebuilt from the paper book), decision-cycle cap, 15 seeded random days, a Hypothesis stateful machine, same-seed event-log equality, and replay of `state_transition` events rebuilding every machine row's state.
 - **Transition-coverage gate** (`test_zz_transition_coverage.py`): every Session/Trade/Order spec transition is fired by an integration test or listed in `spec_only.py` against an issue. Integration alone now fires 29/29 Session, 14/14 Trade and 12/23 Order; the other 11 Order transitions are spec-only (#100).
-- Bugs found, all xfail(strict) until fixed: #97 lost `place_order` answer leaves an untracked entry/stop, #98 trade closes while the surviving leg's cancel failed, #99 part-filled entry has no stop until expiry, #101 failed exit placement can never be retried (duplicate key). Random days and the stateful run leave those four faults out by default (`known_bugs`, `BOOMER_KNOWN_BUGS=1`) and are verified to find them when on.
+- Bugs found: #97, #98, #99, #101 (all fixed, see above), #100 (spec drift, open).
 - Known limits: event timestamps use the wall clock, not the injected fake clock; replay checks machine state per row, not every column; `hypothesis` added to the dev extras.
 
 ### 2026-11-19 — Feat: KiteSim, paper on the real KiteBroker, MockBroker deleted (#86)
