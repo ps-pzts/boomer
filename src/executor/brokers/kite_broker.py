@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -45,8 +46,15 @@ _KITE_STOP_TYPES = frozenset({"SL", "SL-M"})
 
 
 def _kite_tag(raw: str) -> str:
-    """Kite tags are alphanumeric, max 20 chars; ours carry UUID hyphens (#73)."""
-    return re.sub(r"[^A-Za-z0-9]", "", raw or "")[:20]
+    """Kite tags are alphanumeric, max 20 chars; ours carry UUID hyphens (#73).
+
+    A key that does not fit is hashed, not truncated: truncating the UUID gave every
+    order of one trade (entry, stop, target, exits) the same tag, so no order could
+    be found by its key (#97)."""
+    clean = re.sub(r"[^A-Za-z0-9]", "", raw or "")
+    if len(clean) <= 20:
+        return clean
+    return hashlib.sha1((raw or "").encode()).hexdigest()[:20]  # noqa: S324 - not security
 
 
 def map_kite_status(status: str, order_type: str, filled: int, quantity: int) -> OrderStatus | None:
@@ -442,6 +450,15 @@ class KiteBroker(Broker):
                 }
             )
         return out
+
+    def find_order(self, idempotency_key: str) -> str | None:
+        """Newest order carrying our tag (the idempotency key, as Kite accepts it) (#97)."""
+        tag = _kite_tag(idempotency_key)
+        if not tag:
+            return None
+        self._ensure_authenticated()
+        found = [o for o in self._kite.orders() if o.get("tag") == tag]
+        return str(found[-1]["order_id"]) if found else None
 
     def tick_size(self, symbol: str, exchange: str) -> float:
         """From Kite's instrument dump; 0.05 only if the instrument isn't listed (#75)."""

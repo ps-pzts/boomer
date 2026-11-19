@@ -113,6 +113,12 @@ class Broker(ABC):
         status}. Used to find orders no trade tracks (#65)."""
         raise NotImplementedError(f"{self.__class__.__name__} cannot list open orders")
 
+    def find_order(self, idempotency_key: str) -> str | None:
+        """The broker order id of an order placed with this idempotency key, or None.
+        Lets a caller whose place_order answer was lost find the order it may have
+        created (#97). Brokers that can't look orders up return None."""
+        return None
+
     def tick_size(self, symbol: str, exchange: str) -> float:
         """The instrument's price tick; every order price must be a multiple (#75)."""
         return 0.05

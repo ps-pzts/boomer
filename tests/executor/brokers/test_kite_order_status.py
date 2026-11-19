@@ -205,4 +205,11 @@ def test_place_order_returns_the_sdk_id_string(kite_sdk):
     )
     assert broker.place_order(req) == "240611000123401"
     tag = broker._kite.place_order.call_args.kwargs["tag"]
-    assert tag == "8a66f9e6aca94b06b49d" and tag.isalnum()
+    assert tag.isalnum() and len(tag) == 20
+    # #97: the tag identifies the key. Truncating the UUID gave every order of one trade
+    # (entry, stop, target, exits) the same tag.
+    from executor.brokers.kite_broker import _kite_tag
+
+    uuid = "8a66f9e6-aca9-4b06-b49d-ca0c05aa5ec7"
+    assert len({_kite_tag(f"{uuid}-{leg}") for leg in ("entry", "stop", "target", "exit1")}) == 4
+    assert _kite_tag("short-key") == "shortkey"  # fits in 20: kept readable
