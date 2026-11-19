@@ -1,0 +1,16 @@
+{
+  "errors.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/exceptions/"},
+  "gtt.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/gtt/"},
+  "gtts.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/gtt/"},
+  "historical_day.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/historical/"},
+  "holdings.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/portfolio/"},
+  "instruments_nse.csv": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/market-quotes/"},
+  "ltp.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/market-quotes/"},
+  "margins_equity.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/user/"},
+  "order_postback.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/postbacks/"},
+  "orders.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/orders/"},
+  "place_gtt.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/gtt/"},
+  "place_order.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/orders/"},
+  "positions.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/portfolio/"},
+  "session.json": {"source": "kite-connect-v3-docs", "doc": "https://kite.trade/docs/connect/v3/user/"}
+}

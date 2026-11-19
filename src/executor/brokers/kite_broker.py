@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.brokers.feeds.base import MarketDataFeed
+from executor.brokers.kite_contract import FINAL_ORDER_STATUSES, IN_FLIGHT_ORDER_STATUSES
 from executor.brokers.kite_instruments import InstrumentCache
 from executor.models import (
     BrokerFunds,
@@ -39,18 +40,7 @@ _KITE_FINAL: dict[str, OrderStatus] = {
     "CANCELLED AMO": OrderStatus.CANCELLED,
     "REJECTED": OrderStatus.REJECTED,
 }
-_KITE_IN_FLIGHT = frozenset(
-    {
-        "PUT ORDER REQ RECEIVED",
-        "VALIDATION PENDING",
-        "OPEN PENDING",
-        "MODIFY VALIDATION PENDING",
-        "MODIFY PENDING",
-        "MODIFIED",
-        "CANCEL PENDING",
-        "AMO REQ RECEIVED",
-    }
-)
+_KITE_IN_FLIGHT = IN_FLIGHT_ORDER_STATUSES
 _KITE_STOP_TYPES = frozenset({"SL", "SL-M"})
 
 
@@ -110,7 +100,7 @@ _KITE_VALIDITY_MAP: dict[OrderValidity, str] = {
 
 
 # Kite statuses after which an order can no longer fill (#65).
-_KITE_DONE = frozenset({"COMPLETE", "CANCELLED", "CANCELLED AMO", "REJECTED"})
+_KITE_DONE = FINAL_ORDER_STATUSES
 
 
 class KiteBroker(Broker):

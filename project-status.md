@@ -75,6 +75,13 @@
 
 ## Change log
 
+### 2026-11-19 — Feat: Kite SDK contract, autospec + documented response fixtures (#84)
+
+- **Why:** Kite tests used a bare `MagicMock()` with hand-typed responses, which only confirmed our own assumptions and hid the #73 `place_order` bug.
+- `src/executor/brokers/kite_contract.py`: the one source of truth for what Kite returns (order, order_postback, position(s), holding(s), margins_equity, ltp, instrument(s), gtt(s), gtt_ack, place_order, session, historical), Kite's order-status / enum vocabulary and exception classes. `check_shape(kind, payload) -> list[str]` (used by the canary, #85). `kite_broker.py` now takes its status sets from it.
+- `tests/fixtures/kite/`: documented wire responses (order lifecycle incl. two realistic REJECTED messages, positions, holdings, margins, LTP, instruments CSV, GTT, session, candles, WebSocket postback, error bodies). Provenance in `_meta.json`; to be replaced by canary recordings.
+- `tests/kite_fixtures.py`: `load` / `data` / `sdk(method)`; `sdk` runs the real `KiteConnect` method over a fixture via a fake HTTP session, so values have the SDK's exact Python shape.
+
 ### 2026-11-19 — Bug: Kite order handling would have broken live trading (#73)
 
 Live-only bugs that paper could never show (MockBroker uses our own statuses):

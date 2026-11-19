@@ -1,0 +1,65 @@
+{
+  "token": {
+    "http_status": 403,
+    "body": {
+      "status": "error",
+      "message": "Incorrect `api_key` or `access_token`.",
+      "data": null,
+      "error_type": "TokenException"
+    }
+  },
+  "permission": {
+    "http_status": 403,
+    "body": {
+      "status": "error",
+      "message": "Insufficient permission for that call.",
+      "data": null,
+      "error_type": "PermissionException"
+    }
+  },
+  "input": {
+    "http_status": 400,
+    "body": {
+      "status": "error",
+      "message": "Trigger price for stoploss sell orders should be lower than the last traded price.",
+      "data": null,
+      "error_type": "InputException"
+    }
+  },
+  "order": {
+    "http_status": 400,
+    "body": {
+      "status": "error",
+      "message": "Couldn't find that `order_id`.",
+      "data": null,
+      "error_type": "OrderException"
+    }
+  },
+  "network": {
+    "http_status": 503,
+    "body": {
+      "status": "error",
+      "message": "Gateway timed out.",
+      "data": null,
+      "error_type": "NetworkException"
+    }
+  },
+  "general": {
+    "http_status": 500,
+    "body": {
+      "status": "error",
+      "message": "Something went wrong.",
+      "data": null,
+      "error_type": "GeneralException"
+    }
+  },
+  "data": {
+    "http_status": 502,
+    "body": {
+      "status": "error",
+      "message": "Couldn't parse the JSON response received from the exchange.",
+      "data": null,
+      "error_type": "DataException"
+    }
+  }
+}
