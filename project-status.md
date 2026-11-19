@@ -83,6 +83,15 @@ Live-only bugs that paper could never show (MockBroker uses our own statuses):
 - **`place_order` indexed the SDK's return value** as a dict, but kiteconnect returns the id string. Every live order would have raised *after* Kite accepted it.
 - **Order tags** are now alphanumeric only.
 - **`cancel()`** waits up to ~1 s for Kite's final answer, so a fill racing a `CANCEL PENDING` is recorded.
+
+### 2026-11-19 — Bug: order prices on a fixed ₹0.05 grid (#75)
+
+- **Symptom (audit):** every price was rounded to ₹0.05. Kite rejects a price or trigger that isn't a multiple of the instrument's own `tick_size`, so entries, targets and stop moves could fail live for some stocks. Paper didn't check, so it could never show this.
+- **Fix:**
+  - `Broker.tick_size()`: Kite reads it from its instrument dump (`InstrumentCache`); paper uses the same source when Kite is configured.
+  - `OrderManager` rounds every order at the one choke point (`executor/ticks.py`): BUY limit down, SELL limit up, triggers up, so a protective stop only tightens and is never widened. `modify_trigger` does the same.
+  - The trailing stop records the trigger actually sent.
+  - The paper broker now refuses off-tick prices like Kite.
 - 953 tests pass.
 
 ### 2026-11-19 — Bug: paper broker lost its book on restart (#64)
