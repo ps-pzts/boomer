@@ -2,8 +2,7 @@
 
 Hypothesis explores sequences of ticks, entries, clock jumps, broker faults, postback
 disorder and restarts, checks every invariant after each step, and SHRINKS a failing
-sequence to the shortest one. Faults behind the open bugs (#97, #98, #99, #101) are
-left out; the seeded days in test_random_days.py cover the same ground by seed.
+sequence to the shortest one. The seeded days in test_random_days.py cover the same ground by seed.
 
 Deterministic by default (`derandomize`), so CI never flakes; to explore, run
     HYPOTHESIS_SEED=$RANDOM BOOMER_STATEFUL_EXAMPLES=300 pytest tests/integration/test_stateful.py
@@ -29,8 +28,11 @@ from tests.integration.test_scenarios_more import restarted
 
 EXAMPLES = int(os.environ.get("BOOMER_STATEFUL_EXAMPLES", "25"))
 SEED = os.environ.get("HYPOTHESIS_SEED")
-# BOOMER_KNOWN_BUGS=1 adds the faults behind #97/#98: Hypothesis should find and shrink them.
-KNOWN = ["cancel_fail", "ghost_place"] if os.environ.get("BOOMER_KNOWN_BUGS") else []
+KNOWN = ["cancel_fail", "ghost_place", "refuse_exit"]
+
+
+def _is_market(params: dict) -> bool:
+    return params["order_type"] == "MARKET"
 
 
 class Day(RuleBasedStateMachine):
@@ -85,6 +87,8 @@ class Day(RuleBasedStateMachine):
                 times=1,
                 match=lambda p: p["order_type"] == "LIMIT",
             )
+        elif kind == "refuse_exit":  # #101
+            plan.fail("place_order", kex.NetworkException("down"), times=1, match=_is_market)
         elif kind == "cancel_fail":  # #98
             plan.fail("cancel_order", kex.NetworkException("timed out"), times=1)
         elif kind == "ghost_place":  # #97

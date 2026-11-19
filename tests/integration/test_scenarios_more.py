@@ -43,7 +43,6 @@ def restarted(h: Hostile) -> TradeSupervisor:
 
 
 class TestPartialEntry:
-    @pytest.mark.xfail(strict=True, reason="#99: partial entry fill unprotected until expiry")
     def test_part_filled_entry_is_not_left_without_a_stop_for_long(self, h):
         """4 of 10 filled and the rest resting: those 4 shares exist at the broker."""
         h.tick(100.5)

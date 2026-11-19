@@ -107,7 +107,6 @@ class TestFillRaces:
 
 
 class TestLostAnswers:
-    @pytest.mark.xfail(strict=True, reason="#97: ghost stop left resting after exit")
     def test_timeout_after_the_stop_was_placed_leaves_exactly_one_stop(self, h):
         """Kite accepted the stop but the answer was lost; the retry must not stack a
         second stop (two stops would sell 20 against a 10 long)."""
@@ -126,17 +125,21 @@ class TestLostAnswers:
         h.check()
         assert h.bracket(bid)["state"] in ("open", "exiting", "closed")
 
-    @pytest.mark.xfail(strict=True, reason="#97: ghost entry left resting")
-    def test_timeout_on_entry_leaves_no_untracked_order(self, h):
+    def test_timeout_on_entry_adopts_the_order_that_was_placed(self, h):
+        """Kite accepted the entry but the answer was lost: the supervisor finds it by its
+        key and tracks it, so no order rests untracked (#97)."""
         h.tick(100.5)
         h.plan.fail("place_order", kex.NetworkException("timed out"), after_effect=True)
-        with pytest.raises(Exception):  # noqa: B017,PT011 - any failure is acceptable
-            h.sup.open_trade(_req(entry=100.0))
-        h.check()  # the ghost entry is resting at the broker with no trade: I3
+        bid = h.sup.open_trade(_req(entry=100.0))
+        h.check()
+        assert h.bracket(bid)["state"] == "entry_pending"
+        h.tick(99.9)
+        h.step()
+        assert h.bracket(bid)["state"] == "open"
+        h.check()
 
 
 class TestExitsUnderFaults:
-    @pytest.mark.xfail(strict=True, reason="#98: trade closes with the leg still resting")
     def test_cancel_of_the_surviving_leg_times_out(self, h):
         """The stop fills; cancelling the target fails once (network). The trade must
         not close with the target still working: it could fill later and short us."""

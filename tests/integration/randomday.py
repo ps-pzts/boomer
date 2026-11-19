@@ -25,7 +25,7 @@ def _req(sym: str, entry: float) -> TradeRequest:
     return TradeRequest(sym, "NSE", 10, entry, entry - 2.0, entry + 4.0, atr=2.0)
 
 
-def play(h: Hostile, seed: int, steps: int = 40, known_bugs: bool = False) -> None:
+def play(h: Hostile, seed: int, steps: int = 40) -> None:
     rng = random.Random(seed)
     attach_book(h)  # restarts rebuild KiteSim from the paper book
     ltp = {s: 100.0 for s in SYMBOLS}
@@ -50,7 +50,7 @@ def play(h: Hostile, seed: int, steps: int = 40, known_bugs: bool = False) -> No
         elif action == "clock":
             h.clock.now += timedelta(minutes=rng.choice([1, 5, 31]))
         elif action == "fault":
-            _fault(h, rng, known_bugs)
+            _fault(h, rng)
         elif action == "postbacks":
             _postbacks(h, rng)
         elif action == "restart":
@@ -75,18 +75,21 @@ def play(h: Hostile, seed: int, steps: int = 40, known_bugs: bool = False) -> No
     h.check(end_of_day=True)
 
 
-def _fault(h: Hostile, rng: random.Random, known_bugs: bool) -> None:
-    kind = rng.choice(["orders_down", "place_fail", "cancel_race", "modify_pending", "cancel_fail"])
+def _fault(h: Hostile, rng: random.Random) -> None:
+    kind = rng.choice(
+        ["orders_down", "place_fail", "cancel_race", "modify_pending", "cancel_fail", "ghost_place"]
+    )
     if kind == "orders_down":
         h.plan.fail("orders", kex.NetworkException("down"), times=rng.randint(1, 2))
     elif kind == "place_fail":  # definite refusal: no order exists afterwards
-        entries_only = None if known_bugs else (lambda p: p["order_type"] == "LIMIT")  # #101
-        h.plan.fail("place_order", kex.InputException("refused"), times=1, match=entries_only)
+        h.plan.fail("place_order", kex.InputException("refused"), times=1)
+    elif kind == "ghost_place":  # Kite accepted it, the answer was lost
+        h.plan.fail("place_order", kex.NetworkException("timed out"), times=1, after_effect=True)
     elif kind == "cancel_race":
         h.plan.fill_before_cancel(times=1)
     elif kind == "modify_pending":
         h.plan.modify_pending(times=1)
-    elif kind == "cancel_fail" and known_bugs:  # #98
+    elif kind == "cancel_fail":
         h.plan.fail("cancel_order", kex.NetworkException("timed out"), times=1)
 
 

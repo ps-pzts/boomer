@@ -116,7 +116,6 @@ class TestFailingExits:
         assert h.paper.list_positions() == []
         assert any("Exit order" in t for t in h.critical_titles())
 
-    @pytest.mark.xfail(strict=True, reason="#101: duplicate idempotency key blocks the retry")
     def test_failed_exit_placement_is_retried(self, h):
         """The exit order could not be placed at all (network). The next reconcile must
         place it again; today every retry reuses the key and is refused as a duplicate."""

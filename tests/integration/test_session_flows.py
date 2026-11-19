@@ -8,7 +8,6 @@ reconcile safety net for the ghost orders in #97.
 
 from __future__ import annotations
 
-import kiteconnect.exceptions as kex
 import pytest
 
 from executor import kite_checks as kc
@@ -195,32 +194,34 @@ class TestHandOffsUnderFaults:
         assert d.h.bracket(bid)["state"] == "closed"
         assert d.h.paper.list_positions() == []
 
-    def test_a_ghost_stop_is_caught_by_the_session_reconcile(self, d):
-        """#97's safety net: the order is untracked, so resuming after a halt must fail
-        its reconcile instead of trading on top of it."""
+    def _stray_order(self, d: Day) -> None:
+        """A resting order placed in the Kite app: the bot does not track it."""
+        from executor.models import OrderRequest, OrderType, ProductType
+
+        d.h.paper.place_order(
+            OrderRequest(
+                "TCS", "NSE", OrderSide.BUY, OrderType.LIMIT, 5, ProductType.MIS,
+                price=90.0, idempotency_key="manual-stray",
+            )
+        )  # fmt: skip
+
+    def test_a_stray_order_is_caught_by_the_session_reconcile(self, d):
+        """The safety net for any order the bot lost track of: resuming after a halt
+        must fail its reconcile instead of trading on top of it."""
         d.trading()
-        d.h.tick(100.0)
-        d.h.plan.fail(
-            "place_order",
-            kex.NetworkException("timed out"),
-            after_effect=True,
-            match=lambda p: p["order_type"] == "SL-M",
-        )
-        d.h.sup.open_trade(_req())
-        d.at(10, 0)  # entry fills, stop answer lost, exit at market
-        d.at(10, 1)
+        d.h.tick(100.0, sym="TCS")
+        d.at(10, 0)
         d.bot_mode = "paused"
-        d.at(10, 2)
+        d.at(10, 1)
+        self._stray_order(d)
         d.bot_mode = "auto"
-        assert d.at(10, 3) == sm.HALTED
+        assert d.at(10, 2) == sm.HALTED
         assert d.row()["halt_reason"] == "reconcile_mismatch"
 
-    def test_emergency_cancels_a_ghost_order_and_flattens(self, d):
+    def test_emergency_cancels_a_stray_order_and_flattens(self, d):
         d.trading()
-        d.h.tick(100.0)
-        d.h.plan.fail("place_order", kex.NetworkException("timed out"), after_effect=True)
-        with pytest.raises(kex.NetworkException):
-            d.h.sup.open_trade(_req(entry=100.0))
+        d.h.tick(100.0, sym="TCS")
+        self._stray_order(d)
         d.bot_mode = "emergency_stop"
         d.at(10, 0)
         d.at(10, 1)
