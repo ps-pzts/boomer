@@ -44,7 +44,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47). SM-1 + OBS-1 (#56) done 2026-11-19. Next: SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47). SM-1 + OBS-1 (#56) and SM-2 (Trade machine, #45) done 2026-11-19. Next: SM-3 (Session machine = B7 4c, incl. reconcile-before-resume #58). Was: SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
 
 ---
 
@@ -73,6 +73,16 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: SM-2 — Trade machine on the core (#45; supersedes #46)
+
+- **Why:** the trade lifecycle from #46 (never merged) rebuilt as an explicit state machine (`designs/state-machines.md` §5), so every step is legal by construction and recorded.
+- `executor/trade_machine.py`: `TRADE_SPEC` — ENTRY_PENDING → **PROTECTING** → OPEN → EXITING → CLOSED, or ENTRY_PENDING → CANCELLED; triggers entry_filled / entry_expired / entry_rejected / square_off / stop_confirmed / stop_failed / stop_lost / leg_filled / corrective_order / exit_failed / flat. Every exit passes through EXITING.
+- `executor/trade_lifecycle.py` (`TradeSupervisor`, same behaviour and guards as #46: plan validation, emulated OCO settled by net filled quantity, oversold buy-back, L9 unprotected exit, partial entry, square-off) + new `executor/trade_store.py` (`BracketStore`; `advance()` = bracket fields + transition + event in one transaction). Split to stay under the file-size limit.
+- Restart safety: a trade found in PROTECTING reuses a stop it already submitted (found by idempotency key) instead of placing a second resting stop that could later fire into a short; a trade in EXITING with no exit order places one.
+- `OrderManager` fixes carried over from #46: `cancel()` records a fill that raced it; funds check BUY only; injectable clock.
+- Migration `0013_intraday_brackets.sql` (was `0010` in #46).
+- Tests: #46's 18 lifecycle tests ported unchanged and passing; new `tests/executor/test_trade_machine.py` (spec, recorded history with correlation, PROTECTING path, restart safety). 784 tests pass.
 
 ### 2026-11-19 — Docs: reconcile before resume after any outage (#58)
 
