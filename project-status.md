@@ -75,6 +75,10 @@
 
 ## Change log
 
+### 2026-11-19 — Bug: `KiteBroker.modify_gtt` could never succeed (found by #84)
+
+- **Symptom (latent; live GTTs only):** every GTT trail (`GttManager.trail_stop`) would raise `TypeError` at the SDK. **Root cause:** `modify_gtt` passed GttManager's `{"leg1": {...}}` straight to `KiteConnect.modify_gtt`, which takes the full trigger (type, symbol, exchange, trigger_values, last_price, orders); a bare `MagicMock` accepted it. **Fix:** read the GTT back with `get_gtt`, change only the named legs, resend it with a live LTP (refuses, like `place_gtt`, when no LTP). Regression tests in `test_kite_broker_sdk.py`.
+
 ### 2026-11-19 — Feat: Kite SDK contract, autospec + documented response fixtures (#84)
 
 - **Why:** Kite tests used a bare `MagicMock()` with hand-typed responses, which only confirmed our own assumptions and hid the #73 `place_order` bug.

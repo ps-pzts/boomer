@@ -147,3 +147,40 @@ class TestGtt:
         respond(broker._kite, "delete_gtt", kf.sdk("place_gtt"))
         broker.cancel_gtt("123456")
         broker._kite.delete_gtt.assert_called_once_with(trigger_id=123456)
+
+    def test_modify_resends_the_whole_gtt_with_the_trailed_stop_leg(self, broker):
+        """Regression: modify_gtt passed GttManager's `leg1` dict straight to the SDK,
+        whose modify_gtt takes the full trigger (type, symbol, trigger_values,
+        last_price, orders). Every live GTT trail raised TypeError."""
+        respond(broker._kite, "get_gtt", kf.sdk("get_gtt"))
+        respond(broker._kite, "ltp", kf.ltp("KPEL", 362.0))
+        respond(broker._kite, "modify_gtt", kf.sdk("place_gtt"))
+
+        broker.modify_gtt("123456", {"leg1": {"stopPrice": 345.0, "limitPrice": 343.28}})
+
+        sent = broker._kite.modify_gtt.call_args.kwargs
+        assert sent["trigger_id"] == 123456
+        assert (sent["trigger_type"], sent["tradingsymbol"], sent["exchange"]) == (
+            "two-leg",
+            "KPEL",
+            "NSE",
+        )
+        assert sent["trigger_values"] == [345.0, 439.45]  # target leg untouched
+        assert sent["last_price"] == 362.0
+        assert [o["price"] for o in sent["orders"]] == [343.28, 438.6]
+        assert {k for o in sent["orders"] for k in o} == {
+            "transaction_type",
+            "quantity",
+            "product",
+            "order_type",
+            "price",
+        }
+
+    def test_modify_refuses_without_a_live_price(self, broker):
+        respond(broker._kite, "get_gtt", kf.sdk("get_gtt"))
+        respond(broker._kite, "ltp", kf.sdk_error("permission"))
+        respond(broker._kite, "holdings", [])
+        respond(broker._kite, "positions", kf.no_positions())
+        with pytest.raises(RuntimeError, match="LTP unavailable"):
+            broker.modify_gtt("123456", {"leg1": {"stopPrice": 345.0, "limitPrice": 343.28}})
+        broker._kite.modify_gtt.assert_not_called()
