@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def build_session(
     capital = CapitalStateManager(db_path)
 
     def execution() -> tuple | None:  # retried by the session each tick (#74)
-        built = _build_execution(conn, mode, feed, brokers, capital, alerter)
+        built = _build_execution(conn, db_path, mode, feed, brokers, capital, alerter)
         return built if built[0] is not None else None
 
     def watchlist_size(day: date) -> int:
@@ -75,12 +75,14 @@ def build_session(
 
 def _build_execution(
     conn: sqlite3.Connection,
+    db_path: str,
     mode: str,
     feed: object | None,
     brokers: list,
     capital: object,
     alerter: object | None,
 ) -> tuple[object | None, object | None, object | None]:
+    from src.executor.brokers.paper_book import IST, PaperBook
     from src.executor.models import BrokerName
     from src.executor.order_manager import OrderManager
     from src.executor.position_manager import PositionManager
@@ -96,7 +98,11 @@ def _build_execution(
             raise RuntimeError("no capital ledger: initialise capital first")
         live = next((b for b in brokers if b.broker_id == BrokerName.KITE), None)
         broker = build_execution_broker(
-            TradingMode(mode), feed, live, paper_initial_cash=float(ledger.total_capital)
+            TradingMode(mode),
+            feed,
+            live,
+            paper_initial_cash=float(ledger.total_capital),
+            paper_book=PaperBook(db_path, datetime.now(IST).date()),  # #64: restart-safe
         )
     except Exception as exc:
         logger.warning("execution_unavailable reason=%s (retried next tick)", exc)

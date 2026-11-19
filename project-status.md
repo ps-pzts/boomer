@@ -85,6 +85,15 @@ Live-only bugs that paper could never show (MockBroker uses our own statuses):
 - **`cancel()`** waits up to ~1 s for Kite's final answer, so a fill racing a `CANCEL PENDING` is recorded.
 - 953 tests pass.
 
+### 2026-11-19 — Bug: paper broker lost its book on restart (#64)
+
+- **Symptom:** after a restart during market hours, paper trades still existed in our tables but the new paper broker was empty. The session halted with `reconcile_mismatch` for the rest of the day, and the trades could no longer be managed.
+- **Root cause:** `MockBroker` keeps its orders, positions and cash in memory only.
+- **Fix:**
+  - `executor/brokers/paper_book.py` writes the whole book as one JSON row per session day (migration 0016) after every place, modify, cancel and fill, and `PaperBroker` restores it when built.
+  - One lock now guards the simulator: fills arrive on the feed thread while orders come from task threads, a race that predates this change.
+- 937 tests pass.
+
 ### 2026-11-19 — Bug: a fresh DB never traded (#74)
 
 - **Symptom (audit):** a fresh database never trades. Nothing seeded `risk_config`, so the watchlist task failed and the session reported `breakers_unavailable`. The capital ledger first appeared at the 16:00 EOD, so day one had no execution.
