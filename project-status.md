@@ -74,6 +74,10 @@
 
 ## Change log
 
+### 2026-11-19 — Docs: reconcile before resume after any outage (#58)
+
+- **Why:** operator rule: whenever something recovers (Kite feed, broker session, NSE data, orchestrator crash), reconcile with the source of truth before trading again.
+- `designs/state-machines.md` amended: Session gains `RECONCILING`; `HALTED --recover--> RECONCILING --reconciled--> TRADING` (no direct `HALTED → TRADING`); a mid-session boot takes `restarted → RECONCILING`; mismatch → `HALTED(reconcile_mismatch)` + CRITICAL, operator acknowledges. §4.5 defines the checks (broker positions vs open trades, orphan/missing orders, stops resting, feed fresh, watchlist present); the trade supervisor's own reconcile runs first; one `reconcile_report` decision event per run. Data sources recovering (e.g. late NSE surveillance list) trigger a data reconcile without halting: excluded from new entries, held positions managed normally (#50 decision).
 ### 2026-11-19 — Feat: SM-1 + OBS-1 — state-machine core, events table + emitter, Order machine (#56)
 
 - **Why:** foundation for `designs/state-machines.md` and `designs/observability.md`: one place to watch the system, and order history that is recorded instead of overwritten.
