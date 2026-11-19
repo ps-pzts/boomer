@@ -32,9 +32,14 @@ class FeedLtp:
 
 
 def build_session(
-    db_path: str, mode: str, feed: object | None, brokers: list, alerter: object | None = None
+    db_path: str,
+    mode: str | None,
+    feed: object | None,
+    brokers: list,
+    alerter: object | None = None,
 ) -> object:
-    """Return the SessionController for this process (with or without execution)."""
+    """Return the SessionController for this process (with or without execution).
+    mode None (production): resolved per session day and locked in its row (#76)."""
     from src.capital.risk_config import RiskConfigStore
     from src.capital.state import CapitalStateManager
     from src.executor.session_controller import SessionController
@@ -45,8 +50,8 @@ def build_session(
     conn.execute("PRAGMA busy_timeout=10000")
     capital = CapitalStateManager(db_path)
 
-    def execution() -> tuple | None:  # retried by the session each tick (#74)
-        built = _build_execution(conn, db_path, mode, feed, brokers, capital, alerter)
+    def execution(day_mode: str) -> tuple | None:  # retried each tick (#74), per day (#76)
+        built = _build_execution(conn, db_path, day_mode, feed, brokers, capital, alerter)
         return built if built[0] is not None else None
 
     def watchlist_size(day: date) -> int:
@@ -58,9 +63,20 @@ def build_session(
             logger.warning("session_watchlist_unavailable error=%s", exc)
             return 0
 
+    def mode_for(day: date) -> str:  # resolved when the day's session starts (#76)
+        import os
+
+        from src.executor.trading_mode import ENV_VAR, session_mode
+
+        try:
+            return session_mode(db_path, day, os.environ.get(ENV_VAR))
+        except Exception as exc:  # fail closed
+            logger.error("mode_resolution_failed error=%s (paper)", exc)
+            return "paper"
+
     return SessionController(
         conn,
-        mode=mode,
+        mode=mode_for if mode is None else mode,
         feed=feed,
         supervisor=None,
         broker=None,
