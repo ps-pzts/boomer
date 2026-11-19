@@ -77,8 +77,8 @@ class IntradaySignalGenerator(BaseSignalGenerator):
         return 0.7 * gap_score + 0.3 * self._clip(news_context, -1.0, 1.0)
 
     def _opening_range_score(self, features: dict[str, Any]) -> float | None:
-        """Opening range (first 15 min) vs 20-day average."""
-        orb_ratio = features.get("orb_range_vs_20d_avg_ratio")
+        """Opening range (09:15-09:29 high - low) relative to the 14-day ATR (design Q4)."""
+        orb_ratio = features.get("orb_range_vs_atr")
         if orb_ratio is None:
             return None
         # Tight ORB relative to average = easier to trade

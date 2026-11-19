@@ -8,10 +8,15 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from src.collector.live_bars import SessionBarRecorder
 from src.executor.brokers.feeds.base import NIFTY_50, Tick
 from src.executor.brokers.feeds.manual_feed import ManualFeed
 from src.orchestrator.tasks import build_task_registry
-from src.orchestrator.tasks_executor import _feed_health_check, _pre_market_executor_setup
+from src.orchestrator.tasks_executor import (
+    _feed_health_check,
+    _minute_bar_flush,
+    _pre_market_executor_setup,
+)
 
 IST = ZoneInfo("Asia/Kolkata")
 OPEN_PLUS_2 = datetime(2026, 11, 19, 9, 17, 0, tzinfo=IST)
@@ -114,3 +119,33 @@ class TestSchedule:
         # missing feed would have produced the "No market data feed" alert instead.
         for call in alerter.critical.call_args_list:
             assert "No market data feed" not in call.args[0]
+
+
+class TestMinuteBars:
+    def test_setup_starts_todays_bar_session(self, alerter, tmp_path):
+        rec = SessionBarRecorder(tmp_path)
+        with patch("src.executor.auto_login.refresh_all_broker_tokens", return_value={}):
+            _pre_market_executor_setup(
+                "2026-11-19", 1, db_path=":memory:", brokers=[], feed=None, bar_recorder=rec
+            )
+        assert str(rec.store.session_date) == "2026-11-19"
+
+    def test_flush_task_writes_completed_bars(self, tmp_path):
+        rec = SessionBarRecorder(tmp_path)
+        rec.start_session(OPEN_PLUS_2.date())
+        rec.on_tick(Tick(symbol="INFY", exchange="NSE", ltp=1500.0, received_at=OPEN_PLUS_2))
+        _minute_bar_flush("2026-11-19", 1, bar_recorder=rec, now=OPEN_PLUS_2 + timedelta(minutes=2))
+        assert list((tmp_path / "date=2026-11-19").glob("part-*.parquet"))
+
+    def test_flush_task_without_recorder_is_a_no_op(self):
+        _minute_bar_flush("2026-11-19", 1, bar_recorder=None)
+
+    def test_flush_failure_is_raised_for_task_runner(self):
+        rec = MagicMock()
+        rec.flush.side_effect = OSError("disk full")
+        with pytest.raises(OSError):
+            _minute_bar_flush("2026-11-19", 1, bar_recorder=rec, now=OPEN_PLUS_2)
+
+    def test_flush_schedule_covers_whole_session(self):
+        td = build_task_registry(":memory:", "/tmp/a", "/tmp/b")["minute_bar_flush"]
+        assert td.schedule == "*/15 9-15 * * 1-5"  # last run 15:45, after the 15:29 bar

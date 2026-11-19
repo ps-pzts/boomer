@@ -36,7 +36,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. Next: PR 2 (LiveBarStore + minute-bar parquet + LiveFeatureComputer).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. Next: PR 3 (intraday_watchlist task + migration + retire morning recommendation path).
 
 ---
 
@@ -53,7 +53,7 @@
 | ID | Blocker | Owner | Status |
 |----|---------|-------|--------|
 | B4 | SEBI algo trading registration | User | Not started — Zerodha (Kite) only now that Fyers is removed |
-| B6 | Minute-bar historical data source | User | Resolved — organic collection via parquet |
+| B6 | Minute-bar historical data source | User | ~~Resolved — organic collection via parquet~~ That writer never existed (found 2026-11-19). **Actually resolved 2026-11-19** by B7 PR 2: `minute_bar_flush` writes `minute_bars/date=YYYY-MM-DD/part-HHMM.parquet` from live ticks. Kite Personal has no historical candles, so history starts the first day the feed runs. |
 | B7 | Intraday live pipeline is not fully wired | User/Claude | **New, found during 2026-09-06 audit.** `IntradayPipeline` is never instantiated in production (`Orchestrator()` never passes `intraday_runner=`); `run_intraday()` has no implementation; 4 of 6 `IntradaySignalGenerator` sub-signal weights depend on live features (`premarket_gap_pct`, `orb_range_vs_20d_avg_ratio`, `nifty_intraday_direction`, `bid_ask_spread_pct`) that nothing computes; `IntradayClassifier.classify()` needs `vwap_current`/`orb_high`/`minutes_since_market_open` which are never written anywhere. What actually runs today is the 09:10 pre-market `morning_batch_signals` call, which can only use `fo_signals` (stale prior-session OI) and `news_trade_decay`. Must be built before intraday recommendations are genuinely live-informed. |
 
 ---
@@ -65,6 +65,16 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: B7 PR 2 — minute bars to parquet + live feature computer
+
+- **Why:** design `designs/intraday-live-pipeline.md` §3.2-3.4. Kite Personal has no historical candles, so self-recorded minute bars are the only intraday history; and 4 of 6 intraday sub-signals read live features nothing computed (B7).
+- New `src/collector/live_bars.py`: `LiveBarStore` builds 1-minute OHLCV bars from ticks (09:15-15:29 IST only; volume = delta of the exchange's cumulative volume; latest exchange VWAP kept per bar); `flush()` writes only completed, not-yet-written bars to `date=YYYY-MM-DD/part-HHMM.parquet` (loophole L7). `SessionBarRecorder` rolls the store each morning so a missed nightly restart can't drop a day's ticks on a date mismatch.
+- New `src/brain/features/live.py`: pure functions for `premarket_gap_pct`, opening range (`orb_high`/`orb_low`, `None` until 09:30 or if recording started after 09:15:59), `orb_range_vs_atr` (design Q4), `vwap_current`, `price_vs_open_pct`, `nifty_intraday_direction` (0.10% deadband), `bid_ask_spread_pct`, `minutes_since_market_open`, `minutes_since_latest_news`. `compute_live_features()` omits unknown keys rather than setting `None` (the classifier's `float(features.get(k, 0.0))` would raise). Live features are never written to the date-granular `features` table (L10).
+- Feature renamed `orb_range_vs_20d_avg_ratio` → `orb_range_vs_atr` in `IntradaySignalGenerator` and `track_intraday.py` (Q4); registry docs list every live key.
+- **L13 verified:** `filings.observed_at` is IST wall-clock with a misleading `Z` suffix. `latest_news_at` reads it as IST. Found while verifying: `compute_overnight_news_features` compares those IST strings against UTC-converted bounds, shifting its window by 5.5 h. Not fixed here; separate `bug/` PR.
+- Orchestrator: feed ticks are recorded from boot (`_build_bar_recorder`); the 08:45 setup task starts the day's session; new `minute_bar_flush` task every 15 min 09:00-15:45 IST. New env `BOOMER_MINUTE_BARS_DIR` (runbook, `dev.sh`). New dependency `pyarrow>=15`.
+- Tests: `tests/collector/test_live_bars.py`, `tests/brain/features/test_live.py` (incl. the design's worked example: gap +1.20%, ORB 5.20 / ATR 10.40 = 0.50 → sub-score 0.50), orchestrator flush/session/boot tests. 632 tests pass, lint and format clean.
 
 ### 2026-11-19 — Feat: B7 PR 1 — market-data feed, paper/live switch, pre-open feed connect
 

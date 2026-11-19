@@ -44,6 +44,7 @@ class Orchestrator:
         reconciler: object | None = None,
         brokers: list | None = None,
         feed: object | None = None,
+        bar_recorder: object | None = None,
     ) -> None:
         self._db_path = db_path
         self._run_store = TaskRunStore(db_path)
@@ -56,6 +57,7 @@ class Orchestrator:
             reconciler=reconciler,
             brokers=brokers or [],
             feed=feed,
+            bar_recorder=bar_recorder,
         )
         self._scheduler = Scheduler(
             task_registry=self._tasks,
@@ -203,6 +205,7 @@ def main() -> None:
 
     brokers = _build_brokers()
     feed = _build_feed(brokers)
+    bar_recorder = _build_bar_recorder(feed)
     _log_trading_mode(db_path)
 
     orc = Orchestrator(
@@ -212,6 +215,7 @@ def main() -> None:
         poll_interval=poll_interval,
         brokers=brokers,
         feed=feed,
+        bar_recorder=bar_recorder,
     )
     log_boot_sequence(db_path, poll_interval)
     orc.start()
@@ -259,6 +263,19 @@ def _build_feed(brokers: list) -> object | None:
     feed = KiteFeed(instruments=kite.instruments)
     kite.attach_feed(feed)
     return feed
+
+
+def _build_bar_recorder(feed: object | None) -> object | None:
+    """Record every feed tick into 1-minute bars (design §3.2). Kite Personal has no
+    historical candles, so this is the only intraday history the system gets."""
+    if feed is None:
+        return None
+    from src.collector.live_bars import SessionBarRecorder
+
+    root = os.environ.get("BOOMER_MINUTE_BARS_DIR", "/var/lib/boomer/parquet/minute_bars")
+    recorder = SessionBarRecorder(root)
+    feed.on_tick(recorder.on_tick)  # type: ignore[attr-defined]
+    return recorder
 
 
 def _log_trading_mode(db_path: str) -> None:

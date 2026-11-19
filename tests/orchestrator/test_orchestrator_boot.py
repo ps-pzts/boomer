@@ -6,10 +6,12 @@ import logging
 import sqlite3
 from pathlib import Path
 
+from src.collector.live_bars import SessionBarRecorder
 from src.executor.brokers.feeds.kite_feed import KiteFeed
+from src.executor.brokers.feeds.manual_feed import ManualFeed
 from src.executor.brokers.kite_broker import KiteBroker
 from src.executor.brokers.mock_broker import MockBroker
-from src.orchestrator.orchestrator import _build_feed, _log_trading_mode
+from src.orchestrator.orchestrator import _build_bar_recorder, _build_feed, _log_trading_mode
 
 
 def test_build_feed_attaches_kite_feed_sharing_instrument_cache():
@@ -35,3 +37,23 @@ def test_boot_logs_paper_when_env_unset(tmp_path: Path, monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         _log_trading_mode(str(db))
     assert "boot_trading_mode mode=paper" in caplog.text
+
+
+def test_bar_recorder_receives_every_feed_tick(tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from src.executor.brokers.feeds.base import Tick
+
+    monkeypatch.setenv("BOOMER_MINUTE_BARS_DIR", str(tmp_path))
+    feed = ManualFeed()
+    rec = _build_bar_recorder(feed)
+    assert isinstance(rec, SessionBarRecorder)
+    ts = datetime(2026, 11, 19, 9, 20, tzinfo=ZoneInfo("Asia/Kolkata"))
+    rec.start_session(ts.date())
+    feed.push(Tick(symbol="INFY", exchange="NSE", ltp=1500.0, received_at=ts))
+    assert len(rec.store.bars("INFY")) == 1
+
+
+def test_no_bar_recorder_without_feed():
+    assert _build_bar_recorder(None) is None

@@ -21,13 +21,17 @@ Batch computers (run nightly / pre-market by tasks_brain)
   beta_features         → beta_20d  (needs NIFTY 50 rows in prices table)
   overnight_news        → overnight_news_sentiment
 
-Live-only (injected by intraday task runner at 9:15–9:25 AM IST)
------------------------------------------------------------------
+Live-only (computed each cycle by brain.features.live.compute_live_features)
+---------------------------------------------------------------------------
   premarket_gap         → premarket_gap_pct
-  opening_range         → orb_range_vs_20d_avg_ratio, orb_high
+  opening_range         → orb_range_vs_atr, orb_high, orb_low
+  entry context         → vwap_current, ltp, price_vs_open_pct, minutes_since_market_open
   nifty_direction       → nifty_intraday_direction
   bid_ask_quality       → bid_ask_spread_pct
   news_recency          → minutes_since_latest_news
+
+Live features are never written to the features table (design §3.4: it is
+date-granular, so intraday values would leak to earlier same-day queries).
 """
 
 from brain.features.computers import compute_price_features
@@ -68,43 +72,49 @@ INTRADAY_COMPUTERS: list[FeatureComputer] = [
         writes=("overnight_news_sentiment",),
         essential=False,
     ),
-    # ── Live-only: injected by intraday task runner at signal time ────────────
-    # fn=None means the runner skips these; they are listed here so you can
-    # see at a glance every feature key the signal generator may consume.
+    # ── Live-only: computed at signal time by brain.features.live ─────────────
+    # fn=None means the batch runner skips these; they are listed here so you can
+    # see at a glance every feature key the signal generator and classifier consume.
     FeatureComputer(
         fn=None,
         writes=("premarket_gap_pct",),
         essential=True,
         requires_live=True,
-        # Source: (today_open - yesterday_close) / yesterday_close
-        #         read from broker live quote at 9:15 AM IST
+        # (day_open - prev_close) / prev_close x 100, from the 09:15 tick
     ),
     FeatureComputer(
         fn=None,
-        writes=("orb_range_vs_20d_avg_ratio", "orb_high"),
+        writes=("orb_range_vs_atr", "orb_high", "orb_low"),
         essential=False,
         requires_live=True,
-        # Source: first-15-min high/low range from minute-bar parquet lake
+        # 09:15-09:29 minute bars (LiveBarStore); range / atr_14d (design Q4)
+    ),
+    FeatureComputer(
+        fn=None,
+        writes=("vwap_current", "ltp", "price_vs_open_pct", "minutes_since_market_open"),
+        essential=False,
+        requires_live=True,
+        # latest tick (exchange VWAP = avg_traded_price) and the IST clock
     ),
     FeatureComputer(
         fn=None,
         writes=("nifty_intraday_direction",),
         essential=False,
         requires_live=True,
-        # Source: +1/0/-1 based on Nifty live price vs previous close
+        # +1/0/-1: NIFTY 50 tick vs prev close with a 0.10% deadband
     ),
     FeatureComputer(
         fn=None,
         writes=("bid_ask_spread_pct",),
         essential=False,
         requires_live=True,
-        # Source: broker live orderbook snapshot
+        # best bid/ask from FULL-mode depth
     ),
     FeatureComputer(
         fn=None,
         writes=("minutes_since_latest_news",),
         essential=False,
         requires_live=True,
-        # Source: (now - MAX(filings.observed_at)) / 60  at signal call time
+        # now - MAX(filings.observed_at), observed_at read as IST (design L13)
     ),
 ]

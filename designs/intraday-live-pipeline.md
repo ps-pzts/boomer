@@ -243,7 +243,7 @@ show the mode.
 | L10 | Lookahead via the date-granular feature store | Live features are never written to `features` (§3.4) |
 | L11 | Stop moved against the trade | Stops only trail favourably (CLAUDE.md §10); `trail_stop` is reused with an MIS-aware path |
 | L12 | Partial fill on entry | Stop and target are sized to the filled quantity; the remainder is cancelled at validity expiry |
-| L13 | `filings.observed_at` is commented "UTC" in migration 0002, which predates the IST migration | Verify actual stored values before trusting `minutes_since_latest_news` |
+| L13 | `filings.observed_at` is commented "UTC" in migration 0002, which predates the IST migration | **Verified 2026-11-19:** stored as IST wall-clock with a misleading `Z` suffix (`collector.base._fmt_dt`). `latest_news_at` strips it and reads IST. Separately, `compute_overnight_news_features` compares these IST strings with UTC-converted bounds, so its window is shifted 5.5 h: tracked as a `bug/` PR |
 | L14 | `_apm_circuit_check` iterates `__dataclass_fields__` and reads `.name` on a string key, so it raises `AttributeError` whenever a breaker actually trips | Fix in PR 4 with a regression test (same class of bug as the `any_tripped()` fix in #25) |
 
 ---
@@ -254,7 +254,7 @@ show the mode.
 |----|-------|
 | 0 | ~~`hotfix/`: remove `gtt_dispatch`, MIS-only pre-trade check~~: PR #26 |
 | 1 | `MarketDataFeed` + `Tick` + `KiteFeed` adapter (FULL mode for depth) + capability/health check + `BOOMER_TRADING_MODE` + `PaperBroker` on the feed. **Done 2026-11-19** |
-| 2 | `LiveBarStore` + parquet flush + `LiveFeatureComputer` (worked-example tests) |
+| 2 | `LiveBarStore` + parquet flush + `LiveFeatureComputer` (worked-example tests). **Done 2026-11-19**: `collector/live_bars.py`, `brain/features/live.py`, `minute_bar_flush` task every 15 min 09:00-15:45 |
 | 3 | `intraday_watchlist` task + migration `0008` + retire intraday GTT and morning-recommendation path |
 | 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes |
 | 5 | Paper-session reporting: EOD Telegram summary + dashboard intraday view |

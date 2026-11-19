@@ -16,7 +16,7 @@ _BASE_FEATURES = {
     "avg_traded_value_20d": 2e10,  # ₹200 cr — above ₹10 cr gate
     "premarket_gap_pct": 0.5,
     "overnight_news_sentiment": 0.3,
-    "orb_range_vs_20d_avg_ratio": 0.8,
+    "orb_range_vs_atr": 0.8,
     "fo_oi_overnight_change_pct": 5.0,
     "fo_max_pain_proximity_pct": 0.1,
     "minutes_since_latest_news": 20.0,

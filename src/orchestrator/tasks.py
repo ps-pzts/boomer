@@ -26,6 +26,7 @@ from .tasks_executor import (
     _feed_health_check,
     _intraday_cycle,
     _intraday_squareoff,
+    _minute_bar_flush,
     _position_review,
     _pre_market_executor_setup,
 )
@@ -48,11 +49,13 @@ def build_task_registry(
     reconciler: object | None = None,
     brokers: list | None = None,
     feed: object | None = None,
+    bar_recorder: object | None = None,
 ) -> dict[str, TaskDefinition]:
     """Return all task definitions wired with runtime dependencies."""
     common = {"db_path": db_path, "archive_dir": archive_dir, "backup_dir": backup_dir}
     intraday_deps = {"intraday_runner": intraday_runner}
-    broker_deps = {"brokers": brokers or [], "feed": feed}
+    broker_deps = {"brokers": brokers or [], "feed": feed, "bar_recorder": bar_recorder}
+    bar_deps = {"bar_recorder": bar_recorder}
     feed_deps = {"feed": feed}
     eod_deps = {"reconciler": reconciler, "brokers": brokers or []}
 
@@ -125,6 +128,14 @@ def build_task_registry(
             dependencies=["pre_market_executor_setup"],
             timeout_seconds=60,
             retry_policy=RetryPolicy(max_attempts=1),
+        ),
+        "minute_bar_flush": TaskDefinition(
+            task_id="minute_bar_flush",
+            fn=_wrap(_minute_bar_flush, bar_deps),  # type: ignore[arg-type]
+            schedule="*/15 9-15 * * 1-5",  # 09:00-15:45 IST; 15:45 writes the last bars
+            dependencies=[],
+            timeout_seconds=120,
+            retry_policy=RetryPolicy(max_attempts=2, backoff_seconds=[30]),
         ),
         "intraday_cycle": TaskDefinition(
             task_id="intraday_cycle",
