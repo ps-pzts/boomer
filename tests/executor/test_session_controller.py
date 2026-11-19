@@ -25,8 +25,14 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 class Day:
-    def __init__(self, tmp_path, supervisor: bool = True, kite_checks_passed: bool = True) -> None:
-        self.h = Harness(tmp_path)
+    def __init__(
+        self,
+        tmp_path,
+        supervisor: bool = True,
+        kite_checks_passed: bool = True,
+        harness_cls: type[Harness] = Harness,
+    ) -> None:
+        self.h = harness_cls(tmp_path)
         if kite_checks_passed:  # #85: today's Kite pre-flight + canary gate TRADING
             record_passes(self.h.db, DAY)
         self.h.feed.connect()
