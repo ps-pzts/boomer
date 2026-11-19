@@ -57,3 +57,33 @@ def test_bar_recorder_receives_every_feed_tick(tmp_path, monkeypatch):
 
 def test_no_bar_recorder_without_feed():
     assert _build_bar_recorder(None) is None
+
+
+def test_event_stream_started_with_mode_and_feed_health(tmp_path, monkeypatch):
+    import json
+    import time
+
+    from observability import emit as obs
+    from src.orchestrator.orchestrator import _start_event_stream
+
+    monkeypatch.setattr(obs, "_current", obs._current)  # restore global after the test
+    monkeypatch.setattr(obs, "HEARTBEAT_SECONDS", 0.05)
+    db = tmp_path / "ev.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(Path("migrations/0012_events.sql").read_text())
+    conn.close()
+
+    feed = ManualFeed()
+    emitter = _start_event_stream(str(db), "paper", feed)
+    assert obs.get() is emitter
+    rows = []
+    deadline = time.time() + 5
+    while time.time() < deadline and not any(r[0] == "heartbeat" for r in rows):
+        rows = sqlite3.connect(db).execute("SELECT kind, mode, payload FROM events").fetchall()
+        time.sleep(0.05)
+    emitter.stop()
+    kinds = [r[0] for r in rows]
+    assert kinds[0] == "lifecycle" and "heartbeat" in kinds
+    assert {r[1] for r in rows} == {"paper"}
+    beat = json.loads(next(r[2] for r in rows if r[0] == "heartbeat"))
+    assert beat["feed_connected"] is False and beat["feed_subscribed"] == 0

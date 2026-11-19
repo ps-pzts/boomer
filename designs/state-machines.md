@@ -200,7 +200,7 @@ Already explicit (`ALLOWED_TRANSITIONS`). Changes:
 
 | PR | Scope |
 |---|---|
-| SM-1 | `src/statemachine/` core + spec validation + `events` table and emitter (observability §4-5) + the guard test that keeps trading code from reading `events` + Order machine on the core |
+| SM-1 | `src/statemachine/` core + spec validation + `events` table and emitter (observability §4-5) + the guard test that keeps trading code from reading `events` + Order machine on the core. **Done 2026-11-19 (#56).** No-op triggers (§3) were not needed by the Order machine and are deferred to SM-2, where the Trade machine's reconcile loop needs them |
 | SM-2 | Trade machine on the core: reworks #46 (`TradeSupervisor`), adds `PROTECTING` |
 | SM-3 | Session machine + `trading_sessions` migration. This **is** B7 PR 4c: the cycle, live circuit breakers and execution-broker wiring are built as its guards and transitions |
 | OBS-* | Observability module (`designs/observability.md` §10). Replaces B7 PR 5 |

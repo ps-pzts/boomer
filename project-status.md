@@ -44,7 +44,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47): next is SM-1 (state-machine core + one-way `events` table), then SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47). SM-1 + OBS-1 (#56) done 2026-11-19. Next: SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
 
 ---
 
@@ -73,6 +73,16 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: SM-1 + OBS-1 — state-machine core, events table + emitter, Order machine (#56)
+
+- **Why:** foundation for `designs/state-machines.md` and `designs/observability.md`: one place to watch the system, and order history that is recorded instead of overwritten.
+- New `src/statemachine/` (`MachineSpec`, `Transition`, `transition()`, `record_created()`): spec validated at import (known states, reachable, no dead ends, no ambiguous triggers, safe SQL identifiers); `transition()` reads state, checks table + pure guard, updates state + touch column and inserts a `state_transition` (or `transition_blocked`) event in **one** transaction; joins the caller's open transaction instead of committing.
+- New migration `0012_events.sql` + `src/observability/emit.py`: envelope (IST ms timestamp, session_date, mode, source, boot_id, per-source seq, correlation ids, JSON payload, schema_version); async `emit()` never raises/blocks (queue + writer thread with own connection, drop counting); sync `envelope()`/`insert()` for the core; secret-key redaction; `lifecycle` + 30 s `heartbeat`. Registers under both `observability.emit` and `src.observability.emit` so one process has one emitter (O10).
+- Order machine: `executor/order_machine.py` builds `ORDER_SPEC` from `ALLOWED_TRANSITIONS`; `OrderManager._transition` goes through the core (rule per call site) and order creation is recorded; illegal moves still raise `StateMachineError`.
+- Orchestrator boot starts the stream (source `orchestrator`, resolved trading mode; heartbeat carries feed health) and stops it on shutdown.
+- `tests/test_events_read_only.py` fails the build if code outside `src/observability/` reads `events` (operator rule: trading never decides from events).
+- Tests: `tests/statemachine/`, `tests/observability/`, `tests/executor/test_order_machine.py`, boot test; executor test helpers apply migration 0012. 754 tests pass.
 
 ### 2026-11-19 — Feat: F&O-only intraday universe (#50 part 1)
 

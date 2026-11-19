@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 
 from executor.brokers.base import Broker
 from executor.models import (
-    ALLOWED_TRANSITIONS,
     TERMINAL_STATUSES,
     BrokerName,
     OrderRecord,
@@ -19,6 +18,8 @@ from executor.models import (
     ProductType,
     StateMachineError,
 )
+from executor.order_machine import ORDER_SPEC
+from statemachine import IllegalTransition, record_created, transition
 
 logger = logging.getLogger(__name__)
 
@@ -66,16 +67,16 @@ class OrderManager:
         now = datetime.now(IST).replace(tzinfo=None).isoformat()
         self._insert_order(order_id, request, broker.broker_id, OrderStatus.CREATED, now)
 
-        self._transition(order_id, OrderStatus.SUBMITTING)
+        self._transition(order_id, OrderStatus.SUBMITTING, rule="submit")
         try:
             broker_order_id = broker.place_order(request)
         except Exception as exc:
-            self._transition(order_id, OrderStatus.ERROR)
+            self._transition(order_id, OrderStatus.ERROR, rule="broker_place_failed")
             self._log_order_error(order_id, str(exc))
             raise
 
         self._update_broker_order_id(order_id, broker_order_id)
-        self._transition(order_id, OrderStatus.PENDING)
+        self._transition(order_id, OrderStatus.PENDING, rule="broker_accepted")
         logger.info("order submitted order_id=%s broker_order_id=%s", order_id, broker_order_id)
         if self._alerter:
             side = request.side.value if hasattr(request.side, "value") else str(request.side)
@@ -92,7 +93,7 @@ class OrderManager:
             return
         broker = self._broker_for_record(record)
         broker.cancel_order(record.broker_order_id)
-        self._transition(order_id, OrderStatus.CANCELLED)
+        self._transition(order_id, OrderStatus.CANCELLED, rule="cancel_requested")
 
     def sync_status(self, order_id: str) -> OrderRecord:
         """Poll broker for current status and update DB."""
@@ -105,7 +106,7 @@ class OrderManager:
             return record
         new_status = raw["status"]
         if new_status != record.status:
-            self._transition(order_id, new_status)
+            self._transition(order_id, new_status, rule="broker_status_sync")
             if raw.get("filled_quantity", 0) > record.filled_quantity:
                 self._record_execution(record, raw)
                 if self._alerter and new_status == OrderStatus.FILLED:
@@ -130,19 +131,34 @@ class OrderManager:
 
     # ── State machine ─────────────────────────────────────────────────────────
 
-    def _transition(self, order_id: str, new_status: OrderStatus) -> None:
+    def _transition(
+        self, order_id: str, new_status: OrderStatus, rule: str = "broker_status"
+    ) -> None:
+        """Move the order through the Order machine: status update and its
+        `state_transition` event commit together (#56). Illegal moves raise
+        StateMachineError, as before."""
         record = self._load_order(order_id)
-        allowed = ALLOWED_TRANSITIONS.get(record.status, frozenset())
-        if new_status not in allowed:
+        try:
+            transition(
+                self._db,
+                ORDER_SPEC,
+                order_id,
+                OrderStatus(new_status).value,
+                rule=rule,
+                inputs={
+                    "broker_order_id": record.broker_order_id,
+                    "side": record.side,
+                    "quantity": record.quantity,
+                    "filled_quantity": record.filled_quantity,
+                },
+                correlation={"order_id": order_id, "symbol": record.symbol},
+            )
+        except IllegalTransition as exc:
             msg = f"Invalid transition {record.status} → {new_status} for order {order_id}"
-            logger.error(msg)
-            raise StateMachineError(msg)
-        now = datetime.now(IST).replace(tzinfo=None).isoformat()
-        self._db.execute(
-            "UPDATE orders SET status=?, updated_at=? WHERE order_id=?",
-            (new_status, now, order_id),
-        )
-        self._db.commit()
+            logger.error("%s (%s)", msg, exc)
+            raise StateMachineError(msg) from exc
+        if self._db.in_transaction:  # joined a caller's open transaction
+            self._db.commit()
 
     # ── 8 pre-trade safety checks ─────────────────────────────────────────────
 
@@ -264,6 +280,22 @@ class OrderManager:
                 now,
                 now,
             ),
+        )
+        record_created(
+            self._db,
+            ORDER_SPEC,
+            order_id,
+            rule="order_created",
+            inputs={
+                "side": request.side,
+                "order_type": request.order_type,
+                "quantity": request.quantity,
+                "price": request.price,
+                "trigger_price": request.trigger_price,
+                "product": request.product,
+                "tag": request.tag,
+            },
+            correlation={"order_id": order_id, "symbol": request.symbol},
         )
         self._db.commit()
 

@@ -207,7 +207,8 @@ def main() -> None:
     feed = _build_feed(brokers)
     bar_recorder = _build_bar_recorder(feed)
     resume_market_session(db_path, feed, bar_recorder, datetime.datetime.now(_IST))
-    _log_trading_mode(db_path)
+    mode = _log_trading_mode(db_path)
+    emitter = _start_event_stream(db_path, mode, feed)
 
     orc = Orchestrator(
         db_path=db_path,
@@ -219,7 +220,10 @@ def main() -> None:
         bar_recorder=bar_recorder,
     )
     log_boot_sequence(db_path, poll_interval)
-    orc.start()
+    try:
+        orc.start()  # returns when SIGTERM/SIGINT stops the loop
+    finally:
+        emitter.stop()  # `lifecycle/stopped` + flush queued events
 
 
 def _build_brokers() -> list:
@@ -333,9 +337,9 @@ def resume_market_session(
     return True
 
 
-def _log_trading_mode(db_path: str) -> None:
-    """Resolve and log paper/live at boot. Execution broker wiring lands in B7 PR 4;
-    until then nothing places orders, whatever the mode."""
+def _log_trading_mode(db_path: str) -> str:
+    """Resolve and log paper/live at boot; returns the mode. Execution broker wiring
+    lands with the Session machine (SM-3); until then nothing places orders."""
     from src.executor.trading_mode import (
         ENV_VAR,
         LiveTradingAuthorisationStore,
@@ -346,6 +350,25 @@ def _log_trading_mode(db_path: str) -> None:
     logging.getLogger(__name__).info(
         "boot_trading_mode mode=%s reason=%s", decision.mode, decision.reason
     )
+    return decision.mode.value
+
+
+def _start_event_stream(db_path: str, mode: str, feed: object | None) -> object:
+    """One emitter for the orchestrator process (designs/observability.md §5, #56):
+    `lifecycle/started` now, a `heartbeat` every 30 s carrying the feed's health."""
+    from observability import emit as obs
+
+    def health() -> dict:
+        if feed is None:
+            return {"feed": "not_configured"}
+        h = feed.health()  # type: ignore[attr-defined]
+        return {
+            "feed_connected": h.connected,
+            "feed_subscribed": h.subscribed,
+            "feed_last_tick_at": h.last_tick_at,
+        }
+
+    return obs.configure(db_path, source="orchestrator", mode=mode, health=health)
 
 
 if __name__ == "__main__":

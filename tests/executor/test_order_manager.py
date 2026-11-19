@@ -26,6 +26,8 @@ def _make_db() -> sqlite3.Connection:
         db.executescript(f.read())
     with open("migrations/0004_executor_schema.sql") as f:
         db.executescript(f.read())
+    with open("migrations/0012_events.sql") as f:  # order transitions emit events (#56)
+        db.executescript(f.read())
     return db
 
 

@@ -171,7 +171,7 @@ Writing remains allowed everywhere, through `emit()` or `statemachine.transition
 
 | PR | Scope | Pairs with |
 |---|---|---|
-| OBS-1 | `events` migration, emitter (queue + writer thread, own connection, boot_id/seq), `lifecycle` and `heartbeat` events, enforcement test | SM-1 |
+| OBS-1 | `events` migration, emitter (queue + writer thread, own connection, boot_id/seq), `lifecycle` and `heartbeat` events, enforcement test. **Done 2026-11-19 (#56)**: migration `0012`, `src/observability/emit.py`, `tests/test_events_read_only.py`; orchestrator heartbeat carries feed health | SM-1 |
 | OBS-2 | `broker_snapshot` source; decision/rejection events in watchlist, cycle and risk; orchestrator task events | SM-3 (B7 4c) |
 | OBS-3 | Projection + `/live`, timelines, Telegram `/status`, derived alerts | after SM-3 |
 | OBS-4 | Nightly archive to parquet + 30-day retention | any time after OBS-1 |
@@ -188,6 +188,7 @@ Writing remains allowed everywhere, through `emit()` or `statemachine.transition
 | O6 | Sensitive data in payloads (tokens, credentials) | Emitter rejects payload keys matching a denylist (`token`, `secret`, `password`, `api_key`) and logs the attempt |
 | O7 | Projection wrong after a missed event | Broker snapshots and heartbeats re-baseline every minute; DRIFT surfaces disagreement instead of hiding it |
 | O8 | Observability process down | Trading unaffected by design. Critical alerts still go out from source. The dashboard shows "projection stale since …" based on its own last processed `event_id` time |
+| O10 | The codebase imports packages under two roots (`observability` via the editable install, `src.observability` from orchestrator code), which would create two emitters in one process, half the events going to the unconfigured one | `emit.py` registers itself under both module names at import; a test checks both import orders (#56) |
 | O9 | Event schema drifts | `schema_version` in the envelope; the projection ignores unknown kinds/names (logs once) instead of crashing |
 
 ## 14. Open questions

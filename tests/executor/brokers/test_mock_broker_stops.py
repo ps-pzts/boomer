@@ -200,7 +200,11 @@ class TestUpdatePayload:
 def _om_db() -> sqlite3.Connection:
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
-    for f in ("migrations/0001_initial_schema.sql", "migrations/0004_executor_schema.sql"):
+    for f in (
+        "migrations/0001_initial_schema.sql",
+        "migrations/0004_executor_schema.sql",
+        "migrations/0012_events.sql",
+    ):
         with open(f) as fh:
             db.executescript(fh.read())
     return db
