@@ -34,6 +34,12 @@ TERMINAL = frozenset({CLOSED, ABANDONED})
 # rest of the day. An operator emergency stop is not a halt: it squares off at once (#67).
 RESUMABLE = frozenset({"feed_stale", "breaker:nifty_move", "paused", "reconcile_mismatch"})
 
+# #85: today's Kite pre-flight (08:55) / canary (09:15) failed. Not auto-resumable:
+# only a passing operator re-run (`/canary`) clears it, then RECONCILING as usual.
+KITE_CHECK_HALTS = frozenset({"preflight_failed", "canary_failed"})
+# States a failed Kite check halts from: everything that can still lead to entries.
+CHECKS_HALT_FROM = frozenset({PRE_OPEN, CONNECTED, READY, TRADING, RECONCILING})
+
 Ctx = Mapping[str, Any]
 
 
@@ -63,6 +69,19 @@ def _recover(ctx: Ctx) -> str | None:
             return "awaiting_operator_ack"
     elif ctx.get("blocker"):
         return f"cause_active:{ctx['blocker']}"
+    if not ctx.get("before_cutoff"):
+        return "after_cutoff"
+    return None
+
+
+def _checks_passed(ctx: Ctx) -> str | None:
+    reason = ctx.get("halt_reason")
+    if reason not in KITE_CHECK_HALTS:
+        return f"not_a_check_halt:{reason}"
+    if ctx.get("kite_checks"):
+        return f"checks_not_passed:{ctx['kite_checks']}"
+    if not ctx.get("market_open"):
+        return "before_open"  # reconcile needs the open's fresh ticks
     if not ctx.get("before_cutoff"):
         return "after_cutoff"
     return None
@@ -108,6 +127,8 @@ SESSION_SPEC = MachineSpec(
         _t({CONNECTED}, READY, "watchlist_ready", _watchlist_ready),
         _t({READY}, TRADING, "market_open", _can_trade),
         _t({TRADING}, HALTED, "halt"),
+        _t(set(CHECKS_HALT_FROM), HALTED, "checks_failed"),  # #85
+        _t({HALTED}, RECONCILING, "checks_passed", _checks_passed),  # #85: operator re-run
         _t({HALTED}, RECONCILING, "recover", _recover),
         _t({RECONCILING}, TRADING, "reconciled", _can_trade),
         _t({RECONCILING}, HALTED, "reconcile_failed"),

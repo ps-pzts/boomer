@@ -17,6 +17,7 @@ from executor import session_machine as sm
 from executor.brokers.feeds.base import NIFTY_50, Tick
 from executor.models import OrderRequest, OrderSide, OrderType, ProductType
 from executor.session_controller import SessionController
+from tests.executor.test_kite_checks import record_passes
 from tests.executor.test_session_inputs import DAY, _ledger
 from tests.executor.test_trade_lifecycle import Harness, _req
 
@@ -24,8 +25,10 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 class Day:
-    def __init__(self, tmp_path, supervisor: bool = True) -> None:
+    def __init__(self, tmp_path, supervisor: bool = True, kite_checks_passed: bool = True) -> None:
         self.h = Harness(tmp_path)
+        if kite_checks_passed:  # #85: today's Kite pre-flight + canary gate TRADING
+            record_passes(self.h.db, DAY)
         self.h.feed.connect()
         self.bot_mode = "auto"
         self.watchlist = 50
