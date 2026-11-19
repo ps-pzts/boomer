@@ -86,8 +86,11 @@ class Orchestrator:
         import sqlite3
         from zoneinfo import ZoneInfo
 
-        now = dt.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)\
+        now = (
+            dt.datetime.now(ZoneInfo("Asia/Kolkata"))
+            .replace(tzinfo=None)
             .isoformat(timespec="seconds")
+        )
         conn = sqlite3.connect(self._db_path, timeout=5)
         try:
             cur = conn.execute(

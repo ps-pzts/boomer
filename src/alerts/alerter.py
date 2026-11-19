@@ -67,9 +67,7 @@ class AlertManager:
         self._email_to = email_to
         self._warn_batch_hours = warn_batch_hours
         self._warn_buffer: list[Alert] = []
-        self._last_warn_flush: datetime.datetime = datetime.datetime(
-            2000, 1, 1, tzinfo=_IST
-        )
+        self._last_warn_flush: datetime.datetime = datetime.datetime(2000, 1, 1, tzinfo=_IST)
         self._lock = threading.Lock()
 
     @classmethod
@@ -173,9 +171,7 @@ class AlertManager:
         )
 
     def _persist(self, alert: Alert) -> None:
-        now = (
-            datetime.datetime.now(_IST).replace(tzinfo=None).isoformat(timespec="seconds")
-        )
+        now = datetime.datetime.now(_IST).replace(tzinfo=None).isoformat(timespec="seconds")
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)
             conn.execute("PRAGMA journal_mode=WAL")
@@ -199,9 +195,7 @@ class AlertManager:
             logger.error("alert_persist_failed error=%s", exc)
 
     def _record_missed_critical(self, alert: Alert) -> None:
-        now = (
-            datetime.datetime.now(_IST).replace(tzinfo=None).isoformat(timespec="seconds")
-        )
+        now = datetime.datetime.now(_IST).replace(tzinfo=None).isoformat(timespec="seconds")
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)
             conn.execute("PRAGMA journal_mode=WAL")

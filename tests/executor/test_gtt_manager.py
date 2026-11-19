@@ -18,6 +18,7 @@ from executor.models import (
 
 IST = ZoneInfo("Asia/Kolkata")
 
+
 def _make_db() -> sqlite3.Connection:
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row

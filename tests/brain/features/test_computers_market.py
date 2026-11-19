@@ -63,6 +63,7 @@ def _seed_prices(db_path, symbol, exchange, n, close=100.0, high_offset=2.0):
 
 # ── compute_technical_pattern_score ──────────────────────────────────────────
 
+
 class TestComputeTechnicalPatternScore:
     def test_bullish_structure_positive_score(self, db_path, fs):
         # price > dma_20 > dma_50 → components 1 and 2 both positive
@@ -115,11 +116,14 @@ class TestComputeTechnicalPatternScore:
 
 # ── compute_fo_features ────────────────────────────────────────────────────────
 
+
 class TestComputeFoFeatures:
-    def _insert_fo(self, db_path, symbol, trade_date, instrument_type, expiry,
-                   oi, oi_change=None, strike=None):
+    def _insert_fo(
+        self, db_path, symbol, trade_date, instrument_type, expiry, oi, oi_change=None, strike=None
+    ):
         conn = sqlite3.connect(db_path)
         import uuid
+
         conn.execute(
             """
             INSERT INTO raw_archive
@@ -141,9 +145,16 @@ class TestComputeFoFeatures:
             VALUES (?, ?, '1.0', ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
-                str(uuid.uuid4()), raw_id, symbol, instrument_type,
-                expiry, strike, trade_date, trade_date + "T15:30:00",
-                oi, oi_change,
+                str(uuid.uuid4()),
+                raw_id,
+                symbol,
+                instrument_type,
+                expiry,
+                strike,
+                trade_date,
+                trade_date + "T15:30:00",
+                oi,
+                oi_change,
             ),
         )
         conn.commit()
@@ -179,6 +190,7 @@ class TestComputeFoFeatures:
 
 # ── compute_price_mode_classifier ────────────────────────────────────────────
 
+
 class TestComputePriceModeClassifier:
     def test_trending_market_positive_autocorr(self, db_path, fs):
         # Steadily rising prices → positive serial correlation → score > 0
@@ -202,6 +214,7 @@ class TestComputePriceModeClassifier:
 
 
 # ── compute_beta_features ────────────────────────────────────────────────────
+
 
 class TestComputeBetaFeatures:
     def test_beta_2x_when_stock_moves_twice_market(self, db_path, fs):
@@ -236,6 +249,7 @@ class TestComputeBetaFeatures:
 
 # ── compute_sector_relative_strength ─────────────────────────────────────────
 
+
 class TestComputeSectorRelativeStrength:
     def _add_sector(self, db_path, symbol, sector):
         conn = sqlite3.connect(db_path)
@@ -258,9 +272,13 @@ class TestComputeSectorRelativeStrength:
 
         for sym, ret in [(SYM, 10.0), ("INFY", 1.0), ("WIPRO", 1.0)]:
             rows = [
-                ((AS_OF - timedelta(days=i)).isoformat(),
-                 100.0 + (19 - i) * ret / 19,
-                 102.0, 98.0, 1_000_000)
+                (
+                    (AS_OF - timedelta(days=i)).isoformat(),
+                    100.0 + (19 - i) * ret / 19,
+                    102.0,
+                    98.0,
+                    1_000_000,
+                )
                 for i in range(20)
             ]
             _insert_prices(db_path, sym, EXC, rows)

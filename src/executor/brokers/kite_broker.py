@@ -334,10 +334,7 @@ class KiteBroker(Broker):
         if cache is None:
             self._ensure_authenticated()
             instruments = self._kite.instruments(exchange=exchange)
-            cache = {
-                inst["tradingsymbol"]: int(inst["instrument_token"])
-                for inst in instruments
-            }
+            cache = {inst["tradingsymbol"]: int(inst["instrument_token"]) for inst in instruments}
             self._instruments_cache[exchange] = cache
         token = cache.get(symbol)
         if token is None:

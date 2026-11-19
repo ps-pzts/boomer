@@ -127,7 +127,7 @@ class TestNightlyHealthCheckDiskSpace:
         from collections import namedtuple
 
         _DiskUsage = namedtuple("usage", ["total", "used", "free"])
-        fake_usage = _DiskUsage(total=100 * 1024 ** 3, used=95 * 1024 ** 3, free=5 * 1024 ** 3)
+        fake_usage = _DiskUsage(total=100 * 1024**3, used=95 * 1024**3, free=5 * 1024**3)
 
         with (
             patch("shutil.disk_usage", return_value=fake_usage),

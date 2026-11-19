@@ -80,12 +80,14 @@ def log_shutdown(signum: int) -> None:
 def _notify_telegram(message: str) -> None:
     """Best-effort Telegram push — never raises, never blocks startup."""
     import os
+
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat_id:
         return
     try:
         from alerts.telegram import send_telegram
+
         send_telegram(token, chat_id, message)
     except Exception as exc:
         _log.warning("startup_telegram_notify_failed: %s", exc)

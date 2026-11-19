@@ -8,6 +8,7 @@ from executor.intraday import IntradayPipeline
 
 IST = ZoneInfo("Asia/Kolkata")
 
+
 class TestIntradaySignalValidity:
     def test_signal_within_30_min_is_valid(self):
         pipeline = IntradayPipeline(order_manager=MagicMock(), position_manager=MagicMock())

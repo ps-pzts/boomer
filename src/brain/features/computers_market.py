@@ -27,6 +27,7 @@ def _conn(db_path: str) -> sqlite3.Connection:
 
 # ── Technical / chart structure ───────────────────────────────────────────────
 
+
 def compute_technical_pattern_score(
     db_path: str,
     fs: FeatureStore,
@@ -74,12 +75,17 @@ def compute_technical_pattern_score(
         score += 0.20 * max(-1.0, min(1.0, contraction))
 
     fs.write_feature(
-        stock_symbol, exchange, "technical_pattern_score",
-        max(-1.0, min(1.0, score)), as_of_date, as_of_date,
+        stock_symbol,
+        exchange,
+        "technical_pattern_score",
+        max(-1.0, min(1.0, score)),
+        as_of_date,
+        as_of_date,
     )
 
 
 # ── F&O features ──────────────────────────────────────────────────────────────
+
 
 def compute_fo_features(
     db_path: str,
@@ -168,6 +174,7 @@ def compute_fo_features(
 
 # ── Cross-stock / sector features ─────────────────────────────────────────────
 
+
 def compute_sector_relative_strength(
     db_path: str,
     fs: FeatureStore,
@@ -238,8 +245,7 @@ def compute_sector_relative_strength(
             return
 
         peer_returns = [
-            r for sym in peers
-            if sym != stock_symbol and (r := _ret20(sym)) is not None
+            r for sym in peers if sym != stock_symbol and (r := _ret20(sym)) is not None
         ]
 
     if len(peer_returns) < 2:
@@ -257,12 +263,17 @@ def compute_sector_relative_strength(
     else:
         rs = (stock_ret - sector_mean) / sector_std
     fs.write_feature(
-        stock_symbol, exchange, "sector_relative_strength_20d",
-        max(-3.0, min(3.0, rs)), as_of_date, as_of_date,
+        stock_symbol,
+        exchange,
+        "sector_relative_strength_20d",
+        max(-3.0, min(3.0, rs)),
+        as_of_date,
+        as_of_date,
     )
 
 
 # ── Momentum / mean-reversion classifier ─────────────────────────────────────
+
 
 def compute_price_mode_classifier(
     db_path: str,
@@ -324,11 +335,17 @@ def compute_price_mode_classifier(
 
     autocorr = max(-1.0, min(1.0, cov / denom))
     fs.write_feature(
-        stock_symbol, exchange, "price_mode_classifier", autocorr, as_of_date, as_of_date,
+        stock_symbol,
+        exchange,
+        "price_mode_classifier",
+        autocorr,
+        as_of_date,
+        as_of_date,
     )
 
 
 # ── Beta ──────────────────────────────────────────────────────────────────────
+
 
 def compute_beta_features(
     db_path: str,
@@ -400,6 +417,7 @@ def compute_beta_features(
 
 # ── Intraday: overnight news (batch-safe) ─────────────────────────────────────
 
+
 def compute_overnight_news_features(
     db_path: str,
     fs: FeatureStore,
@@ -456,5 +474,10 @@ def compute_overnight_news_features(
     if total_weight > 0:
         avg = max(-1.0, min(1.0, weighted_sum / total_weight))
         fs.write_feature(
-            stock_symbol, exchange, "overnight_news_sentiment", avg, as_of_date, as_of_date,
+            stock_symbol,
+            exchange,
+            "overnight_news_sentiment",
+            avg,
+            as_of_date,
+            as_of_date,
         )

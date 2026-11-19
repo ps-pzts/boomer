@@ -133,8 +133,12 @@ class GttManager:
         self._db.execute(
             "UPDATE gtt_orders"
             " SET sl_trigger_price=?, sl_limit_price=?, last_checked_at=? WHERE gtt_id=?",
-            (new_sl, new_sl * 0.995, datetime.now(IST).replace(tzinfo=None).isoformat(),
-             position.gtt_oco_id),
+            (
+                new_sl,
+                new_sl * 0.995,
+                datetime.now(IST).replace(tzinfo=None).isoformat(),
+                position.gtt_oco_id,
+            ),
         )
         self._db.commit()
         logger.info(

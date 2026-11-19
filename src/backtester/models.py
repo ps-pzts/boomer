@@ -10,11 +10,11 @@ from executor.models import ProductType
 class EntryDecision:
     """Signal to open a new position. Returned by the entry_decider callable."""
 
-    entry_price: float    # 0.0 means market order at next open
+    entry_price: float  # 0.0 means market order at next open
     sl_price: float
     target_price: float
     product: ProductType
-    track: str            # "intraday"
+    track: str  # "intraday"
     confidence: float
     strategy_id: str
 
@@ -29,15 +29,15 @@ class BacktestConfig:
     universe: str = "nifty500_current"
 
     # Position sizing limits
-    max_position_pct: float = 0.05    # max 5% of capital per position
-    max_open_positions: int = 20       # concurrent open position cap
+    max_position_pct: float = 0.05  # max 5% of capital per position
+    max_open_positions: int = 20  # concurrent open position cap
 
     # Acceptance thresholds (per Phase 4 design doc)
-    min_sharpe: float = 1.3           # raised from 1.0 for survivorship-bias adjustment
+    min_sharpe: float = 1.3  # raised from 1.0 for survivorship-bias adjustment
     max_drawdown_pct: float = 15.0
     min_trades_per_track: int = 100
     min_expectancy_ratio: float = 1.5  # (win_rate × avg_win) / (loss_rate × avg_loss)
-    min_oos_pct_of_is: float = 0.5    # OOS Sharpe ≥ 50% of in-sample Sharpe
+    min_oos_pct_of_is: float = 0.5  # OOS Sharpe ≥ 50% of in-sample Sharpe
 
 
 @dataclass

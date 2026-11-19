@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 
+
 class FeatureStore:
     """Stage 0 — point-in-time feature storage and retrieval.
 

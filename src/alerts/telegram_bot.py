@@ -218,10 +218,11 @@ class TelegramBot:
         def _shutdown(signum: int, frame: object) -> None:
             logger.info("telegram_bot_stopping signal=%d", signum)
             _send(
-                self._token, self._chat_id,
+                self._token,
+                self._chat_id,
                 f"🔴 <b>Boomer bot going offline</b>\n"
                 f"Graceful shutdown (signal {signum}). "
-                "Commands will not be processed until restarted."
+                "Commands will not be processed until restarted.",
             )
             raise SystemExit(0)
 

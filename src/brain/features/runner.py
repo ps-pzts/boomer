@@ -103,12 +103,18 @@ def run_track_computers(
             if computer.essential:
                 log.error(
                     "[%s] ESSENTIAL FAILURE — %s %s: %s",
-                    label, stock_symbol, as_of_date, exc,
+                    label,
+                    stock_symbol,
+                    as_of_date,
+                    exc,
                 )
                 raise
             log.warning(
                 "[%s] non-essential failure — %s %s: %s",
-                label, stock_symbol, as_of_date, exc,
+                label,
+                stock_symbol,
+                as_of_date,
+                exc,
             )
 
     return results
