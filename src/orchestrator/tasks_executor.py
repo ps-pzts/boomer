@@ -176,15 +176,20 @@ def _alert_critical(title: str, body: str, source_task_id: str) -> None:
         logger.error("alert_send_failed title=%s error=%s", title, exc)
 
 
-def _intraday_cycle(
-    run_date: str, run_id: int, intraday_runner: object = None, **_: object
-) -> None:
-    """30-minute intraday signal→order cycle. Injected intraday_runner avoids circular imports."""
-    if intraday_runner is None:
-        logger.warning("intraday_cycle: no runner injected, skipping")
+def _intraday_cycle(run_date: str, run_id: int, cycle: object = None, **_: object) -> None:
+    """Every 30 min 09:00-14:30: the decision cycle (#69). It runs only while the
+    session is TRADING and decides that itself (SM7), so off-hours slots are no-ops."""
+    if cycle is None:
+        logger.warning("intraday_cycle: no decision cycle (execution unavailable)")
         return
-    intraday_runner.run_cycle(run_date=run_date)  # type: ignore[attr-defined]
-    logger.info("intraday_cycle completed run_date=%s", run_date)
+    result = cycle.run()  # type: ignore[attr-defined]
+    logger.info(
+        "intraday_cycle run_date=%s skipped=%s opened=%d rejected=%d",
+        run_date,
+        result.skipped,
+        len(result.opened),
+        len(result.rejected),
+    )
 
 
 def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> None:

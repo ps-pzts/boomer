@@ -130,3 +130,41 @@ class TestEmergencyWatcher:
         orc = self._orc(tmp_path, session)
         orc._mode_store.set_mode(BotMode.EMERGENCY_STOP, changed_by="operator")
         assert orc.check_emergency(self._at(11, 0)) is False  # watcher keeps running
+
+
+class TestDecisionCycleWiring:
+    def test_built_for_a_paper_session(self, tmp_path):
+        from src.orchestrator.execution import build_decision_cycle
+
+        db = _db(tmp_path)
+        feed = ManualFeed()
+        s = build_session(db, "paper", feed, brokers=[])
+        cycle = build_decision_cycle(db, s, feed, bar_recorder=None)
+        assert type(cycle).__name__ == "DecisionCycle"
+        assert cycle._sup is s.supervisor
+
+    def test_none_without_execution(self, tmp_path):
+        from src.orchestrator.execution import build_decision_cycle
+
+        db = _db(tmp_path, capital=False)
+        s = build_session(db, "paper", ManualFeed(), brokers=[])
+        assert build_decision_cycle(db, s, ManualFeed(), None) is None
+        assert build_decision_cycle(db, None, ManualFeed(), None) is None
+
+    def test_task_runs_the_cycle(self):
+        from src.orchestrator.tasks_executor import _intraday_cycle
+
+        cycle = MagicMock()
+        cycle.run.return_value = MagicMock(skipped=None, opened=["b1"], rejected={})
+        _intraday_cycle(run_date="2026-11-19", run_id=1, cycle=cycle)
+        cycle.run.assert_called_once_with()
+        _intraday_cycle(run_date="2026-11-19", run_id=1, cycle=None)  # no-op
+
+    def test_registry_passes_the_cycle(self):
+        from src.orchestrator.tasks import build_task_registry
+
+        cycle = MagicMock()
+        cycle.run.return_value = MagicMock(skipped="x", opened=[], rejected={})
+        reg = build_task_registry(":memory:", "/tmp/a", "/tmp/b", cycle=cycle)
+        reg["intraday_cycle"].fn(run_date="2026-11-19", run_id=1)
+        cycle.run.assert_called_once()

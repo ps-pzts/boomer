@@ -45,12 +45,12 @@ class Orchestrator:
         archive_dir: str,
         backup_dir: str,
         poll_interval: int = 30,
-        intraday_runner: object | None = None,
         reconciler: object | None = None,
         brokers: list | None = None,
         feed: object | None = None,
         bar_recorder: object | None = None,
         session: object | None = None,
+        cycle: object | None = None,
     ) -> None:
         self._db_path = db_path
         self._session = session
@@ -60,12 +60,12 @@ class Orchestrator:
             db_path=db_path,
             archive_dir=archive_dir,
             backup_dir=backup_dir,
-            intraday_runner=intraday_runner,
             reconciler=reconciler,
             brokers=brokers or [],
             feed=feed,
             bar_recorder=bar_recorder,
             session=session,
+            cycle=cycle,
         )
         self._scheduler = Scheduler(
             task_registry=self._tasks,
@@ -259,6 +259,7 @@ def main() -> None:
         feed=feed,
         bar_recorder=bar_recorder,
         session=session,
+        cycle=_build_cycle(db_path, session, feed, bar_recorder),
     )
     log_boot_sequence(db_path, poll_interval)
     try:
@@ -388,6 +389,18 @@ def _build_session(db_path: str, mode: str, feed: object | None, brokers: list) 
         return build_session(db_path, mode, feed, brokers, alerter=get_alerter())
     except Exception as exc:
         logging.getLogger(__name__).exception("session_build_failed error=%s", exc)
+        return None
+
+
+def _build_cycle(
+    db_path: str, session: object | None, feed: object | None, bar_recorder: object | None
+) -> object | None:
+    from src.orchestrator.execution import build_decision_cycle
+
+    try:
+        return build_decision_cycle(db_path, session, feed, bar_recorder)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("decision_cycle_build_failed error=%s", exc)
         return None
 
 

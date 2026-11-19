@@ -102,3 +102,42 @@ def _build_execution(
     pm = PositionManager(conn, gtt_manager=None, order_manager=om)  # type: ignore[arg-type]
     logger.info("execution_ready mode=%s broker=%s", mode, broker.broker_id)
     return TradeSupervisor(conn, om, pm, alerter), broker, om
+
+
+def build_decision_cycle(
+    db_path: str, session: object | None, feed: object | None, bar_recorder: object | None
+) -> object | None:
+    """The 30-minute decision cycle (#69). None without a session that can execute:
+    then nothing can open a trade (fail closed)."""
+    if session is None or feed is None or session.supervisor is None:  # type: ignore[attr-defined]
+        logger.error("decision_cycle_unavailable (no session execution / feed)")
+        return None
+    from src.brain.feature_store import FeatureStore
+    from src.brain.features.live import latest_news_at
+    from src.brain.watchlist import WatchlistStore
+    from src.capital.risk_config import RiskConfigStore
+    from src.capital.state import CapitalStateManager
+    from src.executor.decision_cycle import DecisionCycle
+    from src.orchestrator.tasks_brain import _compute_market_regime
+
+    fs = FeatureStore(db_path)
+    regimes: dict[date, str] = {}
+
+    def regime(day: date) -> str:  # prices don't change intraday: once per day
+        if day not in regimes:
+            regimes[day] = _compute_market_regime(db_path, day.isoformat())
+        return regimes[day]
+
+    return DecisionCycle(
+        db_path=db_path,
+        session=session,
+        supervisor=session.supervisor,  # type: ignore[attr-defined]
+        feed=feed,
+        bar_store=lambda: getattr(bar_recorder, "store", None),
+        batch_features=fs.get_features_as_of,
+        latest_news=lambda sym: latest_news_at(db_path, sym),
+        regime=regime,
+        risk_config=RiskConfigStore(db_path).load_current,
+        ledger=CapitalStateManager(db_path).latest_ledger,
+        watchlist=WatchlistStore(db_path).load,
+    )

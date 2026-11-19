@@ -279,7 +279,12 @@ show the mode.
 | 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes. **Split 2026-11-19 (#33) into:** |
 | 4a | Paper fill realism: `MockBroker` simulates SL/SL-M triggers and fills (it never did), rejects wrong-side stops like Kite, tracks MIS positions, and sends Kite's `order_id` key in updates. Plus `OrderManager` resolving the paper broker (#40, #41). **Done 2026-11-19** |
 | 4b | Trade lifecycle supervisor: entry fill → position → SL-M + target → cancel the other leg → close with realised P&L; L9 unprotected guard; both-legs-filled guard; square-off cancels open legs |
-| 4c | `IntradayRunner` decision cycle + live circuit breakers + orchestrator wiring (execution broker from trading mode, `run_cycle()` arg bug, persistent cooldown L2) |
+| 4c | `IntradayRunner` decision cycle + live circuit breakers + orchestrator wiring (execution broker from trading mode, `run_cycle()` arg bug, persistent cooldown L2). **Done 2026-11-19 as SM-3a (#63) + SM-3b (#69).** Operator decisions taken while building (#69):
+  - Size = min(risk-based × regime scale, 5% single-stock cap ÷ price). The cap shrinks the trade instead of rejecting it.
+  - ORB (ID1) enters with a stop-limit BUY: trigger = ORB high +0.1%, limit = trigger +0.2%. Already above the trigger → LIMIT at the limit; above the limit → no entry.
+  - The plan is re-computed at the entry price.
+  - At most 3 open trades.
+  - The pre-trade concentration check is not used: shrinking replaces it, and 3 × 5% can't breach the 25% sector cap. |
 | 5 | Paper-session reporting: EOD Telegram summary + dashboard intraday view |
 
 ---
