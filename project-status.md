@@ -23,6 +23,7 @@
 | Infra | UTC→IST migration | All timestamps now use IST (Asia/Kolkata) throughout — DB writes, market hours checks, cron comparisons, all tests. CLAUDE.md Rule 9 updated: "All timestamps use IST, never UTC." Root cause: system is India-only with no DST; UTC was unnecessary overhead. |
 | Bug | APM gate + GTT dispatch (historical) | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic. Fixed at the time to route swing/intraday through `packager.apm_decide()`. **Superseded 2026-09-06**: `AWAITING_HUMAN`/`requires_human` removed entirely (see Change log) — all recommendations now route through APM unconditionally. The GTT dispatch task (renamed `gtt_dispatch`, was `swing_gtt_dispatch`, 09:25 IST) still reads `queued_for_execution` recs and places OCO-GTT via Kite. **Superseded 2026-11-19**: `gtt_dispatch` removed (see Change log). |
 | Hotfix | Intraday recs were sent as 365-day CNC GTTs | Symptom: with Kite credentials set, `gtt_dispatch` (09:25) placed every queued intraday rec as a CNC OCO-GTT valid 365 days, so an intraday signal became a year-long delivery position. Root cause: Kite GTTs only support CNC/NRML, and the task predates the intraday-only redesign. Fix: task removed; `OrderManager` pre-trade check #0 now rejects any non-MIS product. |
+| Bug | Overnight news window wrong (#35) | Symptom: `overnight_news_sentiment` ignored pre-market news and counted the previous session's. Root cause: IST `observed_at` strings (misleading `Z`) compared against UTC bounds (5.5 h shift), calendar-day lower bound (lost weekend/holiday news), wall-clock upper bound (lookahead). Fix: window = [prev trading day 15:30, as_of 09:15) IST in the collector's string format. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 | Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
@@ -65,6 +66,13 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Bug: overnight news sentiment window (#35)
+
+- **Symptom:** `overnight_news_sentiment` (feeds 30% of the gap sub-signal, which is 25% of the intraday score) excluded pre-market announcements and included the previous session's mid-day news.
+- **Root cause:** three faults in `compute_overnight_news_features`' window. (1) `filings.observed_at` is IST wall-clock with a misleading `Z` (design L13), but the bounds were converted to UTC strings, shifting the window by 5.5 h: at 09:05 IST the upper bound was "03:35". (2) Lower bound was `as_of_date − 1` calendar day, so Mondays/post-holiday days lost weekend and holiday filings. (3) Upper bound was wall-clock now, a lookahead for any backfill or replay.
+- **Fix:** window is [previous trading day 15:30 IST, `as_of_date` 09:15 IST), formatted like the collector writes `observed_at`. Lower bound moved 16:00 → 15:30 (market close) so 15:30–16:00 filings aren't lost between days.
+- Regression tests in `tests/brain/features/test_computers_market.py` with a worked example (1.0 / 1.8). 4 of the 7 fail on the old code; the other 3 pass on it only because their dates are after the day the tests were written (the old wall-clock bound happens to cut them off). 639 tests pass.
 
 ### 2026-11-19 — Docs: issue-per-PR traceability rule (#31)
 
