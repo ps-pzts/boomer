@@ -59,7 +59,14 @@ function stream(events, filter) {
 
 // ── live ──────────────────────────────────────────────────────────────────────
 
+function waiting(d) {
+  return [h("section", { class: "card hero" }, h("div", { class: "hero-state" }, "Waiting for data"),
+    h("p", { class: "why" }, "The database is not ready yet. Start the orchestrator (./dev.sh); this page fills in by itself.")),
+    h("p", { class: "small muted" }, d.reason || "")];
+}
+
 export function live(d, ui) {
+  if (d.ready === false) return waiting(d);
   const s = d.session;
   const [stTone, glyph, stLabel] = s ? SESSION[s.state] || ["", "○", s.state] : ["", "○", "No session yet"];
   const k = d.kpis;
@@ -119,6 +126,7 @@ export function live(d, ui) {
 // ── trades tab ────────────────────────────────────────────────────────────────
 
 export function trades(d) {
+  if (d.ready === false) return waiting(d);
   if (!d.trades.length) return [empty("No trades today.")];
   const order = { open: 0, protecting: 0, exiting: 0, entry_pending: 1, closed: 2, cancelled: 3 };
   return [h("h2", { class: "section-title" }, `Today: ${d.trades.length} trades`),

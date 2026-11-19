@@ -172,3 +172,43 @@ def test_helper_rejects_a_malformed_basic_header():
     assert web._basic_ok("Basic !!!not-base64") is False
     assert web._basic_ok("Bearer abc") is False
     assert web._basic_ok("") is False
+
+
+class TestDatabaseNotReady:
+    """The UI can start before the orchestrator has created and migrated the database."""
+
+    @pytest.fixture()
+    def empty(self, tmp_path, monkeypatch):
+        path = tmp_path / "later.db"
+        monkeypatch.setenv("BOOMER_DB_PATH", str(path))
+        monkeypatch.setenv("BOOMER_DASHBOARD_PASSWORD", PW)
+        return path
+
+    def test_live_says_it_is_waiting_and_creates_nothing(self, empty):
+        r = TestClient(web.app).get("/api/live", headers=auth())
+        assert r.status_code == 200 and r.json()["ready"] is False
+        assert "Waiting for the database" in r.json()["reason"]
+        assert not empty.exists()  # opening read-only never makes the file
+
+    def test_an_unmigrated_database_is_also_just_waiting(self, empty):
+        import sqlite3
+
+        sqlite3.connect(empty).close()
+        assert TestClient(web.app).get("/api/live", headers=auth()).json()["ready"] is False
+
+    def test_the_other_routes_answer_503_not_500(self, empty):
+        c = TestClient(web.app)
+        for path in ("/api/days", "/api/session/2026-11-19", "/api/trade/abcdefgh-1234"):
+            assert c.get(path, headers=auth()).status_code == 503
+
+    def test_the_socket_keeps_pushing_the_waiting_state(self, empty):
+        with TestClient(web.app).websocket_connect("/ws/live", headers=auth()) as ws:
+            assert ws.receive_json()["ready"] is False
+
+    def test_it_recovers_once_the_database_exists(self, empty):
+        from db.migrations import run_migrations
+
+        c = TestClient(web.app)
+        assert c.get("/api/live", headers=auth()).json()["ready"] is False
+        run_migrations(str(empty), __import__("pathlib").Path(__file__).parents[2] / "migrations")
+        assert c.get("/api/live", headers=auth()).json()["ready"] is True

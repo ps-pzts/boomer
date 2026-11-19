@@ -36,10 +36,28 @@ _ROUTINE_KINDS = ("heartbeat", "metric", "broker_snapshot")
 
 
 def connect(db_path: str) -> sqlite3.Connection:
-    c = sqlite3.connect(db_path, timeout=5)
+    """Read-only, and never creates the file: a UI started before the orchestrator has
+    made and migrated the database must not leave an empty one behind."""
+    c = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
     c.row_factory = sqlite3.Row
-    c.execute("PRAGMA query_only=ON")  # the observability view can never write
+    c.execute("PRAGMA query_only=ON")
     return c
+
+
+class NotReady(Exception):
+    """The database is missing or not migrated yet."""
+
+
+def _guard(fn):
+    def wrapped(*a, **kw):
+        try:
+            return fn(*a, **kw)
+        except sqlite3.OperationalError as exc:
+            raise NotReady(str(exc)) from exc
+
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
 
 
 def _now(now: datetime | None) -> datetime:
@@ -59,6 +77,7 @@ def in_hours(now: datetime) -> bool:
 # ── live ──────────────────────────────────────────────────────────────────────
 
 
+@_guard
 def live(db_path: str, now: datetime | None = None) -> dict:
     now = _now(now)
     day = now.date().isoformat()
@@ -68,6 +87,7 @@ def live(db_path: str, now: datetime | None = None) -> dict:
         trades = _trades(c, day, now)
         components = _components(c, now)
         out = {
+            "ready": True,
             "generated_at": now.isoformat(timespec="seconds"),
             "day": day,
             "session": session,
@@ -313,6 +333,7 @@ def _pnl_series(c: sqlite3.Connection, day: str) -> list[dict]:
 # ── timelines ─────────────────────────────────────────────────────────────────
 
 
+@_guard
 def trade_timeline(db_path: str, trade_id: str) -> dict | None:
     c = connect(db_path)
     try:
@@ -361,6 +382,7 @@ def trade_timeline(db_path: str, trade_id: str) -> dict | None:
     }
 
 
+@_guard
 def session_timeline(db_path: str, day: str) -> dict:
     c = connect(db_path)
     try:
@@ -383,6 +405,7 @@ def session_timeline(db_path: str, day: str) -> dict:
     }
 
 
+@_guard
 def days(db_path: str, n: int = 14) -> list[dict]:
     """Daily results, newest first: realised P&L and trade counts per session."""
     c = connect(db_path)

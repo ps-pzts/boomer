@@ -86,14 +86,24 @@ def index() -> FileResponse:
     return FileResponse(STATIC / "index.html", media_type="text/html")
 
 
+def _waiting(exc: Exception) -> dict:
+    return {"ready": False, "reason": f"Waiting for the database: {exc}"}
+
+
 @app.get("/api/live", dependencies=[Depends(require_auth)])
 def api_live() -> dict:
-    return projection.live(db_path())
+    try:
+        return projection.live(db_path())
+    except projection.NotReady as exc:
+        return _waiting(exc)
 
 
 @app.get("/api/trade/{trade_id}", dependencies=[Depends(require_auth)])
 def api_trade(trade_id: str) -> dict:
-    found = projection.trade_timeline(db_path(), trade_id) if _ID.match(trade_id) else None
+    try:
+        found = projection.trade_timeline(db_path(), trade_id) if _ID.match(trade_id) else None
+    except projection.NotReady as exc:
+        raise HTTPException(status_code=503, detail=_waiting(exc)["reason"]) from exc
     if found is None:
         raise HTTPException(status_code=404, detail="No such trade")
     return found
@@ -103,12 +113,18 @@ def api_trade(trade_id: str) -> dict:
 def api_session(day: str) -> dict:
     if not _DAY.match(day):
         raise HTTPException(status_code=404, detail="Dates look like 2026-11-19")
-    return projection.session_timeline(db_path(), day)
+    try:
+        return projection.session_timeline(db_path(), day)
+    except projection.NotReady as exc:
+        raise HTTPException(status_code=503, detail=_waiting(exc)["reason"]) from exc
 
 
 @app.get("/api/days", dependencies=[Depends(require_auth)])
 def api_days(n: int = 14) -> list[dict]:
-    return projection.days(db_path(), n)
+    try:
+        return projection.days(db_path(), n)
+    except projection.NotReady as exc:
+        raise HTTPException(status_code=503, detail=_waiting(exc)["reason"]) from exc
 
 
 @app.websocket("/ws/live")
@@ -127,7 +143,10 @@ async def ws_live(ws: WebSocket) -> None:
     last, quiet = "", 0.0
     try:
         while True:
-            snap = await asyncio.to_thread(projection.live, db_path())
+            try:
+                snap = await asyncio.to_thread(projection.live, db_path())
+            except projection.NotReady as exc:
+                snap = _waiting(exc)
             fp = projection.fingerprint(snap)
             if fp != last or quiet >= 30:
                 await ws.send_json(snap)
