@@ -33,8 +33,8 @@ If `main` has moved while working on a branch, rebase — do not merge `main` in
 Before any `git push`, all three gates must pass. If any fails, fix it first — do not push with failures and "fix later."
 
 ```bash
-# 1. Lint
-ruff check .
+# 1. Lint + format (CI runs both; format drift failed CI silently for months)
+ruff check . && ruff format --check .
 
 # 2. Unit tests
 pytest tests/ -x --tb=short

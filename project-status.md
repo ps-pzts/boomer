@@ -36,7 +36,7 @@
 
 ## What's in progress
 
-_Nothing — all 5 phases complete._
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). Next: PR 1 (market-data feed + trading-mode switch).
 
 ---
 
