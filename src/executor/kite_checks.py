@@ -67,10 +67,10 @@ def gate(conn: sqlite3.Connection, day: date) -> str | None:
 
 
 def kite_broker(brokers: list) -> object | None:
-    """The real KiteBroker; never the paper broker (the canary runs on paper days too)."""
-    from executor.brokers.kite_broker import KiteBroker
-
-    return next((b for b in brokers if isinstance(b, KiteBroker)), None)
+    """The real KiteBroker; never the paper broker (the canary runs on paper days too).
+    Matched by class name, not isinstance: the orchestrator imports `src.executor...`
+    and this module `executor...`, two distinct class objects for the same broker."""
+    return next((b for b in brokers if type(b).__name__ == "KiteBroker"), None)
 
 
 def run_and_record(

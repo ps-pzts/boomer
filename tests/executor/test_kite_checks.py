@@ -144,3 +144,10 @@ class TestRunAndRecord:
         assert kc.kite_broker([paper, kite]) is kite
         assert kc.kite_broker([paper]) is None
         assert kc.kite_broker([]) is None
+
+    def test_kite_broker_from_the_src_import_tree_is_found(self):
+        """The orchestrator builds `src.executor.brokers.kite_broker.KiteBroker`."""
+        from src.executor.brokers.kite_broker import KiteBroker as SrcKite
+
+        b = SrcKite()
+        assert kc.kite_broker([b]) is b
