@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -25,7 +24,9 @@ from executor.models import (
     ProductType,
 )
 from executor.order_manager import OrderManager
+from tests import kite_fixtures as kf
 from tests.executor.test_trade_lifecycle import _Clock
+from tests.kite_sdk import respond
 
 S = OrderStatus
 _MIGRATIONS = Path(__file__).parents[3] / "migrations"
@@ -68,24 +69,35 @@ class TestMap:
         assert map_kite_status(status, "SL-M", 0, 10) is None
 
 
+_PLACED = kf.sdk("place_order")  # the id Kite gives the order we place
+
+
 class _Kite:
-    """Scripted kite.orders(): each call returns the next status for order '1'."""
+    """Scripted kite.orders(): each call returns the next status of our order,
+    built from the documented TRIGGER PENDING SL-M order in orders.json."""
 
     def __init__(self, order_type: str, script: list[tuple[str, int]]):
         self.order_type, self.script = order_type, list(script)
 
     def orders(self):
         status, filled = self.script.pop(0) if len(self.script) > 1 else self.script[0]
-        return [
-            {
-                "order_id": "1",
-                "status": status,
-                "order_type": self.order_type,
-                "quantity": 10,
-                "filled_quantity": filled,
-                "average_price": 100.0 if filled else 0.0,
-            }
-        ]
+
+        def ours(wire: list[dict]) -> list[dict]:
+            done = status in ("COMPLETE", "CANCELLED", "REJECTED")
+            return [
+                {
+                    **wire[1],
+                    "order_id": _PLACED,
+                    "status": status,
+                    "order_type": self.order_type,
+                    "quantity": 10,
+                    "filled_quantity": filled,
+                    "pending_quantity": 0 if done else 10 - filled,
+                    "average_price": 100.0 if filled else 0,
+                }
+            ]
+
+        return kf.sdk("orders", transform=ours)
 
 
 @pytest.fixture()
@@ -97,12 +109,14 @@ def db(tmp_path) -> sqlite3.Connection:
     return c
 
 
-def _om(db, kite: _Kite) -> tuple[OrderManager, str]:
+def _om(db, kite: _Kite, sdk) -> tuple[OrderManager, str]:
     broker = KiteBroker()
-    broker._kite = MagicMock()
-    broker._kite.orders.side_effect = kite.orders
-    broker._kite.place_order.return_value = "1"
-    broker._kite.margins.return_value = {"available": {"cash": 1e7}, "utilised": {"debits": 0}}
+    broker._kite = sdk
+    respond(sdk, "orders", kite.orders)
+    for method in ("place_order", "modify_order", "cancel_order"):
+        respond(sdk, method, _PLACED)
+    respond(sdk, "margins", kf.sdk("margins"))
+    respond(sdk, "instruments", kf.sdk("instruments"))
     clock = _Clock()
     om = OrderManager(db, {BrokerName.KITE: broker}, ltp_cache={}, clock=clock)
     om._sleep = lambda s: None
@@ -125,27 +139,29 @@ def _om(db, kite: _Kite) -> tuple[OrderManager, str]:
     return om, oid
 
 
-def test_stop_modify_in_flight_keeps_the_stop_resting(db):
+def test_stop_modify_in_flight_keeps_the_stop_resting(db, kite_sdk):
     """Trailing-stop modify: TRIGGER PENDING -> MODIFY PENDING -> TRIGGER PENDING."""
     om, oid = _om(
         db,
         _Kite("SL-M", [("TRIGGER PENDING", 0), ("MODIFY PENDING", 0), ("TRIGGER PENDING", 0)]),
+        kite_sdk,
     )
     assert [om.sync_status(oid).status for _ in range(3)] == [S.PENDING] * 3
 
 
-def test_stop_limit_entry_triggers_then_fills(db):
+def test_stop_limit_entry_triggers_then_fills(db, kite_sdk):
     om, oid = _om(
         db,
         _Kite("SL", [("TRIGGER PENDING", 0), ("OPEN", 0), ("OPEN", 4), ("COMPLETE", 10)]),
+        kite_sdk,
     )
     seen = [om.sync_status(oid) for _ in range(4)]
     assert [r.status for r in seen] == [S.PENDING, S.TRIGGERED, S.PARTIAL, S.FILLED]
     assert [r.filled_quantity for r in seen] == [0, 0, 4, 10]
 
 
-def test_partial_fill_recorded_without_a_status_change(db):
-    om, oid = _om(db, _Kite("SL", [("OPEN", 0), ("OPEN", 4), ("OPEN", 6)]))
+def test_partial_fill_recorded_without_a_status_change(db, kite_sdk):
+    om, oid = _om(db, _Kite("SL", [("OPEN", 0), ("OPEN", 4), ("OPEN", 6)]), kite_sdk)
     om.sync_status(oid)
     om.sync_status(oid)
     r = om.sync_status(oid)
@@ -154,28 +170,29 @@ def test_partial_fill_recorded_without_a_status_change(db):
     assert qty == 6
 
 
-def test_cancel_waits_for_kite_and_records_a_racing_fill(db):
+def test_cancel_waits_for_kite_and_records_a_racing_fill(db, kite_sdk):
     """CANCEL PENDING, then the stop actually COMPLETEs: must be FILLED, not CANCELLED."""
     om, oid = _om(
         db,
         _Kite("SL-M", [("TRIGGER PENDING", 0), ("CANCEL PENDING", 0), ("COMPLETE", 10)]),
+        kite_sdk,
     )
     om.sync_status(oid)
     r = om.cancel(oid)
     assert (r.status, r.filled_quantity) == (S.FILLED, 10)
 
 
-def test_cancel_still_in_flight_is_not_marked_cancelled(db):
-    om, oid = _om(db, _Kite("SL-M", [("TRIGGER PENDING", 0), ("CANCEL PENDING", 0)]))
+def test_cancel_still_in_flight_is_not_marked_cancelled(db, kite_sdk):
+    om, oid = _om(db, _Kite("SL-M", [("TRIGGER PENDING", 0), ("CANCEL PENDING", 0)]), kite_sdk)
     om.sync_status(oid)
     assert om.cancel(oid).status == S.PENDING  # decided by a later sync, not assumed
 
 
-def test_place_order_returns_the_sdk_id_string():
+def test_place_order_returns_the_sdk_id_string(kite_sdk):
     """kiteconnect.place_order returns the id itself; the old code indexed it (#73)."""
     broker = KiteBroker()
-    broker._kite = MagicMock()
-    broker._kite.place_order.return_value = "240611000123456"
+    broker._kite = kite_sdk
+    respond(kite_sdk, "place_order", kf.sdk("place_order"))
     req = OrderRequest(
         symbol="INFY",
         exchange="NSE",
@@ -186,6 +203,6 @@ def test_place_order_returns_the_sdk_id_string():
         price=100.0,
         idempotency_key="8a66f9e6-aca9-4b06-b49d-ca0c05aa5ec7-entry",
     )
-    assert broker.place_order(req) == "240611000123456"
+    assert broker.place_order(req) == "240611000123401"
     tag = broker._kite.place_order.call_args.kwargs["tag"]
     assert tag == "8a66f9e6aca94b06b49d" and tag.isalnum()

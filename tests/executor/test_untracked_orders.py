@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from executor import session_machine as sm
 from executor.brokers.kite_broker import KiteBroker
 from executor.models import OrderRequest, OrderSide, OrderType, ProductType
 from executor.session_inputs import reconcile_report
+from tests import kite_fixtures as kf
 from tests.executor.test_session_controller import Day
 from tests.executor.test_trade_lifecycle import _req
+from tests.kite_sdk import respond
 
 
 def _report(**kw):
@@ -32,26 +32,26 @@ class TestCheck:
         assert _report(untracked_orders=None).failures() == ["no_untracked_resting_order"]
 
 
-def test_kite_lists_only_working_orders():
+def test_kite_lists_only_working_orders(kite_sdk):
+    """orders.json: one order in each lifecycle state (see its README)."""
     b = KiteBroker()
-    b._kite = MagicMock()
-    b._kite.orders.return_value = [
-        {"order_id": 1, "status": "COMPLETE", "tradingsymbol": "A"},
-        {
-            "order_id": 2,
-            "status": "TRIGGER PENDING",
-            "tradingsymbol": "B",
-            "transaction_type": "SELL",
-            "order_type": "SL-M",
-            "exchange": "NSE",
-        },
-        {"order_id": 3, "status": "MODIFY PENDING", "tradingsymbol": "C"},
-        {"order_id": 4, "status": "CANCELLED", "tradingsymbol": "D"},
-        {"order_id": 5, "status": "REJECTED", "tradingsymbol": "E"},
-    ]
+    b._kite = kite_sdk
+    respond(kite_sdk, "orders", kf.sdk("orders"))
     got = b.list_open_orders()
-    assert [o["broker_order_id"] for o in got] == ["2", "3"]
-    assert (got[0]["side"], got[0]["symbol"]) == ("sell", "B")
+    assert [o["status"] for o in got] == [
+        "TRIGGER PENDING",
+        "OPEN",
+        "OPEN",
+        "MODIFY PENDING",
+        "CANCEL PENDING",
+    ]
+    stop = got[0]
+    assert (stop["broker_order_id"], stop["side"], stop["symbol"], stop["order_type"]) == (
+        "240611000123402",
+        "sell",
+        "INFY",
+        "SL-M",
+    )
 
 
 @pytest.fixture()

@@ -15,6 +15,7 @@ import pytest
 from executor.brokers.feeds.base import FeedMode, Tick
 from executor.brokers.feeds.kite_feed import KiteFeed, parse_kite_tick
 from executor.brokers.kite_instruments import InstrumentCache
+from tests import kite_fixtures as kf
 
 IST = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 11, 19, 10, 0, 0, tzinfo=IST)
@@ -268,8 +269,8 @@ class TestTicks:
         feed = _feed()
         got: list[dict] = []
         feed.on_order_update(got.append)
-        feed._on_order_update(ws=object(), data={"order_id": "1"})
-        assert got == [{"order_id": "1"}]
+        feed._on_order_update(ws=object(), data=kf.postback())
+        assert got == [kf.postback()]
 
 
 class TestParseKiteTick:

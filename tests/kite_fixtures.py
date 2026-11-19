@@ -143,3 +143,17 @@ def sdk_error(kind: str) -> Exception:
 def orders_where(**match: Any) -> list[dict]:
     """SDK-parsed orders from orders.json whose fields equal `match`."""
     return [o for o in sdk("orders") if all(o[k] == v for k, v in match.items())]
+
+
+def ltp(symbol: str, price: float, exchange: str = "NSE") -> dict:
+    """ltp() for one instrument at `price`, built from ltp.json."""
+
+    def one(d: dict) -> dict:
+        return {f"{exchange}:{symbol}": {**d["NSE:INFY"], "last_price": price}}
+
+    return sdk("ltp", transform=one)
+
+
+def no_positions() -> dict:
+    """positions() on a day with nothing traded: both buckets empty."""
+    return sdk("positions", transform=lambda d: {"net": [], "day": []})

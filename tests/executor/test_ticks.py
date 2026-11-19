@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from executor.brokers.kite_broker import KiteBroker
@@ -12,7 +10,9 @@ from executor.brokers.paper_broker import PaperBroker
 from executor.models import BrokerName, OrderRequest, OrderSide, OrderType, ProductType
 from executor.order_manager import OrderManager
 from executor.ticks import is_on_tick, on_tick, round_to_tick
+from tests import kite_fixtures as kf
 from tests.executor.test_trade_lifecycle import Harness
+from tests.kite_sdk import respond
 
 
 def _req(side, kind, price=0.0, trigger=0.0):
@@ -70,13 +70,12 @@ class TestInstrumentTicks:
         assert (cache.tick_size("INFY", "NSE"), cache.tick_size("ITC", "NSE")) == (0.1, 0.05)
         assert cache.tick_size("NOPE", "NSE") is None
 
-    def test_kite_broker_falls_back_to_005(self):
+    def test_kite_broker_reads_the_dump_and_falls_back_to_005(self, kite_sdk):
         b = KiteBroker()
-        b._kite = MagicMock()
-        b._kite.instruments.return_value = [
-            {"tradingsymbol": "INFY", "instrument_token": 1, "tick_size": 0.1}
-        ]
-        assert (b.tick_size("INFY", "NSE"), b.tick_size("NOPE", "NSE")) == (0.1, 0.05)
+        b._kite = kite_sdk
+        respond(kite_sdk, "instruments", kf.sdk("instruments"))  # INFY 0.1, IDEA 0.01
+        ticks = [b.tick_size(s, "NSE") for s in ("INFY", "IDEA", "NOPE")]
+        assert ticks == [0.1, 0.01, 0.05]
 
 
 @pytest.fixture()

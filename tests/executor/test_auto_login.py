@@ -13,6 +13,8 @@ from executor.auto_login import (
     kite_auto_login,
     refresh_all_broker_tokens,
 )
+from tests import kite_fixtures as kf
+from tests.kite_sdk import respond
 
 # ── _write_env_token ──────────────────────────────────────────────────────────
 
@@ -61,7 +63,7 @@ def _make_response(json_data, status_code=200, headers=None):
 @patch("executor.auto_login.requests.Session")
 @patch("executor.auto_login._kite_extract_request_token")
 @patch("executor.auto_login.pyotp.TOTP")
-def test_kite_auto_login_success(mock_totp, mock_extract, mock_session_cls):
+def test_kite_auto_login_success(mock_totp, mock_extract, mock_session_cls, kite_sdk):
     mock_totp.return_value.now.return_value = "123456"
 
     sess = MagicMock()
@@ -72,13 +74,14 @@ def test_kite_auto_login_success(mock_totp, mock_extract, mock_session_cls):
     ]
     mock_extract.return_value = "request_token_xyz"
 
-    mock_kite = MagicMock()
-    mock_kite.generate_session.return_value = {"access_token": "access_abc"}
+    respond(kite_sdk, "generate_session", kf.sdk("generate_session"))
 
-    with patch("kiteconnect.KiteConnect", return_value=mock_kite):
+    with patch("kiteconnect.KiteConnect", return_value=kite_sdk) as kite_cls:
         token = kite_auto_login("api_key", "api_secret", "user1", "pass1", "TOTP_SECRET")
 
-    assert token == "access_abc"
+    assert token == "exampleaccesstoken"
+    kite_cls.assert_called_once_with(api_key="api_key")
+    kite_sdk.generate_session.assert_called_once_with("request_token_xyz", api_secret="api_secret")
     # TOTP was generated with correct secret
     mock_totp.assert_called_once_with("TOTP_SECRET")
 
