@@ -267,7 +267,7 @@ show the mode.
 | 3 | `intraday_watchlist` task + migration `0009` + retire intraday GTT and morning-recommendation path. **Done 2026-11-19 (#37)** |
 | 4 | `IntradayRunner` + orchestrator wiring + MIS entry/SL-M/target OCO emulation + live circuit breakers + L2/L9/L14 fixes. **Split 2026-11-19 (#33) into:** |
 | 4a | Paper fill realism: `MockBroker` simulates SL/SL-M triggers and fills (it never did), rejects wrong-side stops like Kite, tracks MIS positions, and sends Kite's `order_id` key in updates. Plus `OrderManager` resolving the paper broker (#40, #41). **Done 2026-11-19** |
-| 4b | Trade lifecycle supervisor: entry fill → position → SL-M + target → cancel the other leg → close with realised P&L; L9 unprotected guard; both-legs-filled guard; square-off cancels open legs |
+| 4b | Trade lifecycle supervisor: entry fill → position → SL-M + target → cancel the other leg → close with realised P&L; L9 unprotected guard; both-legs-filled guard; square-off cancels open legs. **Done 2026-11-19 (#45)**: `executor/trade_lifecycle.py` + migration `0010_intraday_brackets`. Decisions use net filled quantity across the trade's orders (any race ends in a corrective market order). Polling `reconcile()`, not push (SQLite connections can't cross the feed thread). The every-minute reconcile task moves to 4c with the execution-broker wiring |
 | 4c | `IntradayRunner` decision cycle + live circuit breakers + orchestrator wiring (execution broker from trading mode, `run_cycle()` arg bug, persistent cooldown L2) |
 | 5 | Paper-session reporting: EOD Telegram summary + dashboard intraday view |
 
