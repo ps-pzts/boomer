@@ -162,3 +162,57 @@ class TestPartialEntry:
         assert h.bracket(bid)["state"] == "entry_pending"  # not protecting while the rest rests
         h.step()
         assert h.bracket(bid)["state"] == "open"
+
+
+class TestMarkToMarket:
+    """#106: open positions get their last price and unrealised P&L every reconcile.
+
+    Worked example: long 10 @ 100, last 101.5 -> unrealised (101.5 - 100) x 10 = 15."""
+
+    def supervisor(self, h: Hostile, last):
+        from executor.trade_lifecycle import TradeSupervisor
+
+        return TradeSupervisor(h.db, h.om, h.pm, h.alerter, clock=h.clock, price=last)
+
+    def position(self, h: Hostile):
+        return h.db.execute("SELECT current_price, unrealised_pnl FROM positions").fetchone()
+
+    def test_the_price_and_unrealised_pnl_follow_the_market(self, h):
+        h.sup = self.supervisor(h, lambda s: 101.5)
+        h.tick(100.0)
+        h.sup.open_trade(_req())
+        h.sup.reconcile()
+        assert tuple(self.position(h)) == (101.5, 15.0)
+
+    def test_it_updates_again_as_the_price_moves(self, h):
+        px = {"v": 100.0}
+        h.sup = self.supervisor(h, lambda s: px["v"])
+        h.tick(100.0)
+        h.sup.open_trade(_req())
+        h.sup.reconcile()
+        px["v"] = 99.0
+        h.sup.reconcile()
+        assert tuple(self.position(h)) == (99.0, -10.0)
+
+    def test_no_price_source_leaves_positions_alone(self, h):
+        h.tick(100.0)
+        h.sup.open_trade(_req())
+        h.sup.reconcile()
+        assert tuple(self.position(h)) == (100.0, 0.0)  # as opened: entry price, no P&L
+
+    def test_a_missing_price_changes_nothing(self, h):
+        h.sup = self.supervisor(h, lambda s: None)
+        h.tick(100.0)
+        h.sup.open_trade(_req())
+        h.sup.reconcile()
+        assert tuple(self.position(h)) == (100.0, 0.0)  # as opened: entry price, no P&L
+
+    def test_a_failing_price_source_never_breaks_trade_management(self, h):
+        def boom(symbol):
+            raise RuntimeError("feed down")
+
+        h.sup = self.supervisor(h, boom)
+        h.tick(100.0)
+        bid = h.sup.open_trade(_req())
+        h.sup.reconcile()
+        assert h.bracket(bid)["state"] == "open"  # the trade still advanced

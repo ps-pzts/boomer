@@ -104,6 +104,7 @@ class TradeSupervisor:
         self._store = BracketStore(db, clock)
         # Trailing stop (#71) needs a live price; without one stops stay fixed.
         self._trailer = Trailer(self._store, order_manager, price) if price else None
+        self._price = price
         self._om = order_manager
         self._pm = position_manager
         self._alerter = alerter
@@ -168,6 +169,19 @@ class TradeSupervisor:
             except Exception as exc:
                 logger.exception("trade_reconcile_failed bracket=%s", b["bracket_id"])
                 self._critical(f"Trade reconcile failed — {b['symbol']}", str(exc))
+        self._mark_to_market()
+
+    def _mark_to_market(self) -> None:
+        """Give open positions their last price and unrealised P&L (#106)."""
+        if self._price is None:
+            return
+        try:
+            for symbol in {b["symbol"] for b in self._store.active() if b["position_id"]}:
+                ltp = self._price(symbol)
+                if ltp:
+                    self._pm.update_ltp(symbol, float(ltp))
+        except Exception:  # a display refresh must never break trade management
+            logger.exception("mark_to_market_failed")
 
     def square_off_all(self) -> None:
         """15:14 IST: flatten everything. Never leaves an MIS position."""
