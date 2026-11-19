@@ -109,7 +109,7 @@ Non-trading days get no row (holiday / weekend): the scheduler doesn't start a s
 | `PRE_OPEN` | `setup_ok` | `CONNECTED` | token valid, feed connected |
 | `CONNECTED` | `watchlist_ready` | `READY` | watchlist non-empty |
 | `READY` | `market_open` (09:15 +) | `TRADING` | fresh tick (≤ 60 s), no breaker tripped, bot mode RUNNING |
-| `TRADING` | `halt` | `HALTED` | — (reason required: `feed_stale`, `breaker:<name>`, `cycle_failures`, `paused`, `emergency_stop`) |
+| `TRADING` | `halt` | `HALTED` | — (reason required: `feed_stale`, `breaker:<name>`, `cycle_failures`, `paused`; an operator emergency stop is **not** a halt, see §4.3) |
 | `HALTED` | `recover` | `RECONCILING` | cause cleared **and** cause is resumable (§4.3) **and** before 14:30 |
 | `RECONCILING` | `reconciled` | `TRADING` | clean reconcile report (§4.5) **and** before 14:30 |
 | `RECONCILING` | `reconcile_failed` | `HALTED` | — (reason `reconcile_mismatch`; CRITICAL alert with the report) |
@@ -131,7 +131,7 @@ Non-trading days get no row (holiday / weekend): the scheduler doesn't start a s
 | `breaker:intraday_daily_loss`, `breaker:consecutive_losses` | no | the day ends |
 | `breaker:nifty_move` (market-wide move) | yes | automatically, when the move falls back inside the threshold |
 | `paused` | yes | operator sets mode RUNNING |
-| `emergency_stop` | no | operator, next day |
+| ~~`emergency_stop`~~ | — | **Not a halt (operator decision 2026-11-19, #67).** EMERGENCY_STOP squares off **at once**, whatever the time: `square_off` (rule `emergency_stop`) → every trade's legs are cancelled and every trade exits at market, and broker MIS positions the bot doesn't own are also exited at market. Then `all_flat` → `CLOSED` for the day. An orchestrator watcher polls the mode every 5 s. Symbols that a trade also holds are left to the trade's own exit plus the `all_flat` guard, to avoid a fill race that would look like a short. Untracked *resting orders* need `Broker.list_orders()` (#65) |
 | `reconcile_mismatch` | yes, after the operator acknowledges | operator (dashboard / Telegram), then the next reconcile must come back clean |
 
 Every same-day resume passes through `RECONCILING` (§4.5): there is no direct `HALTED → TRADING`.

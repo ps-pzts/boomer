@@ -75,6 +75,12 @@
 
 ## Change log
 
+### 2026-11-19 — Enhancement: emergency stop flattens everything immediately (#67)
+
+- **Operator decision (on review of #66):** an emergency stop means stop everything and flatten everything at once. SM-3a had treated it as a halt that kept managing trades until 15:14.
+- **Now:** EMERGENCY_STOP sends the session straight to `square_off` (rule `emergency_stop`, CRITICAL alert). The supervisor cancels every leg and exits every trade at market. `executor/emergency.py` exits broker MIS positions the bot doesn't own (at most one exit in flight per symbol; skipped when a trade also holds the symbol). The session then reaches CLOSED with no resume that day. A never-traded, flat session is ABANDONED.
+- **Latency:** an orchestrator watcher thread polls the bot mode every 5 s on trading days, 09:00–16:00, and runs the session step at once. The minute tick is the backstop.
+
 ### 2026-11-19 — Feat: SM-3a — Session machine runs the trading day (#63)
 
 - **What:** `trading_sessions` (migration 0014) + `SESSION_SPEC` on the core (`executor/session_machine.py`, pure guards). `SessionController` (`executor/session_controller.py`) is driven by a new every-minute `session_tick` task (`* 9-15`). Each tick runs `TradeSupervisor.reconcile()` (stops, targets, OCO), builds the guard context once (feed tick age, bot mode, live breakers, watchlist size, clock), then fires what the state and time call for: setup → TRADING; halt / RECONCILING / resume; 14:30 `entry_cutoff`; 15:14 `square_off` through the supervisor; `all_flat` once the broker is flat.

@@ -88,3 +88,45 @@ def test_setup_task_creates_todays_session(monkeypatch):
     session = MagicMock()
     _pre_market_executor_setup(run_date="2026-11-19", run_id=1, db_path=":memory:", session=session)
     session.ensure.assert_called_once_with(datetime.date(2026, 11, 19))
+
+
+class TestEmergencyWatcher:
+    """Orchestrator.check_emergency: the 5 s poll that runs the session at once (#67)."""
+
+    def _orc(self, tmp_path, session):
+        from src.orchestrator.orchestrator import Orchestrator
+
+        return Orchestrator(_db(tmp_path), str(tmp_path), str(tmp_path), session=session)
+
+    def _at(self, hh, mm, day=19):
+        return datetime.datetime(2026, 11, day, hh, mm, tzinfo=IST)
+
+    def test_runs_session_on_emergency_stop(self, tmp_path):
+        from src.orchestrator.models import BotMode
+
+        session = MagicMock()
+        orc = self._orc(tmp_path, session)
+        assert orc.check_emergency(self._at(11, 0)) is False  # auto: nothing
+        orc._mode_store.set_mode(BotMode.EMERGENCY_STOP, changed_by="operator")
+        assert orc.check_emergency(self._at(11, 0)) is True
+        session.tick.assert_called_once()
+
+    def test_only_in_market_window_on_trading_days(self, tmp_path):
+        from src.orchestrator.models import BotMode
+
+        session = MagicMock()
+        orc = self._orc(tmp_path, session)
+        orc._mode_store.set_mode(BotMode.EMERGENCY_STOP, changed_by="operator")
+        assert orc.check_emergency(self._at(8, 59)) is False
+        assert orc.check_emergency(self._at(16, 0)) is False
+        assert orc.check_emergency(self._at(11, 0, day=21)) is False  # Saturday
+        session.tick.assert_not_called()
+
+    def test_failure_is_swallowed(self, tmp_path):
+        from src.orchestrator.models import BotMode
+
+        session = MagicMock()
+        session.tick.side_effect = RuntimeError("broker down")
+        orc = self._orc(tmp_path, session)
+        orc._mode_store.set_mode(BotMode.EMERGENCY_STOP, changed_by="operator")
+        assert orc.check_emergency(self._at(11, 0)) is False  # watcher keeps running

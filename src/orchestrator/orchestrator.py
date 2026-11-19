@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 _IST = ZoneInfo("Asia/Kolkata")
 
+# Operator emergency stop (#67): the dashboard sets the mode from another process,
+# so it is polled. 5 s, not the 60 s session tick: "flat everything immediately".
+EMERGENCY_POLL_SECONDS = 5
+_EMERGENCY_WINDOW = (datetime.time(9, 0), datetime.time(16, 0))
+
 
 class Orchestrator:
     def __init__(
@@ -48,6 +53,7 @@ class Orchestrator:
         session: object | None = None,
     ) -> None:
         self._db_path = db_path
+        self._session = session
         self._run_store = TaskRunStore(db_path)
         self._mode_store = BotModeStore(db_path)
         self._tasks = build_task_registry(
@@ -80,6 +86,7 @@ class Orchestrator:
         log_crash_recovery(interrupted)
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
+        threading.Thread(target=self._watch_emergency, name="emergency-watch", daemon=True).start()
         self._loop()
 
     def _handle_signal(self, signum: int, frame: object) -> None:
@@ -107,6 +114,33 @@ class Orchestrator:
             return cur.rowcount
         finally:
             conn.close()
+
+    # ─── Emergency stop ────────────────────────────────────────────────────────
+
+    def _watch_emergency(self) -> None:
+        while not self._stop_event.wait(timeout=EMERGENCY_POLL_SECONDS):
+            self.check_emergency(datetime.datetime.now(_IST))
+
+    def check_emergency(self, now: datetime.datetime) -> bool:
+        """Run the session step now if the operator hit EMERGENCY_STOP during market
+        hours on a trading day. The session flattens everything and closes (#67);
+        once closed, further calls return at once. Returns True if it ran."""
+        from .models import BotMode, is_trading_day
+
+        try:
+            if self._session is None or not (
+                _EMERGENCY_WINDOW[0] <= now.time() < _EMERGENCY_WINDOW[1]
+            ):
+                return False
+            if self._mode_store.current_mode() != BotMode.EMERGENCY_STOP:
+                return False
+            if not is_trading_day(self._db_path, now.date().isoformat()):
+                return False
+            self._session.tick()  # type: ignore[attr-defined]
+            return True
+        except Exception as exc:  # the watcher must survive; the minute tick is the backstop
+            logger.error("emergency_check_failed error=%s", exc)
+            return False
 
     # ─── Main loop ─────────────────────────────────────────────────────────────
 

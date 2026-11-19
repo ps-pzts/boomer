@@ -44,7 +44,7 @@ def build_session(
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=10000")
     capital = CapitalStateManager(db_path)
-    supervisor, broker = _build_execution(conn, mode, feed, brokers, capital, alerter)
+    supervisor, broker, om = _build_execution(conn, mode, feed, brokers, capital, alerter)
 
     def watchlist_size(day: date) -> int:
         from src.brain.watchlist import WatchlistStore
@@ -61,6 +61,7 @@ def build_session(
         feed=feed,
         supervisor=supervisor,
         broker=broker,
+        order_manager=om,
         bot_mode=BotModeStore(db_path).current_mode,
         watchlist_size=watchlist_size,
         ledger=capital.latest_ledger,
@@ -76,7 +77,7 @@ def _build_execution(
     brokers: list,
     capital: object,
     alerter: object | None,
-) -> tuple[object | None, object | None]:
+) -> tuple[object | None, object | None, object | None]:
     from src.executor.models import BrokerName
     from src.executor.order_manager import OrderManager
     from src.executor.position_manager import PositionManager
@@ -85,7 +86,7 @@ def _build_execution(
 
     if feed is None:
         logger.error("execution_unavailable reason=no_market_feed")
-        return None, None
+        return None, None, None
     try:
         ledger = capital.latest_ledger()  # type: ignore[attr-defined]
         if ledger is None:
@@ -96,8 +97,8 @@ def _build_execution(
         )
     except Exception as exc:
         logger.error("execution_unavailable reason=%s", exc)
-        return None, None
+        return None, None, None
     om = OrderManager(conn, {BrokerName.KITE: broker}, ltp_cache=FeedLtp(feed), alerter=alerter)
     pm = PositionManager(conn, gtt_manager=None, order_manager=om)  # type: ignore[arg-type]
     logger.info("execution_ready mode=%s broker=%s", mode, broker.broker_id)
-    return TradeSupervisor(conn, om, pm, alerter), broker
+    return TradeSupervisor(conn, om, pm, alerter), broker, om

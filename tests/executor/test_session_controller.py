@@ -39,6 +39,7 @@ class Day:
             feed=self.h.feed,
             supervisor=self.h.sup if supervisor else None,
             broker=self.h.paper,
+            order_manager=self.h.om,
             bot_mode=lambda: self.bot_mode,
             watchlist_size=lambda d: self.watchlist,
             ledger=lambda: self.ledger,
@@ -193,17 +194,6 @@ class TestHalts:
         d.bot_mode = "auto"
         assert d.at(10, 1) == sm.TRADING
 
-    def test_emergency_stop_still_manages_trades(self, d):
-        d.trading()
-        bid = d.h.sup.open_trade(_req())
-        d.at(10, 0)
-        d.bot_mode = "emergency_stop"
-        assert d.at(10, 1) == sm.HALTED
-        assert d.row()["halt_reason"] == "emergency_stop"
-        d.at(10, 2, ltp=104.2)
-        d.at(10, 3, ltp=104.2)
-        assert d.h.bracket(bid)["state"] == "closed"  # target still handled
-
     def test_no_resume_after_cutoff(self, d):
         d.trading()
         d.at(14, 0, fresh=False)
@@ -311,3 +301,68 @@ def test_every_reconcile_emits_a_decision_event(d, monkeypatch):
     ((kind, name, kw),) = [s for s in seen if s[1] == "reconcile_report"]
     assert (kind, kw["clean"], kw["entity_id"]) == ("decision", True, DAY.isoformat())
     assert set(kw["checks"]) >= {"net_quantity_matches_broker", "open_trades_have_stop"}
+
+
+class TestEmergencyStop:
+    """Operator rule (#67): emergency stop flattens everything at once, ends the day."""
+
+    def test_flattens_open_trade_immediately_and_closes(self, d):
+        d.trading()
+        bid = d.h.sup.open_trade(_req())
+        d.at(10, 0)
+        assert d.h.bracket(bid)["state"] == "open"
+        d.bot_mode = "emergency_stop"
+        assert d.at(10, 1, ltp=101.0) == sm.SQUARING_OFF  # not 15:14: now
+        assert d.at(10, 2, ltp=101.0) == sm.CLOSED
+        b = d.h.bracket(bid)
+        assert (b["state"], b["exit_reason"]) == ("closed", "squareoff")
+        assert d.h.paper.list_positions() == []
+        assert "EMERGENCY STOP — flattening everything" in d.h.critical_titles()
+        square = d.h.db.execute(
+            "SELECT payload FROM events WHERE entity_type='session' AND name='square_off'"
+        ).fetchone()[0]
+        assert json.loads(square)["rule"] == "emergency_stop"
+
+    def test_cancels_pending_entry(self, d):
+        d.trading()
+        bid = d.h.sup.open_trade(_req(entry=99.0))  # LIMIT 99 below the 100 market
+        d.bot_mode = "emergency_stop"
+        assert d.at(10, 0) == sm.CLOSED  # nothing filled: cancelled, already flat
+        assert d.h.bracket(bid)["state"] == "cancelled"
+
+    def test_flattens_position_the_bot_did_not_open(self, d):
+        d.trading()
+        d.broker_trade(OrderSide.BUY)  # manual buy in the Kite app
+        d.bot_mode = "emergency_stop"
+        assert d.at(10, 0) == sm.CLOSED  # paper fills the market exit at once
+        keys = [
+            r[0]
+            for r in d.h.db.execute(
+                "SELECT idempotency_key FROM orders WHERE idempotency_key LIKE 'emergency-%'"
+            )
+        ]
+        assert keys == ["emergency-2026-11-19-TCS-1"]
+        assert d.h.paper.list_positions() == []
+
+    def test_short_position_is_bought_back(self, d):
+        d.trading()
+        d.broker_trade(OrderSide.SELL)
+        d.bot_mode = "emergency_stop"
+        d.at(10, 0)
+        side = d.h.db.execute(
+            "SELECT side FROM orders WHERE idempotency_key='emergency-2026-11-19-TCS-1'"
+        ).fetchone()[0]
+        assert side == "buy"
+
+    def test_before_trading_with_nothing_open_abandons(self, d):
+        d.at(9, 0)
+        d.bot_mode = "emergency_stop"
+        assert d.at(9, 1) == sm.ABANDONED
+
+    def test_no_resume_afterwards(self, d):
+        d.trading()
+        d.bot_mode = "emergency_stop"
+        assert d.at(10, 0) == sm.CLOSED
+        d.bot_mode = "auto"
+        assert d.at(10, 1) == sm.CLOSED
+        assert not d.ctl.entries_allowed(DAY)
