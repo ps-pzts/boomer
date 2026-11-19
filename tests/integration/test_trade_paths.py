@@ -116,6 +116,23 @@ class TestFailingExits:
         assert h.paper.list_positions() == []
         assert any("Exit order" in t for t in h.critical_titles())
 
+    @pytest.mark.xfail(strict=True, reason="#101: duplicate idempotency key blocks the retry")
+    def test_failed_exit_placement_is_retried(self, h):
+        """The exit order could not be placed at all (network). The next reconcile must
+        place it again; today every retry reuses the key and is refused as a duplicate."""
+        h.tick(100.0)
+        bid = h.sup.open_trade(_req())
+        h.tick(97.0)  # stop cannot be placed through the market: exit at market
+        h.plan.fail(
+            "place_order",
+            kex.NetworkException("down"),
+            match=lambda p: p["order_type"] == "MARKET",
+        )
+        for _ in range(4):
+            h.sup.reconcile()
+        assert h.bracket(bid)["state"] == "closed", dict(h.bracket(bid))
+        assert h.paper.list_positions() == []
+
     def test_exit_that_is_always_rejected_keeps_alerting_and_never_closes_with_shares(self, h):
         h.tick(100.0)
         bid = h.sup.open_trade(_req())

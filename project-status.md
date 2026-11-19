@@ -77,10 +77,13 @@
 
 ## Change log
 
-### 2026-11-19 — Test: cross-machine integration scenarios on KiteSim (#88, in progress)
+### 2026-11-19 — Test: cross-machine integration suite on KiteSim (#88, in progress)
 
-- `tests/integration/`: `Hostile` harness (real Order + Trade machines, paper KiteBroker on KiteSim, `FaultPlan`) with invariants checked after every step: open trade has a resting stop (I1), trades' net == broker net (I2), no untracked resting order (I3), flat and terminal at EOD (I4). 16 scenarios: postbacks dropped/duplicated/reversed, fills racing expiry and square-off, lost answers, broker down, partial entry, trailing under MODIFY PENDING, restarts mid-entry/exit. Added invariants I5 (stop never lowered) and I6 (every long covered by resting stops).
-- Found three bugs, all xfail(strict) until fixed: #97 (lost `place_order` answer leaves an untracked entry/stop), #98 (trade closes while the surviving leg's cancel failed), #99 (part-filled entry has no stop until the 30-min expiry). Still to do: ~30 more scenarios, Hypothesis stateful runs, same-seed event-log equality, event replay, happy paths across a full day.
+- `tests/integration/`: `Hostile` harness (real Order + Trade + Session machines, paper KiteBroker on KiteSim, `FaultPlan`, fake clock). Invariants after every step: I1 open trade has a resting stop, I2 trades' net == broker net, I3 no untracked resting order, I5 stop never lowered (per order), I6 every long covered by resting stops, I4 flat and terminal at EOD. The observer reads ground truth (`plan.suspended()`), not the faulty wire.
+- Suites: scenarios (postbacks, fill races, lost answers, partial entry, trailing under MODIFY PENDING, restarts), Order paths, Trade paths, Session flows (a day on a fake clock through `SessionController`), process restarts (KiteSim rebuilt from the paper book), decision-cycle cap, 15 seeded random days, a Hypothesis stateful machine, same-seed event-log equality, and replay of `state_transition` events rebuilding every machine row's state.
+- **Transition-coverage gate** (`test_zz_transition_coverage.py`): every Session/Trade/Order spec transition is fired by an integration test or listed in `spec_only.py` against an issue. Integration alone now fires 29/29 Session, 14/14 Trade and 12/23 Order; the other 11 Order transitions are spec-only (#100).
+- Bugs found, all xfail(strict) until fixed: #97 lost `place_order` answer leaves an untracked entry/stop, #98 trade closes while the surviving leg's cancel failed, #99 part-filled entry has no stop until expiry, #101 failed exit placement can never be retried (duplicate key). Random days and the stateful run leave those four faults out by default (`known_bugs`, `BOOMER_KNOWN_BUGS=1`) and are verified to find them when on.
+- Known limits: event timestamps use the wall clock, not the injected fake clock; replay checks machine state per row, not every column; `hypothesis` added to the dev extras.
 
 ### 2026-11-19 — Feat: KiteSim, paper on the real KiteBroker, MockBroker deleted (#86)
 

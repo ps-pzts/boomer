@@ -50,6 +50,10 @@ class Hostile(Harness):
     # ── invariants ────────────────────────────────────────────────────────────
 
     def breaches(self, end_of_day: bool = False) -> list[str]:
+        with self.plan.suspended():  # the observer sees ground truth, not the faulty wire
+            return self._breaches(end_of_day)
+
+    def _breaches(self, end_of_day: bool) -> list[str]:
         out: list[str] = []
         for _, symbol, leg, _, resting in self.sup.open_legs():
             if leg == "stop" and not resting:
@@ -72,10 +76,12 @@ class Hostile(Harness):
         for o in self.sim.orders():
             if o["order_type"] in ("SL", "SL-M") and o["status"] in ("TRIGGER PENDING", "OPEN"):
                 trig = float(o["trigger_price"])
-                seen = self._stop_high.get(o["tradingsymbol"], trig)
+                seen = self._stop_high.get(o["order_id"], trig)  # per order: trailing modifies it
                 if trig < seen:
-                    out.append(f"I5 stop for {o['tradingsymbol']} lowered {seen} -> {trig}")
-                self._stop_high[o["tradingsymbol"]] = max(seen, trig)
+                    out.append(
+                        f"I5 stop {o['order_id']} for {o['tradingsymbol']} lowered {seen} -> {trig}"
+                    )
+                self._stop_high[o["order_id"]] = max(seen, trig)
         transitional = {
             r[0]
             for r in self.db.execute(
@@ -108,3 +114,35 @@ class Hostile(Harness):
     def check(self, end_of_day: bool = False) -> None:
         found = self.breaches(end_of_day)
         assert not found, "invariants broken:\n  " + "\n  ".join(found)
+
+
+def attach_book(h: Hostile) -> None:
+    """Persist KiteSim into the paper book after every change (what paper mode does)."""
+    from executor.brokers.paper_book import PaperBook
+
+    book = PaperBook(h.db.execute("PRAGMA database_list").fetchone()[2], h.clock.now.date())
+    h.sim.on_change = book.save
+
+
+def process_restart(h: Hostile) -> None:
+    """Kill the process and boot a new one: a new KiteSim restored from the paper book, a
+    new feed, OrderManager, PositionManager and supervisor on the same database."""
+    from executor.brokers.feeds.manual_feed import ManualFeed
+    from executor.brokers.kitesim.paper import build_paper_broker
+    from executor.brokers.paper_book import PaperBook
+    from executor.models import BrokerName
+    from executor.order_manager import OrderManager
+    from executor.position_manager import PositionManager
+    from executor.trade_lifecycle import TradeSupervisor
+    from tests.kitesim_kit import fixture_instruments
+
+    book = PaperBook(h.db.execute("PRAGMA database_list").fetchone()[2], h.clock.now.date())
+    h.feed = ManualFeed()
+    h.paper = build_paper_broker(
+        h.feed, 1_000_000, instruments=fixture_instruments(), book=book, clock=h.clock
+    )
+    h.sim = h.paper._kite
+    h.plan = FaultPlan(h.sim, seed=0)
+    h.om = OrderManager(h.db, {BrokerName.KITE: h.paper}, ltp_cache={}, clock=h.clock)
+    h.pm = PositionManager(h.db, gtt_manager=None, order_manager=h.om)
+    h.sup = TradeSupervisor(h.db, h.om, h.pm, h.alerter, clock=h.clock)

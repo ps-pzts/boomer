@@ -18,7 +18,8 @@ same calls, a plan does the same thing, so any failure it finds can be replayed.
 from __future__ import annotations
 
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from executor.brokers.kitesim.sim import KiteSim
@@ -136,6 +137,16 @@ class FaultPlan:
             self.log.append((f"fault:{call}", dict(params)))
             return rule.action(params, proceed)
         return proceed()
+
+    @contextmanager
+    def suspended(self) -> Iterator[None]:
+        """No API faults inside the block (an observer reading ground truth, not the
+        flaky wire). Rules keep their counters; postback faults are unaffected."""
+        saved, self.sim.interceptor = self.sim.interceptor, None
+        try:
+            yield
+        finally:
+            self.sim.interceptor = saved
 
     # ── postback faults ───────────────────────────────────────────────────────
 
