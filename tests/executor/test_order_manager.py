@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from executor.brokers.mock_broker import MockBroker
+from executor.brokers.kite_broker import KiteBroker
+from executor.brokers.kitesim import KiteSim
 from executor.models import (
     BrokerName,
     OrderRequest,
@@ -17,6 +18,7 @@ from executor.models import (
     ProductType,
 )
 from executor.order_manager import OrderManager
+from tests.kitesim_kit import live_shaped_broker, make_sim, paper_broker
 
 
 def _make_db() -> sqlite3.Connection:
@@ -31,16 +33,16 @@ def _make_db() -> sqlite3.Connection:
     return db
 
 
-def _make_om(ltp: dict | None = None) -> tuple[OrderManager, MockBroker]:
+def _make_om(
+    ltp: dict | None = None, cash: float = 500_000
+) -> tuple[OrderManager, KiteBroker, KiteSim]:
+    """OrderManager on the paper KiteBroker + KiteSim (#86)."""
     db = _make_db()
-    broker = MockBroker(initial_cash=500_000)
+    sim = make_sim(cash=cash)
+    broker = paper_broker(sim)
     ltp_cache = ltp or {}
-    om = OrderManager(
-        db=db,
-        brokers={BrokerName.MOCK: broker, BrokerName.KITE: broker},
-        ltp_cache=ltp_cache,
-    )
-    return om, broker
+    om = OrderManager(db=db, brokers={BrokerName.KITE: broker}, ltp_cache=ltp_cache)
+    return om, broker, sim
 
 
 def _intraday_req(symbol: str = "RELIANCE", qty: int = 10, price: float = 0.0) -> OrderRequest:
@@ -58,9 +60,9 @@ def _intraday_req(symbol: str = "RELIANCE", qty: int = 10, price: float = 0.0) -
 
 class TestOrderManagerRouting:
     def test_intraday_routes_to_kite(self):
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         bar = PriceBar("RELIANCE", "2024-01-02", 2500, 2520, 2480, 2510, 1_000_000)
-        broker.set_price_bar(bar)
+        sim.on_bar(bar)
         # Patch market hours check to always pass
         with patch("executor.order_manager.datetime") as mock_dt:
             mock_dt.now.return_value.__class__ = type(mock_dt.now.return_value)
@@ -97,7 +99,7 @@ class TestPreTradeChecks:
     def test_cnc_product_rejected(self):
         # Regression: gtt_dispatch sent intraday recs as CNC delivery orders.
         # Only MIS is allowed, whatever the track.
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         req = OrderRequest(
             symbol="RELIANCE",
             exchange="NSE",
@@ -110,7 +112,7 @@ class TestPreTradeChecks:
             om._pre_trade_checks(req, broker, ltp=None, track="intraday")
 
     def test_cnc_rejected_on_submit_and_never_reaches_broker(self):
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         req = OrderRequest(
             symbol="RELIANCE",
             exchange="NSE",
@@ -126,19 +128,19 @@ class TestPreTradeChecks:
         assert om._db.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
 
     def test_mis_product_passes_product_check(self):
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         req = _intraday_req(qty=10)
         # track="other" skips the market-hours check, so only the product check matters
         om._pre_trade_checks(req, broker, ltp=None, track="other")
 
     def test_zero_quantity_rejected(self):
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         req = _intraday_req(qty=0)
         with pytest.raises(PreTradeCheckError, match="quantity"):
             om._pre_trade_checks(req, broker, ltp=None, track="intraday")
 
     def test_empty_symbol_rejected(self):
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         req = OrderRequest(
             symbol="",
             exchange="NSE",
@@ -151,26 +153,26 @@ class TestPreTradeChecks:
             om._pre_trade_checks(req, broker, ltp=None, track="other")
 
     def test_price_beyond_5pct_of_ltp_rejected(self):
-        om, broker = _make_om(ltp={"RELIANCE": 2500.0})
+        om, broker, sim = _make_om(ltp={"RELIANCE": 2500.0})
         req = _intraday_req(price=2700.0)  # 8% above LTP
         with pytest.raises(PreTradeCheckError, match="deviates"):
             om._pre_trade_checks(req, broker, ltp=2500.0, track="other")
 
     def test_price_within_5pct_passes(self):
-        om, broker = _make_om(ltp={"RELIANCE": 2500.0})
+        om, broker, sim = _make_om(ltp={"RELIANCE": 2500.0})
         req = _intraday_req(price=2550.0)  # 2% above LTP — OK
         # Should not raise
         om._pre_trade_checks(req, broker, ltp=2500.0, track="other")
 
     def test_extreme_price_rejected(self):
         # Sanity check fires first (5% < circuit 20%), blocking extreme prices.
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         req = _intraday_req(price=1200.0)  # 20% above ltp=1000
         with pytest.raises(PreTradeCheckError, match="deviates"):
             om._pre_trade_checks(req, broker, ltp=1000.0, track="other")
 
     def test_duplicate_idempotency_key_rejected(self):
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         db = om._db
         import datetime as real_dt
 
@@ -196,7 +198,7 @@ class TestPreTradeChecks:
 
 class TestOrderManagerIdempotency:
     def test_row_to_record_fields(self):
-        om, _ = _make_om()
+        om, _, _ = _make_om()
         db = om._db
         import datetime as real_dt
 
@@ -221,14 +223,11 @@ class TestOrderManagerIdempotency:
 
 
 class TestBrokerResolution:
-    """Regression #41: orders placed via PaperBroker in the KITE slot recorded
+    """Regression #41: orders placed via the paper broker in the KITE slot recorded
     broker_id='paper', and sync/cancel raised KeyError looking that key up."""
 
     def _paper_om(self):
-        from executor.brokers.feeds.manual_feed import ManualFeed
-        from executor.brokers.paper_broker import PaperBroker
-
-        paper = PaperBroker(price_source=ManualFeed(), initial_cash=1_000_000)
+        paper = paper_broker(make_sim())
         return OrderManager(db=_make_db(), brokers={BrokerName.KITE: paper}, ltp_cache={}), paper
 
     def test_sync_status_finds_paper_broker_in_kite_slot(self):
@@ -245,7 +244,7 @@ class TestBrokerResolution:
     def test_unknown_broker_raises_clear_error(self):
         om, _ = self._paper_om()
         oid = om.submit(_intraday_req(price=100.0), track="other")
-        om._brokers = {BrokerName.MOCK: MockBroker()}
+        om._brokers = {BrokerName.KITE: live_shaped_broker(make_sim())}  # labelled kite
         with pytest.raises(RuntimeError, match="broker_id=paper"):
             om.sync_status(oid)
 
@@ -254,8 +253,7 @@ class TestFundsAndClock:
     def test_sell_exit_not_blocked_by_funds(self):
         """Regression (#45): a target LIMIT sell of qty x price failed 'Insufficient
         funds' after the entry had used the cash, blocking exits."""
-        om, broker = _make_om()
-        broker.set_cash(0.0)
+        om, broker, sim = _make_om(cash=0.0)
         req = OrderRequest(
             symbol="RELIANCE",
             exchange="NSE",
@@ -268,8 +266,7 @@ class TestFundsAndClock:
         om._pre_trade_checks(req, broker, ltp=None, track="other")  # must not raise
 
     def test_buy_still_needs_funds(self):
-        om, broker = _make_om()
-        broker.set_cash(0.0)
+        om, broker, sim = _make_om(cash=0.0)
         with pytest.raises(PreTradeCheckError, match="Insufficient funds"):
             om._pre_trade_checks(_intraday_req(price=2500.0), broker, ltp=None, track="other")
 
@@ -278,9 +275,36 @@ class TestFundsAndClock:
         from zoneinfo import ZoneInfo
 
         ist = ZoneInfo("Asia/Kolkata")
-        om, broker = _make_om()
+        om, broker, sim = _make_om()
         om._clock = lambda: datetime(2026, 11, 19, 10, 0, tzinfo=ist)
         om._pre_trade_checks(_intraday_req(), broker, ltp=None, track="intraday")
         om._clock = lambda: datetime(2026, 11, 19, 15, 31, tzinfo=ist)
         with pytest.raises(PreTradeCheckError, match="market hours"):
             om._pre_trade_checks(_intraday_req(), broker, ltp=None, track="intraday")
+
+
+class TestCancelRace:
+    """Regression (#86): the broker's cancel postback reaches handle_broker_update
+    before cancel_order returns; cancel() then moved cancelled -> cancelled and
+    raised StateMachineError (and could record a partial fill twice)."""
+
+    def _om(self, **config):
+        sim = make_sim(**config)
+        broker = paper_broker(sim)
+        om = OrderManager(db=_make_db(), brokers={BrokerName.KITE: broker}, ltp_cache={})
+        broker.on_order_update(om.handle_broker_update)
+        sim.on_price("RELIANCE", "NSE", 2500.0)
+        return om
+
+    def test_cancel_with_postbacks_wired(self):
+        om = self._om()
+        oid = om.submit(_intraday_req(price=2400.0), track="other")
+        assert om.cancel(oid).status == OrderStatus.CANCELLED
+
+    def test_partial_fill_recorded_once(self):
+        om = self._om(liquidity_per_tick=3)
+        oid = om.submit(_intraday_req(price=2500.0), track="other")  # 3 of 10 fill at once
+        rec = om.cancel(oid)
+        assert (rec.status, rec.filled_quantity) == (OrderStatus.CANCELLED, 3)
+        n = om._db.execute("SELECT SUM(quantity) FROM executions WHERE order_id=?", (oid,))
+        assert n.fetchone()[0] == 3

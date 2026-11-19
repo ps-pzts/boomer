@@ -158,6 +158,12 @@ class OrderManager:
         if raw is None:  # broker still processing the cancel: decide on a later sync
             logger.warning("cancel_unconfirmed order_id=%s", order_id)
             return self.sync_status(order_id)
+        # The broker's postback for this cancel can land (on the feed thread, via
+        # handle_broker_update) before cancel_order returns: re-read, never record
+        # its fills or its terminal move twice (#86 found it; Kite does the same).
+        record = self._load_order(order_id)
+        if record.status in TERMINAL_STATUSES:
+            return record
         if raw.get("filled_quantity", 0) > record.filled_quantity:
             self._record_execution(record, raw)
         # Anything short of a complete fill ends CANCELLED; a partial fill's quantity
