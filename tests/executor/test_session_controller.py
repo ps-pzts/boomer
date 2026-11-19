@@ -366,3 +366,17 @@ class TestEmergencyStop:
         d.bot_mode = "auto"
         assert d.at(10, 1) == sm.CLOSED
         assert not d.ctl.entries_allowed(DAY)
+
+
+def test_lazy_execution_unblocks_the_open(tmp_path):
+    """#74: execution unavailable at boot (no ledger yet) is retried every tick."""
+    d = Day(tmp_path, supervisor=False)
+    ready = {"ok": False}
+    d.ctl._broker = None
+    d.ctl._execution_factory = lambda: (d.h.sup, d.h.paper, d.h.om) if ready["ok"] else None
+    d.at(9, 0)
+    d.at(9, 1)
+    assert d.at(9, 15) == sm.READY  # blocked: execution_unavailable
+    ready["ok"] = True  # e.g. the 08:45 setup bootstrapped the capital ledger late
+    assert d.at(9, 16) == sm.TRADING
+    assert d.ctl.supervisor is d.h.sup

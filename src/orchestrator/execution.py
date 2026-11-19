@@ -44,7 +44,10 @@ def build_session(
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=10000")
     capital = CapitalStateManager(db_path)
-    supervisor, broker, om = _build_execution(conn, mode, feed, brokers, capital, alerter)
+
+    def execution() -> tuple | None:  # retried by the session each tick (#74)
+        built = _build_execution(conn, mode, feed, brokers, capital, alerter)
+        return built if built[0] is not None else None
 
     def watchlist_size(day: date) -> int:
         from src.brain.watchlist import WatchlistStore
@@ -59,14 +62,14 @@ def build_session(
         conn,
         mode=mode,
         feed=feed,
-        supervisor=supervisor,
-        broker=broker,
-        order_manager=om,
+        supervisor=None,
+        broker=None,
         bot_mode=BotModeStore(db_path).current_mode,
         watchlist_size=watchlist_size,
         ledger=capital.latest_ledger,
         risk_config=RiskConfigStore(db_path).load_current,
         alerter=alerter,
+        execution_factory=execution,
     )
 
 
@@ -85,7 +88,7 @@ def _build_execution(
     from src.executor.trading_mode import TradingMode, build_execution_broker
 
     if feed is None:
-        logger.error("execution_unavailable reason=no_market_feed")
+        logger.warning("execution_unavailable reason=no_market_feed")
         return None, None, None
     try:
         ledger = capital.latest_ledger()  # type: ignore[attr-defined]
@@ -96,7 +99,7 @@ def _build_execution(
             TradingMode(mode), feed, live, paper_initial_cash=float(ledger.total_capital)
         )
     except Exception as exc:
-        logger.error("execution_unavailable reason=%s", exc)
+        logger.warning("execution_unavailable reason=%s (retried next tick)", exc)
         return None, None, None
     ltp = FeedLtp(feed)
     om = OrderManager(conn, {BrokerName.KITE: broker}, ltp_cache=ltp, alerter=alerter)
@@ -108,10 +111,10 @@ def _build_execution(
 def build_decision_cycle(
     db_path: str, session: object | None, feed: object | None, bar_recorder: object | None
 ) -> object | None:
-    """The 30-minute decision cycle (#69). None without a session that can execute:
-    then nothing can open a trade (fail closed)."""
-    if session is None or feed is None or session.supervisor is None:  # type: ignore[attr-defined]
-        logger.error("decision_cycle_unavailable (no session execution / feed)")
+    """The 30-minute decision cycle (#69). None without a session or a feed. It uses
+    the session's execution when it runs, so it waits for a lazily built one (#74)."""
+    if session is None or feed is None:
+        logger.error("decision_cycle_unavailable (no session / feed)")
         return None
     from src.brain.feature_store import FeatureStore
     from src.brain.features.live import latest_news_at
@@ -132,7 +135,6 @@ def build_decision_cycle(
     return DecisionCycle(
         db_path=db_path,
         session=session,
-        supervisor=session.supervisor,  # type: ignore[attr-defined]
         feed=feed,
         bar_store=lambda: getattr(bar_recorder, "store", None),
         batch_features=fs.get_features_as_of,

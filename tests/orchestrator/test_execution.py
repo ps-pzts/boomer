@@ -36,24 +36,40 @@ def test_feed_ltp_reads_latest_tick():
     assert ltp.get("INFY") == 1500.5
 
 
+def _built(db, mode="paper", feed="new"):
+    s = build_session(db, mode, ManualFeed() if feed == "new" else feed, brokers=[])
+    s._ensure_execution()
+    return s
+
+
 def test_paper_session_has_paper_execution(tmp_path):
     s = build_session(_db(tmp_path), "paper", ManualFeed(), brokers=[])
+    assert s.supervisor is None  # lazy (#74): built on the first tick
+    s._ensure_execution()
     assert s._sup is not None
     assert str(s._broker.broker_id) == "paper"
 
 
 def test_no_feed_fails_closed(tmp_path):
-    s = build_session(_db(tmp_path), "paper", None, brokers=[])
+    s = _built(_db(tmp_path), feed=None)
     assert s._sup is None and s._broker is None
 
 
-def test_no_capital_ledger_fails_closed(tmp_path):
-    s = build_session(_db(tmp_path, capital=False), "paper", ManualFeed(), brokers=[])
+def test_no_capital_ledger_fails_closed_then_builds_once_it_exists(tmp_path):
+    """#74: day one on a fresh DB: the ledger appears at 08:45, execution follows."""
+    db = _db(tmp_path, capital=False)
+    s = _built(db)
     assert s._sup is None
+    CapitalStateManager(db).initialise(Decimal("1000000"), datetime.date(2026, 11, 18))
+    s._ensure_execution()
+    assert s._sup is not None
+    first = s._sup
+    s._ensure_execution()
+    assert s._sup is first  # built once, never replaced mid-session
 
 
 def test_live_without_kite_fails_closed(tmp_path):
-    s = build_session(_db(tmp_path), "live", ManualFeed(), brokers=[])
+    s = _built(_db(tmp_path), mode="live")
     assert s._sup is None
 
 
@@ -141,14 +157,14 @@ class TestDecisionCycleWiring:
         s = build_session(db, "paper", feed, brokers=[])
         cycle = build_decision_cycle(db, s, feed, bar_recorder=None)
         assert type(cycle).__name__ == "DecisionCycle"
-        assert cycle._sup is s.supervisor
+        assert cycle._session is s
 
     def test_none_without_execution(self, tmp_path):
         from src.orchestrator.execution import build_decision_cycle
 
-        db = _db(tmp_path, capital=False)
+        db = _db(tmp_path)
         s = build_session(db, "paper", ManualFeed(), brokers=[])
-        assert build_decision_cycle(db, s, ManualFeed(), None) is None
+        assert build_decision_cycle(db, s, None, None) is None
         assert build_decision_cycle(db, None, ManualFeed(), None) is None
 
     def test_task_runs_the_cycle(self):
@@ -168,3 +184,53 @@ class TestDecisionCycleWiring:
         reg = build_task_registry(":memory:", "/tmp/a", "/tmp/b", cycle=cycle)
         reg["intraday_cycle"].fn(run_date="2026-11-19", run_id=1)
         cycle.run.assert_called_once()
+
+
+class TestBootstrap:
+    """#74: a fresh database must be able to trade."""
+
+    def test_risk_config_seeded_once(self, tmp_path):
+        from src.orchestrator.bootstrap import seed_risk_config
+
+        db = _db(tmp_path)
+        day = datetime.date(2026, 11, 19)
+        assert seed_risk_config(db, day) is True
+        assert seed_risk_config(db, day) is False  # never overwritten
+        from src.capital.risk_config import RiskConfigStore
+
+        assert RiskConfigStore(db).load_current().intraday_consecutive_loss_count == 3
+
+    def test_capital_from_broker_cash(self, tmp_path):
+        from src.orchestrator.bootstrap import bootstrap_capital
+
+        db = _db(tmp_path, capital=False)
+        kite = MagicMock(broker_id="kite")
+        kite.get_funds.return_value = MagicMock(available_cash=250000.0)
+        alerts = []
+        assert bootstrap_capital(
+            db, [kite], datetime.date(2026, 11, 19), lambda t, b: alerts.append(t)
+        )
+        ledger = CapitalStateManager(db).latest_ledger()
+        assert (ledger.total_capital, str(ledger.as_of_date)) == (Decimal("250000"), "2026-11-18")
+        assert alerts == ["Capital ledger initialised"]
+
+    def test_existing_ledger_untouched(self, tmp_path):
+        from src.orchestrator.bootstrap import bootstrap_capital
+
+        db = _db(tmp_path)  # ₹10 L ledger
+        kite = MagicMock(broker_id="kite")
+        assert bootstrap_capital(db, [kite], datetime.date(2026, 11, 19)) is True
+        kite.get_funds.assert_not_called()
+
+    def test_no_cash_fails_closed(self, tmp_path):
+        from src.orchestrator.bootstrap import bootstrap_capital
+
+        db = _db(tmp_path, capital=False)
+        kite = MagicMock(broker_id="kite")
+        kite.get_funds.side_effect = RuntimeError("TokenException: expired")
+        alerts = []
+        assert not bootstrap_capital(
+            db, [kite], datetime.date(2026, 11, 19), lambda t, b: alerts.append(t)
+        )
+        assert CapitalStateManager(db).latest_ledger() is None
+        assert alerts == ["No capital ledger"]

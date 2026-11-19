@@ -54,7 +54,6 @@ class Cycle:
         self.cycle = DecisionCycle(
             db_path=db_path,
             session=d.ctl,
-            supervisor=d.h.sup,
             feed=d.h.feed,
             bar_store=lambda: _Bars(),
             batch_features=self._batch,

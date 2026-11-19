@@ -65,6 +65,7 @@ class SessionController:
         alerter: object | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(IST),
         lock: threading.RLock | None = None,
+        execution_factory: Callable[[], tuple | None] | None = None,
     ) -> None:
         self._conn = conn
         self._mode = mode
@@ -79,6 +80,10 @@ class SessionController:
         self._alerter = alerter
         self._clock = clock
         self.lock = lock or threading.RLock()
+        # Built lazily (#74): at the 03:00 boot the Kite token has expired and the
+        # capital ledger may not exist yet, so execution is retried every tick
+        # until it can be built. Returns (supervisor, broker, order_manager) or None.
+        self._execution_factory = execution_factory
 
     # ── Queries ───────────────────────────────────────────────────────────────
 
@@ -163,6 +168,7 @@ class SessionController:
             state = self.ensure(day)
             if state in sm.TERMINAL:
                 return state
+            self._ensure_execution()
             if self._sup is not None:
                 self._sup.reconcile()  # type: ignore[attr-defined]
             ctx = self._context(day, now)
@@ -362,6 +368,18 @@ class SessionController:
         return net_by_symbol(self._broker.list_positions())  # type: ignore[attr-defined]
 
     # ── Plumbing ──────────────────────────────────────────────────────────────
+
+    def _ensure_execution(self) -> None:
+        if self._sup is not None or self._execution_factory is None:
+            return
+        try:
+            built = self._execution_factory()
+        except Exception:
+            logger.exception("execution_build_failed")
+            return
+        if built is not None:
+            self._sup, self._broker, self._om = built
+            logger.info("execution_ready")
 
     def _fire(
         self,
