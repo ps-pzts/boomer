@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -28,15 +29,56 @@ logger = logging.getLogger(__name__)
 
 IST = ZoneInfo("Asia/Kolkata")
 
-_KITE_STATUS_MAP: dict[str, OrderStatus] = {
-    "OPEN": OrderStatus.PENDING,
-    "OPEN PENDING": OrderStatus.SUBMITTING,
-    "TRIGGER PENDING": OrderStatus.TRIGGERED,
+# Kite order status -> ours (#73). Kite reports many in-flight statuses while an
+# order is being placed / modified / cancelled; those mean "no change yet" and
+# must never become a terminal ERROR (that read as a lost stop and exited a
+# healthy trade at market).
+_KITE_FINAL: dict[str, OrderStatus] = {
     "COMPLETE": OrderStatus.FILLED,
     "CANCELLED": OrderStatus.CANCELLED,
     "CANCELLED AMO": OrderStatus.CANCELLED,
     "REJECTED": OrderStatus.REJECTED,
 }
+_KITE_IN_FLIGHT = frozenset(
+    {
+        "PUT ORDER REQ RECEIVED",
+        "VALIDATION PENDING",
+        "OPEN PENDING",
+        "MODIFY VALIDATION PENDING",
+        "MODIFY PENDING",
+        "MODIFIED",
+        "CANCEL PENDING",
+        "AMO REQ RECEIVED",
+    }
+)
+_KITE_STOP_TYPES = frozenset({"SL", "SL-M"})
+
+
+def _kite_tag(raw: str) -> str:
+    """Kite tags are alphanumeric, max 20 chars; ours carry UUID hyphens (#73)."""
+    return re.sub(r"[^A-Za-z0-9]", "", raw or "")[:20]
+
+
+def map_kite_status(status: str, order_type: str, filled: int, quantity: int) -> OrderStatus | None:
+    """Our status for a Kite order, or None = unchanged (in flight / unknown).
+
+    TRIGGER PENDING  stop waiting for its trigger            -> PENDING (resting)
+    OPEN             LIMIT/MARKET resting                    -> PENDING
+                     SL/SL-M after the trigger fired          -> TRIGGERED
+                     any order with part of it filled         -> PARTIAL
+    """
+    if status in _KITE_FINAL:
+        return _KITE_FINAL[status]
+    if status == "TRIGGER PENDING":
+        return OrderStatus.PENDING
+    if status == "OPEN":
+        if 0 < filled < quantity:
+            return OrderStatus.PARTIAL
+        return OrderStatus.TRIGGERED if order_type in _KITE_STOP_TYPES else OrderStatus.PENDING
+    if status not in _KITE_IN_FLIGHT:
+        logger.warning("kite_unknown_order_status status=%r (treated as unchanged)", status)
+    return None
+
 
 _KITE_ORDER_TYPE_MAP: dict[OrderType, str] = {
     OrderType.MARKET: "MARKET",
@@ -118,14 +160,16 @@ class KiteBroker(Broker):
             "price": request.price if request.order_type in _PRICED_ORDER_TYPES else 0,
             "trigger_price": request.trigger_price,
             "validity": _KITE_VALIDITY_MAP[request.validity],
-            "tag": request.idempotency_key[:20] if request.idempotency_key else request.tag[:20],
+            "tag": _kite_tag(request.idempotency_key or request.tag),
         }
         if request.order_type in _MARKET_PROTECTED_ORDER_TYPES:
             # Kite rejects API MARKET / SL-M orders without market protection (#43);
             # -1 lets Kite apply its automatic protection band.
             params["market_protection"] = _AUTO_MARKET_PROTECTION
         resp = self._kite.place_order(variety=self._kite.VARIETY_REGULAR, **params)
-        return str(resp["order_id"])
+        # kiteconnect returns the order id itself (a str), not the response dict.
+        # Indexing it raised TypeError AFTER Kite had accepted the order (#73).
+        return str(resp["order_id"] if isinstance(resp, dict) else resp)
 
     def modify_order(self, broker_order_id: str, changes: dict) -> str:
         self._ensure_authenticated()
@@ -146,7 +190,12 @@ class KiteBroker(Broker):
         for o in orders:
             if str(o["order_id"]) == broker_order_id:
                 return {
-                    "status": _KITE_STATUS_MAP.get(o["status"], OrderStatus.ERROR),
+                    "status": map_kite_status(
+                        o["status"],
+                        o.get("order_type", ""),
+                        int(o.get("filled_quantity") or 0),
+                        int(o.get("quantity") or 0),
+                    ),
                     "filled_quantity": o.get("filled_quantity", 0),
                     "average_fill_price": o.get("average_price", 0.0),
                     "rejection_reason": o.get("status_message", ""),

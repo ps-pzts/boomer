@@ -75,6 +75,16 @@
 
 ## Change log
 
+### 2026-11-19 — Bug: Kite order handling would have broken live trading (#73)
+
+Live-only bugs that paper could never show (MockBroker uses our own statuses):
+- **Status map:** Kite statuses missing from it (`MODIFY PENDING`, `VALIDATION PENDING`, ...) became a terminal ERROR. The Trade machine read that as a lost stop and exited at market; every trailing-stop modify risked this. A triggered stop-limit entry (`TRIGGER PENDING` → `OPEN`) hit an illegal TRIGGERED → PENDING transition, and partial fills were missed while the status stayed `OPEN`.
+  - Fix: `map_kite_status()` handles the final statuses. `TRIGGER PENDING` → PENDING; `OPEN` → PENDING, TRIGGERED (SL/SL-M) or PARTIAL. In-flight and unknown statuses mean "no change". Fills are recorded whenever the filled quantity grows.
+- **`place_order` indexed the SDK's return value** as a dict, but kiteconnect returns the id string. Every live order would have raised *after* Kite accepted it.
+- **Order tags** are now alphanumeric only.
+- **`cancel()`** waits up to ~1 s for Kite's final answer, so a fill racing a `CANCEL PENDING` is recorded.
+- 953 tests pass.
+
 ### 2026-11-19 — Feat: trailing stop (#71)
 
 - **Operator decision (option 1):** once a trade is up 1R, the stop moves to breakeven. After that it trails 1×ATR below the highest LTP since entry. The fixed 1.5:1 target stays.

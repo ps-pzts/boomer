@@ -258,7 +258,7 @@ class TestPlaceOrderParams:
     and SL (stop-limit) orders were sent with price 0."""
 
     def _sent(self, broker: KiteBroker, request) -> dict:
-        broker._kite.place_order.return_value = {"order_id": "1"}
+        broker._kite.place_order.return_value = "1"  # kiteconnect returns the id string
         broker.place_order(request)
         return broker._kite.place_order.call_args.kwargs
 
