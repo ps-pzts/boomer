@@ -63,7 +63,7 @@ def _make_risk_config() -> RiskConfig:
         sentiment_confidence_threshold=Decimal("0.60"),
         min_stock_price=Decimal("100"),
         min_avg_daily_volume=500_000,
-        min_avg_daily_turnover_cr=Decimal("5"),
+        min_avg_daily_turnover_cr=Decimal("10"),  # #38
     )
 
 
@@ -82,7 +82,8 @@ def _make_signal(track="intraday", confidence=0.70):
         confidence=confidence,
         regime_at_signal="bull_calm",
         contributing_signals=[ContributingSignal("premarket_gap", 0.30, 0.8, 0.24)],
-        feature_snapshot={},
+        # Liquid by default (1M shares, ₹50 cr/day); missing data now fails closed (#38).
+        feature_snapshot={"avg_daily_volume_20d": 1_000_000, "avg_traded_value_20d": 500_000_000},
         generated_at=GENERATED_AT,
     )
 
@@ -226,9 +227,9 @@ def test_volume_too_low_skips(gen, rc):
 
 
 def test_turnover_too_low_skips(gen, rc):
-    """Avg daily turnover below ₹5 crore triggers liquidity gate (market-cap proxy)."""
+    """Avg daily turnover below ₹10 crore triggers liquidity gate (market-cap proxy)."""
     signal = _make_signal("intraday", confidence=0.80)
-    # avg_traded_value_20d = 3 crore = 30_000_000 (below 5 crore threshold)
+    # avg_traded_value_20d = 3 crore = 30_000_000 (below the 10 crore floor)
     signal = signal.__class__(
         **{
             **signal.__dict__,
@@ -254,7 +255,7 @@ def test_turnover_too_low_skips(gen, rc):
 def test_all_filters_pass_proceeds(gen, rc):
     """Verify a stock clearing all three quality filters reaches the EV gate."""
     signal = _make_signal("intraday", confidence=0.80)
-    # price=500 > 100, avg_vol=1M > 500k, turnover=50Cr > 5Cr
+    # price=500 > 100, avg_vol=1M > 500k, turnover=50Cr > 10Cr
     signal = signal.__class__(
         **{
             **signal.__dict__,
@@ -274,3 +275,47 @@ def test_all_filters_pass_proceeds(gen, rc):
         generated_at=GENERATED_AT,
     )
     assert plan.decision == "proceed"
+
+
+def _liquidity_plan(gen, rc, snapshot):
+    signal = _make_signal("intraday", confidence=0.80)
+    signal = signal.__class__(**{**signal.__dict__, "feature_snapshot": snapshot})
+    return gen.generate(
+        signal,
+        current_price=Decimal("500"),
+        atr_14d=Decimal("10"),
+        bucket_capital=Decimal("200000"),
+        risk_config=rc,
+        generated_at=GENERATED_AT,
+    )
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        {"avg_traded_value_20d": 500_000_000},  # volume missing
+        {"avg_daily_volume_20d": 1_000_000},  # turnover missing
+        {"avg_daily_volume_20d": None, "avg_traded_value_20d": 500_000_000},
+        {},
+    ],
+)
+def test_missing_liquidity_data_fails_closed(gen, rc, snapshot):
+    """Regression #38: missing volume/turnover used to pass the gate silently."""
+    plan = _liquidity_plan(gen, rc, snapshot)
+    assert plan.decision == "skip"
+    assert plan.skip_reason == SkipReason.LIQUIDITY_GATE
+
+
+def test_seven_crore_rejected_by_ten_crore_floor(gen, rc):
+    """Regression #38: ₹5-10 cr names now fail on the one visible floor."""
+    plan = _liquidity_plan(
+        gen, rc, {"avg_daily_volume_20d": 1_000_000, "avg_traded_value_20d": 70_000_000}
+    )
+    assert plan.skip_reason == SkipReason.LIQUIDITY_GATE
+
+
+def test_exactly_ten_crore_passes_liquidity(gen, rc):
+    plan = _liquidity_plan(
+        gen, rc, {"avg_daily_volume_20d": 1_000_000, "avg_traded_value_20d": 100_000_000}
+    )
+    assert plan.skip_reason != SkipReason.LIQUIDITY_GATE

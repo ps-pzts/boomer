@@ -25,7 +25,7 @@ _MIGRATIONS = Path(__file__).parents[2] / "migrations"
 RISK = SimpleNamespace(
     min_stock_price=Decimal("100"),
     min_avg_daily_volume=500_000,
-    min_avg_daily_turnover_cr=Decimal("5.0"),
+    min_avg_daily_turnover_cr=Decimal("10.0"),  # #38
 )
 CRORE = 10_000_000
 
@@ -51,7 +51,7 @@ class TestEligibility:
         [
             ({"price": 99.95}, "price_below_min"),
             ({"volume": 499_999}, "volume_below_min"),
-            ({"value_cr": 4.99}, "turnover_below_min"),
+            ({"value_cr": 9.99}, "turnover_below_min"),
             ({"atr": 0.0}, "no_atr"),
         ],
     )
@@ -60,7 +60,7 @@ class TestEligibility:
 
     def test_boundary_values_are_eligible(self):
         assert (
-            eligibility_reason(_features(price=100.0, volume=500_000, value_cr=5.0), RISK) is None
+            eligibility_reason(_features(price=100.0, volume=500_000, value_cr=10.0), RISK) is None
         )
 
     def test_missing_features_rejected(self):
@@ -98,12 +98,13 @@ class TestSelectWatchlist:
         got = select_watchlist([("A", "NSE", _features())], RISK, "bull_calm", NOW, size=50)
         assert len(got) == 1
 
-    def test_ineligible_and_generator_gated_names_excluded(self):
+    def test_ineligible_names_excluded_by_the_one_floor(self):
+        """#38: ₹7 cr used to pass risk_config (5 cr) but be dropped by the generator's
+        hidden 10 cr gate. Now risk_config's 10 cr floor is the only one."""
         universe = [
             ("CHEAP", "NSE", _features(price=50.0)),
-            # passes risk_config's 5 cr floor but not the generator's 10 cr gate (#38)
             ("THIN", "NSE", _features(value_cr=7.0)),
-            ("OK", "NSE", _features(value_cr=11.0)),
+            ("OK", "NSE", _features(value_cr=10.0)),
         ]
         got = select_watchlist(universe, RISK, "bull_calm", NOW)
         assert [e.stock_symbol for e in got] == ["OK"]

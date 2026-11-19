@@ -61,8 +61,9 @@ class TradePlanGenerator:
                 SkipReason.PRICE_TOO_LOW,
                 f"CMP {current_price} < min {risk_config.min_stock_price}",
             )
-        avg_vol = Decimal(str(snapshot.get("avg_daily_volume_20d", 0)))
-        if avg_vol > 0 and avg_vol < risk_config.min_avg_daily_volume:
+        # Missing liquidity data fails closed (#38): unknown liquidity is not liquidity.
+        avg_vol = Decimal(str(snapshot.get("avg_daily_volume_20d") or 0))
+        if avg_vol < risk_config.min_avg_daily_volume:
             return self._skip(
                 plan_id,
                 signal,
@@ -71,8 +72,8 @@ class TradePlanGenerator:
                 SkipReason.LIQUIDITY_GATE,
                 f"avg_daily_vol {avg_vol:.0f} < min {risk_config.min_avg_daily_volume}",
             )
-        avg_value_cr = Decimal(str(snapshot.get("avg_traded_value_20d", 0))) / Decimal("10000000")
-        if avg_value_cr > 0 and avg_value_cr < risk_config.min_avg_daily_turnover_cr:
+        avg_value_cr = Decimal(str(snapshot.get("avg_traded_value_20d") or 0)) / Decimal("10000000")
+        if avg_value_cr < risk_config.min_avg_daily_turnover_cr:
             return self._skip(
                 plan_id,
                 signal,

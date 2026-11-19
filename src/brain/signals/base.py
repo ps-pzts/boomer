@@ -8,9 +8,6 @@ from typing import Any
 
 from brain.models import ContributingSignal, Direction, SignalRecord
 
-# Liquidity gate (avg_traded_value_20d in rupees)
-LIQUIDITY_GATE: dict[str, float] = {"intraday": 10_00_00_000}  # ₹10 cr
-
 
 class BaseSignalGenerator(ABC):
     """Common contract for all three signal tracks (Stage 2)."""
@@ -31,10 +28,12 @@ class BaseSignalGenerator(ABC):
         regime: str,
         generated_at: datetime,
     ) -> SignalRecord | None:
-        """Return a signal or None if the liquidity gate fails or data is insufficient."""
-        if not self._liquidity_check(features):
-            return None
+        """Return a signal, or None if the data is insufficient to score.
 
+        Scoring only. Liquidity and price floors are eligibility rules owned by
+        risk_config and enforced by the watchlist and TradePlanGenerator (#38),
+        so there is exactly one configurable floor.
+        """
         contributors, raw_score = self._score(features, regime)
         if raw_score is None:
             return None
@@ -69,13 +68,6 @@ class BaseSignalGenerator(ABC):
     ) -> tuple[list[ContributingSignal], float | None]:
         """Return (contributors, raw_score) or ([], None) if data is insufficient."""
         ...
-
-    def _liquidity_check(self, features: dict[str, Any]) -> bool:
-        gate = LIQUIDITY_GATE[self.track]
-        avg_val = features.get("avg_traded_value_20d")
-        if avg_val is None:
-            return False
-        return float(avg_val) >= gate
 
     def _confidence(
         self,

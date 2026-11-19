@@ -30,7 +30,7 @@ RISK_CONFIG_DEFAULTS: dict[str, object] = {
     "sentiment_confidence_threshold": Decimal("0.60"),
     "min_stock_price": Decimal("100"),
     "min_avg_daily_volume": 500000,
-    "min_avg_daily_turnover_cr": Decimal("5.0"),
+    "min_avg_daily_turnover_cr": Decimal("10.0"),  # operator decision 2026-11-19 (#38)
 }
 
 
