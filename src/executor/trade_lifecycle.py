@@ -14,7 +14,8 @@ Rules this module enforces (CLAUDE.md §10, design §7):
   orders*. Any race (both legs filling in a fast move) ends in a corrective
   market order: sell the remainder, or buy back the oversold quantity + CRITICAL.
 - A stop that disappears without filling → stop_lost → market exit + CRITICAL.
-- Stops are never moved here, so they can never be widened.
+- Stops only move UP: breakeven at +1R, then 1×ATR below the high (#71,
+  executor/trailing.py). They can never be widened.
 
 Restart safety (SM4): all state lives in `intraday_brackets` + `orders`. A trade
 found in PROTECTING reuses a stop it already submitted (found by its
@@ -45,6 +46,7 @@ from executor.models import (
     ProductType,
 )
 from executor.trade_store import BracketStore
+from executor.trailing import Trailer
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +99,11 @@ class TradeSupervisor:
         position_manager: object,
         alerter: object | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(IST),
+        price: Callable[[str], float | None] | None = None,
     ) -> None:
         self._store = BracketStore(db, clock)
+        # Trailing stop (#71) needs a live price; without one stops stay fixed.
+        self._trailer = Trailer(self._store, order_manager, price) if price else None
         self._om = order_manager
         self._pm = position_manager
         self._alerter = alerter
@@ -345,6 +350,9 @@ class TradeSupervisor:
             self._settle(self._store.load(b["bracket_id"]))
         elif stop.status in _DEAD:
             self._unprotected(b, trigger="stop_lost", reason=f"stop_{stop.status}")
+        elif self._trailer is not None and stop.status in _RESTING:
+            entry = self._om.sync_status(b["entry_order_id"])
+            self._trailer.step(b, entry.average_fill_price)
 
     # ── EXITING ───────────────────────────────────────────────────────────────
 

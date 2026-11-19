@@ -98,10 +98,11 @@ def _build_execution(
     except Exception as exc:
         logger.error("execution_unavailable reason=%s", exc)
         return None, None, None
-    om = OrderManager(conn, {BrokerName.KITE: broker}, ltp_cache=FeedLtp(feed), alerter=alerter)
+    ltp = FeedLtp(feed)
+    om = OrderManager(conn, {BrokerName.KITE: broker}, ltp_cache=ltp, alerter=alerter)
     pm = PositionManager(conn, gtt_manager=None, order_manager=om)  # type: ignore[arg-type]
     logger.info("execution_ready mode=%s broker=%s", mode, broker.broker_id)
-    return TradeSupervisor(conn, om, pm, alerter), broker, om
+    return TradeSupervisor(conn, om, pm, alerter, price=ltp.get), broker, om
 
 
 def build_decision_cycle(
