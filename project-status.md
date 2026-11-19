@@ -75,6 +75,13 @@
 
 ## Change log
 
+### 2026-11-19 — Feat: trailing stop (#71)
+
+- **Operator decision (option 1):** once a trade is up 1R, the stop moves to breakeven. After that it trails 1×ATR below the highest LTP since entry. The fixed 1.5:1 target stays.
+- **Rules:** the stop only moves up. It stays below the LTP (Kite rejects anything else). After breakeven it moves only in steps of at least 0.25×ATR, and at most 20 times (Kite caps modifications at about 25).
+- **How:** each move is a broker modify (`OrderManager.modify_trigger`) followed by an `open → open` `stop_raised` transition that records the rule and inputs (migration 0015: `trail_stop`, `high_water`, `stop_moves`). The paper broker now refuses a wrong-side modify, like Kite.
+- **Worked example** (fill 100, stop 98, ATR 2): high 102 → stop 100; high 103.5 → stop 101.5. A pullback to 101.4 now exits **+₹14** instead of −₹20. 928 tests pass.
+
 ### 2026-11-19 — Feat: SM-3b — decision cycle opens paper trades (#69)
 
 - **What:** `executor/decision_cycle.py` runs every 30 min. It does nothing unless the session is TRADING (SM7) and fewer than 3 trades are open. For each watchlist symbol, best first:

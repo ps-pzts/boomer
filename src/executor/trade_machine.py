@@ -4,6 +4,7 @@
     entry_pending --entry_expired | entry_rejected | square_off--> cancelled
     protecting    --stop_failed | square_off-->                     exiting
     open          --leg_filled | stop_lost | square_off-->          exiting
+    open          --stop_raised-->                                  open   (trailing, #71)
     exiting       --corrective_order | exit_failed-->               exiting
     exiting       --flat-->                                         closed
 
@@ -41,6 +42,7 @@ TRADE_SPEC = MachineSpec(
         _t({"protecting", "open"}, "exiting", "square_off"),
         _t({"open"}, "exiting", "leg_filled"),
         _t({"open"}, "exiting", "stop_lost"),
+        _t({"open"}, "open", "stop_raised"),  # #71: recorded with its rule, never lowered
         _t({"exiting"}, "exiting", "corrective_order"),
         _t({"exiting"}, "exiting", "exit_failed"),
         _t({"exiting"}, "closed", "flat"),

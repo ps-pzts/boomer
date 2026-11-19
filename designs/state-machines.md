@@ -200,6 +200,7 @@ Replaces the implicit states in `TradeSupervisor` (#45/#46). Adds an explicit `P
 | `OPEN` | `leg_filled` | `EXITING` | OCO: cancel the other leg, then settle by **net filled quantity**: net 0 → `flat` → CLOSED at once; ≠ 0 → `corrective_order` (stays EXITING) |
 | `OPEN` | `stop_lost` | `EXITING` | stop cancelled outside the bot / expired without filling: market exit + CRITICAL |
 | `OPEN` | `square_off` | `EXITING` | cancel both legs, market exit |
+| `OPEN` | `stop_raised` | `OPEN` | trailing stop (#71, operator decision 2026-11-19): once the high since entry reaches entry + 1R, the stop goes to `max(entry, high − 1×ATR)`; it only moves **up**, below the LTP, by ≥ 0.25×ATR after breakeven, at most 20 moves. Broker modify first, then the transition with `trail_stop` / `high_water` (`executor/trailing.py`) |
 | `EXITING` | `flat` | `CLOSED` | net filled quantity across the trade's orders is 0 |
 | `EXITING` | `corrective_order` | `EXITING` | net ≠ 0: market order for the remainder, or buy-back if oversold (CRITICAL) |
 | `EXITING` | `exit_failed` | `EXITING` | retry at market + CRITICAL (self-transition, recorded each time) |
