@@ -206,6 +206,7 @@ def main() -> None:
     brokers = _build_brokers()
     feed = _build_feed(brokers)
     bar_recorder = _build_bar_recorder(feed)
+    resume_market_session(db_path, feed, bar_recorder, datetime.datetime.now(_IST))
     _log_trading_mode(db_path)
 
     orc = Orchestrator(
@@ -276,6 +277,60 @@ def _build_bar_recorder(feed: object | None) -> object | None:
     recorder = SessionBarRecorder(root)
     feed.on_tick(recorder.on_tick)  # type: ignore[attr-defined]
     return recorder
+
+
+# Window in which a restarted process must rejoin today's session: from the 08:45
+# setup task to the 15:30 close. Outside it the scheduled tasks handle everything.
+_SESSION_RESUME_START = datetime.time(8, 45)
+_SESSION_RESUME_END = datetime.time(15, 30)
+
+
+def resume_market_session(
+    db_path: str, feed: object | None, bar_recorder: object | None, now: datetime.datetime
+) -> bool:
+    """Rejoin today's market session after a mid-session restart (#37).
+
+    Tasks fire only on their cron minute, and a task that already succeeded today
+    is never re-run, so after a restart at e.g. 11:00 neither the 08:45 setup nor
+    the 09:10 watchlist runs again and the feed would stay disconnected all day.
+    This replays their market-data side effects: start the bar session, subscribe
+    NIFTY 50 plus today's persisted watchlist, connect the feed.
+
+    Returns True if the session was resumed.
+    """
+    from src.brain.watchlist import WatchlistStore
+    from src.executor.brokers.feeds.base import NIFTY_50
+    from src.orchestrator.models import is_trading_day
+
+    log = logging.getLogger(__name__)
+    if feed is None:
+        return False
+    if not (_SESSION_RESUME_START <= now.time() < _SESSION_RESUME_END):
+        return False
+    today = now.date()
+    if not is_trading_day(db_path, today.isoformat()):
+        return False
+
+    if bar_recorder is not None:
+        bar_recorder.start_session(today)  # type: ignore[attr-defined]
+    try:
+        symbols = [e.stock_symbol for e in WatchlistStore(db_path).load(today)]
+    except Exception as exc:  # table missing on a fresh DB, locked, ...
+        log.warning("session_resume_watchlist_unavailable error=%s", exc)
+        symbols = []
+    try:
+        feed.subscribe([NIFTY_50, *symbols])  # type: ignore[attr-defined]
+        feed.reauthenticate()  # type: ignore[attr-defined]
+    except Exception as exc:
+        log.error("session_resume_feed_failed error=%s", exc)
+        return False
+    log.warning(
+        "session_resumed_after_restart date=%s watchlist=%d (opening range is unavailable "
+        "today for bars missed before the restart)",
+        today,
+        len(symbols),
+    )
+    return True
 
 
 def _log_trading_mode(db_path: str) -> None:

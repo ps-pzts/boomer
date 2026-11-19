@@ -6,7 +6,7 @@ is performed by subsystem code — tasks are thin dispatch wrappers.
 
 Implementations are split by responsibility:
   tasks_collector.py   — nightly EOD collection, data check
-  tasks_brain.py       — features, signals, recommendations
+  tasks_brain.py       — batch features, intraday watchlist
   tasks_executor.py    — broker setup, intraday cycle, position review
   tasks_maintenance.py — EOD reconciliation, harvest, backup
 """
@@ -17,9 +17,8 @@ import logging
 
 from .models import RetryPolicy, TaskDefinition
 from .tasks_brain import (
+    _intraday_watchlist,
     _morning_batch_features,
-    _morning_batch_recommendations,
-    _morning_batch_signals,
 )
 from .tasks_collector import _early_morning_data_check, _nightly_eod_collector
 from .tasks_executor import (
@@ -94,21 +93,13 @@ def build_task_registry(
             timeout_seconds=600,
             retry_policy=RetryPolicy(max_attempts=1),
         ),
-        "morning_batch_signals": TaskDefinition(
-            task_id="morning_batch_signals",
-            fn=_wrap(_morning_batch_signals, {}),  # type: ignore[arg-type]
-            schedule="10 9 * * 1-5",  # 09:10 IST
+        "intraday_watchlist": TaskDefinition(
+            task_id="intraday_watchlist",
+            fn=_wrap(_intraday_watchlist, feed_deps),  # type: ignore[arg-type]
+            schedule="10 9 * * 1-5",  # 09:10 IST: subscribed before the 09:15 open
             dependencies=["morning_batch_features"],
             timeout_seconds=900,
-            retry_policy=RetryPolicy(max_attempts=3, backoff_seconds=[600, 600]),
-        ),
-        "morning_batch_recommendations": TaskDefinition(
-            task_id="morning_batch_recommendations",
-            fn=_wrap(_morning_batch_recommendations, {}),  # type: ignore[arg-type]
-            schedule="15 9 * * 1-5",  # 09:15 IST
-            dependencies=["morning_batch_signals"],
-            timeout_seconds=300,
-            retry_policy=RetryPolicy(max_attempts=1),
+            retry_policy=RetryPolicy(max_attempts=2, backoff_seconds=[60]),
         ),
         "pre_market_executor_setup": TaskDefinition(
             task_id="pre_market_executor_setup",

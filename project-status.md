@@ -37,7 +37,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. Next: PR 3 (intraday_watchlist task + migration + retire morning recommendation path).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. Next: PR 4 (IntradayRunner + MIS entry/SL-M/target + live circuit breakers). Open: #38 liquidity gate 5 vs 10 crore (operator decision).
 
 ---
 
@@ -66,6 +66,16 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: B7 PR 3 — daily intraday watchlist, retire morning recommendation path (#37)
+
+- **Why:** design §3.6/Q3. The feed only streamed NIFTY 50, so PR 2's bars and live features existed for no stock; and the 09:10/09:15 tasks kept writing recommendations nothing has executed since #26.
+- New `src/brain/watchlist.py`: `select_watchlist` (eligibility from `risk_config` floors + `atr_14d` + the generator's own gate; LONG candidates ranked by batch-only score, remaining of 50 slots filled by liquidity; rejection counts logged by reason) and `WatchlistStore`. New migration `0009_intraday_watchlist.sql`.
+- New 09:10 task `intraday_watchlist` (after `morning_batch_features`): selects, persists, subscribes the feed before the 09:15 open; CRITICAL alert if empty.
+- **Removed** tasks `morning_batch_signals` and `morning_batch_recommendations` (and `_save_signal`), which also removes the L14 `_apm_circuit_check` bug. PR 4 replaces them with the live cycle.
+- **Mid-session restart recovery** (gap left by PR 1): tasks only fire on their cron minute, so a restart after 08:45 never re-ran the setup or watchlist tasks and the feed stayed disconnected. `resume_market_session` at boot (08:45-15:30 on trading days) starts the bar session, subscribes NIFTY 50 + the persisted watchlist, and connects the feed. Opening range stays unavailable that day for bars missed before the restart (L7).
+- Found in passing, not fixed: hardcoded ₹10 cr liquidity gate in `signals/base.py` conflicts with `risk_config`'s 5 cr (#38, needs operator decision). The watchlist applies both gates meanwhile.
+- Tests: `tests/brain/test_watchlist.py`, `tests/orchestrator/test_watchlist_session.py`. 669 tests pass, lint and format clean.
 
 ### 2026-11-19 — Bug: overnight news sentiment window (#35)
 
