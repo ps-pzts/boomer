@@ -174,6 +174,27 @@ class TradeSupervisor:
     def active_count(self) -> int:
         return len(self._store.active())
 
+    def net_positions(self) -> dict[str, int]:
+        """Net filled quantity per symbol across active trades, from fills (§4.5)."""
+        out: dict[str, int] = {}
+        for b in self._store.active():
+            out[b["symbol"]] = out.get(b["symbol"], 0) + self._net_and_cash(b)[0]
+        return {s: q for s, q in out.items() if q}
+
+    def open_legs(self) -> list[tuple[str, str, str, str | None, bool]]:
+        """(bracket_id, symbol, leg, order_id, resting) for every OPEN trade's stop
+        and target, as the broker reports them now (§4.5)."""
+        out = []
+        for b in self._store.active():
+            if b["state"] != "open":
+                continue
+            for leg in ("stop", "target"):
+                oid = b[f"{leg}_order_id"]
+                resting = bool(oid) and self._om.sync_status(oid).status in _RESTING
+                if oid or leg == "stop":
+                    out.append((b["bracket_id"], b["symbol"], leg, oid, resting))
+        return out
+
     # ── ENTRY_PENDING ─────────────────────────────────────────────────────────
 
     def _step_entry(self, b: sqlite3.Row) -> None:
