@@ -238,8 +238,13 @@ def main() -> None:
 
     migrations_dir = pathlib.Path(__file__).parents[3] / "migrations"
     run_migrations(db_path, migrations_dir)
+    from src.orchestrator.bootstrap import bootstrap_capital, seed_risk_config
+
+    today = datetime.datetime.now(_IST).date()
+    seed_risk_config(db_path, today)  # #74: a fresh DB must be able to trade
 
     brokers = _build_brokers()
+    bootstrap_capital(db_path, brokers, today)  # works after a mid-day restart; else 08:45
     feed = _build_feed(brokers)
     bar_recorder = _build_bar_recorder(feed)
     mode = _log_trading_mode(db_path)

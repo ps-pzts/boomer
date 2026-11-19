@@ -71,6 +71,20 @@ def _pre_market_executor_setup(
     except Exception as exc:
         logger.error("pre_market_executor_setup: auto_login error — %s", exc)
 
+    try:  # #74: first run on a fresh DB: capital from the now-valid Kite token
+        import datetime as _dt
+
+        from src.orchestrator.bootstrap import bootstrap_capital
+
+        bootstrap_capital(
+            db_path,
+            brokers,
+            _dt.date.fromisoformat(run_date),
+            alert=lambda t, b: _alert_critical(t, b, "pre_market_executor_setup"),
+        )
+    except Exception as exc:
+        logger.error("pre_market_executor_setup: capital bootstrap error — %s", exc)
+
     if bar_recorder is not None:
         import datetime as _dt
 
