@@ -274,3 +274,33 @@ class TestPlaceOrderParams:
         assert sent["order_type"] == "SL"
         assert (sent["price"], sent["trigger_price"]) == (97.5, 98.0)
         assert "market_protection" not in sent
+
+
+class TestInjectedKite:
+    """#86: KiteBroker(kite=..., broker_name=...) is how paper runs on KiteSim."""
+
+    def test_defaults_are_live(self):
+        from executor.models import BrokerName
+
+        assert KiteBroker().broker_id == BrokerName.KITE
+
+    def test_injected_kite_needs_no_login_and_labels_rows(self):
+        from executor.models import BrokerName
+        from tests.kitesim_kit import make_sim
+
+        sim = make_sim()
+        b = KiteBroker(kite=sim, broker_name=BrokerName.PAPER)
+        assert b.authenticate() is None and b._kite is sim  # never replaced by a real login
+        sim.on_price("INFY", "NSE", 100.0)
+        sim.place_order("regular", "NSE", "INFY", "BUY", 5, "MIS", "MARKET", market_protection=-1)
+        assert [p.broker_id for p in b.list_positions()] == [BrokerName.PAPER]
+        assert b.get_funds().broker_id == BrokerName.PAPER
+
+    def test_ltp_cache_staleness_uses_the_injected_clock(self, kite_sdk):
+        now = [datetime(2026, 11, 19, 10, 0, tzinfo=IST)]
+        b = KiteBroker(kite=kite_sdk, clock=lambda: now[0])
+        respond(kite_sdk, "ltp", kf.ltp("INFY", 100.0), kf.ltp("INFY", 101.0))
+        assert b.get_ltp("INFY", "NSE") == 100.0
+        assert b.get_ltp("INFY", "NSE") == 100.0  # cached: same instant
+        now[0] += timedelta(minutes=6)  # past the 5-minute staleness window
+        assert b.get_ltp("INFY", "NSE") == 101.0

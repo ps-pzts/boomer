@@ -102,7 +102,7 @@ class Broker(ABC):
         interval: str = "day",
     ) -> list[PriceBar]:
         """
-        Fetch historical OHLCV bars. Optional — only KiteBroker and MockBroker implement.
+        Fetch historical OHLCV bars. Optional — only KiteBroker implements.
         Raises NotImplementedError for brokers that don't support it.
         """
         raise NotImplementedError(f"{self.__class__.__name__} does not support historical data")

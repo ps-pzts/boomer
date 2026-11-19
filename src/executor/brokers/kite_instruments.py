@@ -48,6 +48,11 @@ class InstrumentCache:
         self._load(exchange)
         return self._rows.get(exchange, {}).get(symbol)
 
+    def rows(self, exchange: str) -> list[dict]:
+        """Every dump row for the exchange (paper mode's KiteSim reads these, #86)."""
+        self._load(exchange)
+        return [dict(r) for r in self._rows.get(exchange, {}).values()]
+
     def clear(self) -> None:
         self._by_exchange.clear()
         self._ticks.clear()

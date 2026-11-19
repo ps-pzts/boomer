@@ -11,23 +11,27 @@ import pytest
 from executor.brokers.kite_contract import check_shape
 from executor.models import OrderRequest, OrderSide, OrderType, ProductType
 from tests import kite_fixtures as kf
-from tests.executor.kite_fake import INFY_ROW, FakeKite
+from tests.kitesim_kit import SimKite
+
+INFY_ROW = next(r for r in kf.sdk("instruments") if r["tradingsymbol"] == "INFY")
 
 
 @pytest.fixture()
-def fk() -> FakeKite:
-    return FakeKite()
+def fk() -> SimKite:
+    """KiteBroker on KiteSim (#86), INFY priced at 1500."""
+    kite = SimKite()
+    yield kite
+    kite.sdk.verify()
 
 
 class TestRawRead:
     def test_each_read_only_endpoint(self, fk):
         b = fk.broker()
         assert b.raw_read("profile")["user_id"] == "AB1234"
-        assert (
-            b.raw_read("margins_equity")["available"]["cash"]
-            == kf.sdk("margins")["available"]["cash"]
-        )
-        fk.sdk.margins.assert_called_with(segment="equity")
+        margins = b.raw_read("margins_equity")
+        assert margins["available"]["cash"] == fk.sim.margins(segment="equity")["available"]["cash"]
+        assert check_shape("margins_equity", margins) == []
+        assert fk.sdk.called("margins")[-1] == {"segment": "equity"}
         assert b.raw_read("orders") == []
         assert b.raw_read("positions") == {"net": [], "day": []}
         assert b.raw_read("ltp", "NSE:INFY")["NSE:INFY"]["last_price"] == 1500.0
@@ -46,7 +50,7 @@ class TestRawRead:
         b = fk.broker()
         assert b.instruments.row("INFY", "NSE") == INFY_ROW
         assert b.instruments.row("NOPE", "NSE") is None
-        assert fk.sdk.instruments.call_count == 1  # loaded once
+        assert len(fk.sdk.called("instruments")) == 1  # loaded once
 
 
 class TestRecorder:
@@ -74,18 +78,20 @@ class TestRecorder:
 
     def test_no_recorder_by_default(self, fk):
         b = fk.broker()
-        b.cancel_order(fk._place("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1.0))
+        b.cancel_order(
+            fk.sim.place_order("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1400.0)
+        )
 
     def test_recorder_failure_never_breaks_an_order(self, fk):
         b = fk.broker()
         b.set_response_recorder(lambda *a: 1 / 0)
-        oid = fk._place("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1.0)
+        oid = fk.sim.place_order("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1400.0)
         b.cancel_order(oid)
         assert fk.book[oid]["status"] == "CANCELLED"
 
 
-class TestFakeMatchesContract:
-    """The canary's fake speaks the real contract (#84)."""
+class TestSimulatorMatchesContract:
+    """KiteSim, which the canary tests run against, speaks the real contract (#84, #86)."""
 
     def test_fake_payloads_match(self, fk):
         b = fk.broker()
@@ -93,7 +99,7 @@ class TestFakeMatchesContract:
         assert check_shape("positions", b.raw_read("positions")) == []
         assert check_shape("ltp", b.raw_read("ltp", "NSE:INFY")) == []
         assert check_shape("instrument", INFY_ROW) == []
-        oid = fk._place("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1.0)
+        oid = fk.sim.place_order("regular", "NSE", "INFY", "BUY", 1, "MIS", "LIMIT", price=1400.0)
         assert check_shape("order", fk.book[oid]) == []
 
     def test_missing_key_reported(self):

@@ -1,7 +1,7 @@
 """MarketDataFeed abstraction and the provider-neutral Tick record.
 
 Design: designs/intraday-live-pipeline.md §3.1. No provider payload leaks past an
-adapter: everything downstream (LiveBarStore, LiveFeatureComputer, PaperBroker)
+adapter: everything downstream (LiveBarStore, LiveFeatureComputer, the paper broker)
 only ever sees Tick.
 """
 

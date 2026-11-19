@@ -39,3 +39,13 @@ def test_clear_forces_reload():
     cache.clear()
     cache.token("KPEL", "NSE")
     assert calls == ["NSE", "NSE"]
+
+
+def test_rows_returns_copies_of_every_row_for_the_exchange():
+    """#86: paper mode's KiteSim reads the live dump through rows()."""
+    rows = [{"tradingsymbol": "KPEL", "instrument_token": 1, "tick_size": 0.05}]
+    cache = InstrumentCache(lambda ex: rows)
+    got = cache.rows("NSE")
+    assert got == rows
+    got[0]["tick_size"] = 99
+    assert cache.tick_size("KPEL", "NSE") == 0.05

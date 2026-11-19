@@ -10,13 +10,13 @@ from zoneinfo import ZoneInfo
 from executor.brokers.base import Broker
 from executor.brokers.feeds.base import MarketDataFeed
 from executor.brokers.kite_contract import FINAL_ORDER_STATUSES, IN_FLIGHT_ORDER_STATUSES
+from executor.brokers.kite_gtt import gtt_modified_legs, gtt_place_params
 from executor.brokers.kite_instruments import InstrumentCache
 from executor.models import (
     BrokerFunds,
     BrokerName,
     BrokerPosition,
     GttRequest,
-    GttType,
     OrderRequest,
     OrderSide,
     OrderStatus,
@@ -128,8 +128,18 @@ class KiteBroker(Broker):
     Mid-day session death: re-authenticate automatically (Loophole 6).
     """
 
-    def __init__(self, feed: MarketDataFeed | None = None) -> None:
-        self._kite = None
+    def __init__(
+        self,
+        feed: MarketDataFeed | None = None,
+        kite: object | None = None,
+        broker_name: BrokerName = BrokerName.KITE,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        # #86: paper mode injects KiteSim as `kite` and labels its rows `paper`.
+        self._kite = kite
+        self._injected = kite is not None
+        self._broker_name = broker_name
+        self._clock = clock or (lambda: datetime.now(IST))
         self._feed = feed
         self._ltp: dict[str, float] = {}
         self._ltp_timestamp: dict[str, datetime] = {}
@@ -163,9 +173,11 @@ class KiteBroker(Broker):
 
     @property
     def broker_id(self) -> BrokerName:
-        return BrokerName.KITE
+        return self._broker_name
 
     def authenticate(self) -> None:
+        if self._injected:  # KiteSim (paper): nothing to log in to
+            return
         from kiteconnect import KiteConnect  # type: ignore[import-untyped]
 
         api_key = os.environ["KITE_API_KEY"]
@@ -242,7 +254,7 @@ class KiteBroker(Broker):
                 average_price=p["average_price"],
                 last_price=p.get("last_price", 0.0),
                 product=ProductType.MIS,
-                broker_id=BrokerName.KITE,
+                broker_id=self.broker_id,
             )
             # #93: 'net' filtered to MIS; 'day' also holds same-day CNC trades.
             for p in raw.get("net", [])
@@ -260,7 +272,7 @@ class KiteBroker(Broker):
                 average_price=h["average_price"],
                 last_price=h.get("last_price", 0.0),
                 product=ProductType.CNC,
-                broker_id=BrokerName.KITE,
+                broker_id=self.broker_id,
             )
             for h in raw
             if h["quantity"] > 0
@@ -272,7 +284,7 @@ class KiteBroker(Broker):
         return BrokerFunds(
             available_cash=data["available"]["cash"],
             used_margin=data["utilised"]["debits"],
-            broker_id=BrokerName.KITE,
+            broker_id=self.broker_id,
         )
 
     def on_order_update(self, callback: Callable[[dict], None]) -> None:
@@ -289,7 +301,7 @@ class KiteBroker(Broker):
         self._feed.on_tick(lambda t: callback(t.symbol, t.ltp) if t.symbol in wanted else None)
 
     def get_ltp(self, symbol: str, exchange: str) -> float | None:
-        now = datetime.now(IST)
+        now = self._clock()
         # Tier 0: fresh tick from the live feed
         tick = self._feed.latest(symbol) if self._feed else None
         if tick and (now - tick.received_at).total_seconds() < self._LTP_STALENESS_SECONDS:
@@ -332,47 +344,7 @@ class KiteBroker(Broker):
                 f"Cannot place GTT for {request.symbol}: LTP unavailable. "
                 "Ensure the tick feed is subscribed or the market data plan is active."
             )
-        if request.gtt_type == GttType.SINGLE:
-            params = {
-                "trigger_type": self._kite.GTT_TYPE_SINGLE,
-                "tradingsymbol": request.symbol,
-                "exchange": request.exchange,
-                "trigger_values": [request.trigger_price],
-                "last_price": last_price,
-                "orders": [
-                    {
-                        "transaction_type": "SELL",
-                        "quantity": request.quantity,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "price": request.limit_price,
-                    }
-                ],
-            }
-        else:
-            params = {
-                "trigger_type": self._kite.GTT_TYPE_OCO,
-                "tradingsymbol": request.symbol,
-                "exchange": request.exchange,
-                "trigger_values": [request.sl_trigger_price, request.target_trigger_price],
-                "last_price": last_price,
-                "orders": [
-                    {
-                        "transaction_type": "SELL",
-                        "quantity": request.quantity,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "price": request.sl_limit_price,
-                    },
-                    {
-                        "transaction_type": "SELL",
-                        "quantity": request.quantity,
-                        "product": "CNC",
-                        "order_type": "LIMIT",
-                        "price": request.target_limit_price,
-                    },
-                ],
-            }
+        params = gtt_place_params(self._kite, request, last_price)
         resp = self._kite.place_gtt(**params)
         return str(resp["trigger_id"])
 
@@ -385,16 +357,7 @@ class KiteBroker(Broker):
         self._ensure_authenticated()
         current = self._kite.get_gtt(trigger_id=int(broker_gtt_id))
         cond = current["condition"]
-        trigger_values = list(cond["trigger_values"])
-        orders = [
-            {k: o[k] for k in ("transaction_type", "quantity", "product", "order_type", "price")}
-            for o in current["orders"]
-        ]
-        for i in range(len(orders)):
-            leg = changes.get(f"leg{i + 1}")
-            if leg:
-                trigger_values[i] = leg["stopPrice"]
-                orders[i]["price"] = leg["limitPrice"]
+        trigger_values, orders = gtt_modified_legs(current, changes)
         last_price = self.get_ltp(cond["tradingsymbol"], cond["exchange"])
         if not last_price:  # same guard as place_gtt: never a stale or made-up price
             raise RuntimeError(f"Cannot modify GTT {broker_gtt_id}: LTP unavailable.")

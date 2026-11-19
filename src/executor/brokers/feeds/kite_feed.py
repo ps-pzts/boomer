@@ -1,7 +1,7 @@
 """KiteFeed: the single owner of the Kite WebSocket (KiteTicker).
 
 Design: designs/intraday-live-pipeline.md §3.1. Moved out of KiteBroker so market
-data has one owner that PaperBroker (paper mode) and KiteBroker (live mode) share.
+data has one owner that paper mode (KiteSim) and live mode (KiteBroker) share.
 Keeps the #23 fixes: subscriptions requested before the async handshake completes
 are deferred to _on_connect, and the instrument cache is per exchange.
 
