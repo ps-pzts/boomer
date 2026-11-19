@@ -77,6 +77,11 @@
 
 ## Change log
 
+### 2026-11-19 — Test: mutation testing of the money-critical modules (#89, in progress)
+
+- `scripts/mutation.py` (AST mutation runner: comparison/arith/boolean/constant/condition/return mutants, one at a time, file always restored) and `scripts/mutation_all.sh`. Slow, run by hand, not in CI. Reports in `reports/mutation/*.json`.
+- First scores: `ticks.py` 56.8% -> 83.8% after new edge tests (the 6 survivors are an unused constant and 5 equivalent mutants); `trailing.py` 78.7% (37/47) and `sizing.py` 78.9% (15/19), survivors listed in their JSON, not yet killed. Still to run: pre_trade, circuit_breakers, trade/session machines, session_inputs, status mapping, kitesim rules, trade_lifecycle.
+
 ### 2026-11-19 — Bugs: four stranded-position bugs found by the integration suite (#97, #98, #99, #101)
 
 - **#97** symptom: a `place_order` answer lost to a timeout left a working order nobody tracked (entry or stop). Root cause: any exception became ERROR, and Kite tags were the UUID truncated to 20 chars, so every order of a trade shared one tag. Fix: tags are hashed when long; `find_order(key)` looks the order up and `OrderManager.submit` adopts it; if the broker is unreachable `cancel_lost_orders()` (run each reconcile) cancels it later, or flattens it if it already filled.

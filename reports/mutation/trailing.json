@@ -1,0 +1,93 @@
+{
+ "module": "src/executor/trailing.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_trailing.py"
+ ],
+ "total": 47,
+ "killed": 37,
+ "score": 78.7,
+ "seconds": 73,
+ "survivors": [
+  {
+   "index": 3,
+   "line": 30,
+   "kind": "const",
+   "original": "20",
+   "mutated": "21",
+   "status": "survived"
+  },
+  {
+   "index": 4,
+   "line": 34,
+   "kind": "const",
+   "original": "True",
+   "mutated": "False",
+   "status": "survived"
+  },
+  {
+   "index": 12,
+   "line": 56,
+   "kind": "const",
+   "original": "0",
+   "mutated": "1",
+   "status": "survived"
+  },
+  {
+   "index": 13,
+   "line": 56,
+   "kind": "compare",
+   "original": "atr <= 0",
+   "mutated": "atr < 0",
+   "status": "survived"
+  },
+  {
+   "index": 14,
+   "line": 56,
+   "kind": "const",
+   "original": "0",
+   "mutated": "1",
+   "status": "survived"
+  },
+  {
+   "index": 24,
+   "line": 63,
+   "kind": "compare",
+   "original": "candidate <= current_stop",
+   "mutated": "candidate < current_stop",
+   "status": "survived"
+  },
+  {
+   "index": 28,
+   "line": 65,
+   "kind": "compare",
+   "original": "current_stop >= entry",
+   "mutated": "current_stop > entry",
+   "status": "survived"
+  },
+  {
+   "index": 29,
+   "line": 65,
+   "kind": "compare",
+   "original": "candidate - current_stop < MIN_STEP_ATR * atr",
+   "mutated": "candidate - current_stop <= MIN_STEP_ATR * atr",
+   "status": "survived"
+  },
+  {
+   "index": 31,
+   "line": 65,
+   "kind": "arith",
+   "original": "MIN_STEP_ATR * atr",
+   "mutated": "MIN_STEP_ATR / atr",
+   "status": "survived"
+  },
+  {
+   "index": 34,
+   "line": 67,
+   "kind": "compare",
+   "original": "candidate >= ltp",
+   "mutated": "candidate > ltp",
+   "status": "survived"
+  }
+ ]
+}

@@ -1,0 +1,45 @@
+{
+ "module": "src/capital/sizing.py",
+ "func": null,
+ "tests": [
+  "tests/capital"
+ ],
+ "total": 19,
+ "killed": 15,
+ "score": 78.9,
+ "seconds": 158,
+ "survivors": [
+  {
+   "index": 1,
+   "line": 21,
+   "kind": "const",
+   "original": "True",
+   "mutated": "False",
+   "status": "survived"
+  },
+  {
+   "index": 5,
+   "line": 45,
+   "kind": "compare",
+   "original": "entry <= 0",
+   "mutated": "entry < 0",
+   "status": "survived"
+  },
+  {
+   "index": 6,
+   "line": 45,
+   "kind": "const",
+   "original": "0",
+   "mutated": "1",
+   "status": "survived"
+  },
+  {
+   "index": 8,
+   "line": 45,
+   "kind": "const",
+   "original": "0",
+   "mutated": "1",
+   "status": "survived"
+  }
+ ]
+}

@@ -1,0 +1,61 @@
+{
+ "module": "src/executor/ticks.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_ticks.py"
+ ],
+ "total": 37,
+ "killed": 31,
+ "score": 83.8,
+ "seconds": 83,
+ "survivors": [
+  {
+   "index": 1,
+   "line": 23,
+   "kind": "const",
+   "original": "0.05",
+   "mutated": "1.05",
+   "status": "survived"
+  },
+  {
+   "index": 4,
+   "line": 27,
+   "kind": "compare",
+   "original": "price <= 0",
+   "mutated": "price < 0",
+   "status": "survived"
+  },
+  {
+   "index": 14,
+   "line": 39,
+   "kind": "compare",
+   "original": "price > 0",
+   "mutated": "price >= 0",
+   "status": "survived"
+  },
+  {
+   "index": 17,
+   "line": 41,
+   "kind": "compare",
+   "original": "req.trigger_price > 0",
+   "mutated": "req.trigger_price >= 0",
+   "status": "survived"
+  },
+  {
+   "index": 25,
+   "line": 42,
+   "kind": "compare",
+   "original": "price < trigger",
+   "mutated": "price <= trigger",
+   "status": "survived"
+  },
+  {
+   "index": 29,
+   "line": 48,
+   "kind": "compare",
+   "original": "price <= 0",
+   "mutated": "price < 0",
+   "status": "survived"
+  }
+ ]
+}
