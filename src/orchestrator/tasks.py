@@ -1,4 +1,4 @@
-"""13 scheduled task definitions.
+"""Scheduled task definitions.
 
 Each task function signature: fn(run_date: str, run_id: int, **kwargs) -> None
 Tasks call into the appropriate subsystem modules. External I/O (brokers, HTTP)
@@ -23,7 +23,6 @@ from .tasks_brain import (
 )
 from .tasks_collector import _early_morning_data_check, _nightly_eod_collector
 from .tasks_executor import (
-    _gtt_dispatch,
     _intraday_cycle,
     _intraday_squareoff,
     _position_review,
@@ -48,7 +47,7 @@ def build_task_registry(
     reconciler: object | None = None,
     brokers: list | None = None,
 ) -> dict[str, TaskDefinition]:
-    """Return all 12 task definitions wired with runtime dependencies."""
+    """Return all task definitions wired with runtime dependencies."""
     common = {"db_path": db_path, "archive_dir": archive_dir, "backup_dir": backup_dir}
     intraday_deps = {"intraday_runner": intraday_runner}
     broker_deps = {"brokers": brokers or []}
@@ -112,14 +111,6 @@ def build_task_registry(
             dependencies=["morning_batch_recommendations"],
             timeout_seconds=300,
             retry_policy=RetryPolicy(max_attempts=1),
-        ),
-        "gtt_dispatch": TaskDefinition(
-            task_id="gtt_dispatch",
-            fn=_wrap(_gtt_dispatch, broker_deps),  # type: ignore[arg-type]
-            schedule="25 9 * * 1-5",  # 09:25 IST — after broker tokens refreshed
-            dependencies=["pre_market_executor_setup"],
-            timeout_seconds=300,
-            retry_policy=RetryPolicy(max_attempts=2, backoff_seconds=[60]),
         ),
         "intraday_cycle": TaskDefinition(
             task_id="intraday_cycle",
