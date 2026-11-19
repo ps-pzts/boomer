@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from executor.brokers.base import Broker
+from executor.brokers.feeds.base import MarketDataFeed, Tick
 from executor.brokers.mock_broker import MockBroker
 from executor.models import (
     BrokerFunds,
@@ -18,25 +19,30 @@ class PaperBroker(Broker):
     """
     Paper trading broker.
 
-    Simulates fills using the live Kite tick feed (price_source) so that
-    paper trades experience real market prices without real money at risk.
+    Simulates fills against the live market-data feed (design §3.1, §5) so
+    paper trades see real prices without real money at risk. Every tick on the
+    feed reaches the simulator, whether or not anyone called on_tick().
 
-    PaperBroker.authenticate() delegates to price_source.authenticate().
-    Paper trading fails if the Kite session is invalid — the price feed
-    depends on a valid Kite session even when no real orders are placed.
+    The feed's lifecycle (connect, reauthenticate after the daily token refresh)
+    is owned by the orchestrator; authenticate() here only checks a feed exists.
     """
 
-    def __init__(self, price_source: Broker, initial_cash: float = 100_000.0) -> None:
+    def __init__(self, price_source: MarketDataFeed, initial_cash: float = 100_000.0) -> None:
         self._price_source = price_source
         self._mock = MockBroker(initial_cash=initial_cash)
         self._ltp: dict[str, float] = {}
+        price_source.on_tick(self._on_feed_tick)
+
+    def _on_feed_tick(self, tick: Tick) -> None:
+        self.register_tick(tick.symbol, tick.ltp)
 
     @property
     def broker_id(self) -> BrokerName:
         return BrokerName.PAPER
 
     def authenticate(self) -> None:
-        self._price_source.authenticate()
+        # Nothing to log in to: orders are simulated. Prices come from the feed.
+        return None
 
     def register_tick(self, symbol: str, ltp: float) -> None:
         """Called by price_source's on_tick callback to feed live prices."""
@@ -74,12 +80,13 @@ class PaperBroker(Broker):
         self._mock.on_order_update(callback)
 
     def on_tick(self, symbols: list[str], callback: Callable[[str, float], None]) -> None:
-        # Delegate tick subscription to the real price source (KiteBroker)
-        def _relay(sym: str, ltp: float) -> None:
-            self.register_tick(sym, ltp)
-            callback(sym, ltp)
-
-        self._price_source.on_tick(symbols, _relay)
+        # The simulator already receives every feed tick (see __init__); this only
+        # subscribes the symbols and relays them to the caller.
+        wanted = set(symbols)
+        self._price_source.subscribe(symbols)
+        self._price_source.on_tick(
+            lambda t: callback(t.symbol, t.ltp) if t.symbol in wanted else None
+        )
 
     def place_gtt(self, request: GttRequest) -> str:
         return self._mock.place_gtt(request)
@@ -97,4 +104,7 @@ class PaperBroker(Broker):
         return self._mock.list_gtts()
 
     def get_ltp(self, symbol: str, exchange: str) -> float | None:
-        return self._ltp.get(symbol)
+        if symbol in self._ltp:
+            return self._ltp[symbol]
+        tick = self._price_source.latest(symbol)
+        return tick.ltp if tick else None
