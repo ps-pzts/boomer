@@ -19,6 +19,7 @@ never interleave on it.
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import threading
@@ -29,6 +30,7 @@ from zoneinfo import ZoneInfo
 from executor import session_machine as sm
 from executor.brokers.feeds.base import NIFTY_50
 from executor.kite_checks import gate as kite_gate
+from executor.session_halt import acknowledge_mismatch, halt_detail
 from executor.session_inputs import (
     LegStatus,
     ReconcileReport,
@@ -159,13 +161,7 @@ class SessionController:
         if not actor:
             raise ValueError("actor is required for an auditable acknowledgement")
         with self.lock:
-            self._conn.execute(
-                "UPDATE trading_sessions SET halt_acked_at=? WHERE session_date=?"
-                " AND halt_reason='reconcile_mismatch'",
-                (self._clock().replace(tzinfo=None).isoformat(), day.isoformat()),
-            )
-            self._conn.commit()
-            logger.warning("session_mismatch_acknowledged date=%s actor=%s", day, actor)
+            acknowledge_mismatch(self._conn, day, actor, self._clock())
 
     # ── The minute tick ───────────────────────────────────────────────────────
 
@@ -292,7 +288,11 @@ class SessionController:
             rule=reason,
             inputs=dict(ctx),
             severity="warn" if resumable else "critical",
-            fields={"halt_reason": reason, "halt_acked_at": None},
+            fields={
+                "halt_reason": reason,
+                "halt_acked_at": None,
+                "halt_detail": json.dumps(halt_detail(ctx), default=str),
+            },
         )
         title = f"Trading HALTED — {reason}"
         body = (
@@ -323,7 +323,7 @@ class SessionController:
                 rule="reconcile_clean",
                 inputs=report.as_inputs(),
                 ctx=ctx,
-                fields={"halt_reason": None, "halt_acked_at": None},
+                fields={"halt_reason": None, "halt_acked_at": None, "halt_detail": None},
             )
             return
         self._fire(
@@ -332,7 +332,13 @@ class SessionController:
             rule="reconcile_mismatch",
             inputs=report.as_inputs(),
             severity="critical",
-            fields={"halt_reason": "reconcile_mismatch", "halt_acked_at": None},
+            fields={
+                "halt_reason": "reconcile_mismatch",
+                "halt_acked_at": None,
+                "halt_detail": json.dumps(
+                    {"failed_checks": report.failures(), **report.checks}, default=str
+                ),
+            },
         )
         self._alert(
             "critical",

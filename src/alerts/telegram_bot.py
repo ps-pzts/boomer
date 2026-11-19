@@ -1,8 +1,7 @@
 """Telegram command bot for Boomer operator interface.
 
-Supported commands:
-  /status  — snapshot: mode, broker session health, signals, queued GTTs, P&L
-  /canary  — re-run the daily Kite pre-flight + order canary (#85)
+Commands (see alerts/commands/ and /help): /status /positions /trades /pnl /halt /ack
+/pause /resume /emergency (#103), /mode (#76), /canary (#85).
 
 Uses Telegram Bot API (long-polling getUpdates). No SDK; stdlib urllib only.
 Run as a standalone process alongside the orchestrator.
@@ -13,13 +12,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sqlite3
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from src.alerts import commands
 
 logger = logging.getLogger(__name__)
 
@@ -58,111 +58,7 @@ def _send(token: str, chat_id: str | int, text: str, reply_markup: dict | None =
     _call(token, "sendMessage", payload)
 
 
-# ── Database helpers ───────────────────────────────────────────────────────────
-
-
-def _db_conn(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, timeout=5)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
-
-
-def _today_ist() -> str:
-    return datetime.now(IST).date().isoformat()
-
-
-def _get_snapshot(db_path: str) -> dict:
-    conn = _db_conn(db_path)
-    run_date = _today_ist()
-    try:
-        mode_row = conn.execute("SELECT mode FROM bot_mode WHERE id=1").fetchone()
-        mode = mode_row["mode"] if mode_row else "auto"
-        signals = conn.execute(
-            "SELECT COUNT(*) FROM signals WHERE DATE(generated_at)=?", (run_date,)
-        ).fetchone()[0]
-        queued = conn.execute(
-            "SELECT COUNT(*) FROM recommendations WHERE status='queued_for_execution'"
-        ).fetchone()[0]
-        submitted_today = conn.execute(
-            "SELECT COUNT(*) FROM recommendations"
-            " WHERE status='submitted_to_broker' AND DATE(submitted_at)=?",
-            (run_date,),
-        ).fetchone()[0]
-        intraday_open = conn.execute(
-            "SELECT COUNT(*) FROM positions WHERE is_open=1 AND track='intraday'"
-        ).fetchone()[0]
-        pnl = conn.execute(
-            "SELECT COALESCE(SUM(realised_pnl),0) FROM positions WHERE DATE(entry_at)=?",
-            (run_date,),
-        ).fetchone()[0]
-        circuit_breakers = [
-            r[0]
-            for r in conn.execute(
-                "SELECT DISTINCT breaker_name FROM circuit_breaker_events"
-                " WHERE event_type='tripped' AND DATE(event_time)=?",
-                (run_date,),
-            ).fetchall()
-        ]
-        # Broker session: check if pre_market_executor_setup ran successfully today
-        broker_row = conn.execute(
-            "SELECT started_at FROM task_runs"
-            " WHERE task_id='pre_market_executor_setup' AND status='SUCCESS'"
-            " AND DATE(started_at)=? ORDER BY started_at DESC LIMIT 1",
-            (run_date,),
-        ).fetchone()
-        broker_refreshed_at = broker_row["started_at"][:5] if broker_row else None
-    finally:
-        conn.close()
-    return {
-        "mode": mode,
-        "run_date": run_date,
-        "signals": signals,
-        "queued": queued,
-        "submitted_today": submitted_today,
-        "intraday_open": intraday_open,
-        "pnl": float(pnl),
-        "circuit_breakers": circuit_breakers,
-        "broker_refreshed_at": broker_refreshed_at,
-    }
-
-
-# ── Message formatters ─────────────────────────────────────────────────────────
-
-
-def _fmt_status(snap: dict) -> str:
-    mode_emoji = {"auto": "🟢", "paused": "🟡", "emergency_stop": "🔴"}.get(snap["mode"], "⚪")
-    cb = ""
-    if snap["circuit_breakers"]:
-        cb = "\n⚡ <b>Circuit breakers:</b> " + ", ".join(snap["circuit_breakers"])
-    pnl_sign = "+" if snap["pnl"] >= 0 else ""
-    if snap["broker_refreshed_at"]:
-        broker_line = f"🔐 Broker session: ✅ refreshed at {snap['broker_refreshed_at']} IST"
-    else:
-        broker_line = "🔐 Broker session: ⚠️ not refreshed today"
-    generated_at = datetime.now(IST).strftime("%d %b %Y %H:%M:%S IST")
-    return (
-        f"<b>📊 Boomer Status — {snap['run_date']}</b>\n\n"
-        f"{mode_emoji} Mode: <b>{snap['mode']}</b>\n"
-        f"{broker_line}\n\n"
-        f"<b>Recommendations</b>\n"
-        f"  📡 Signals today: {snap['signals']}\n"
-        f"  🚀 Queued for GTT: {snap['queued']}\n"
-        f"  ✅ Submitted today: {snap['submitted_today']}\n\n"
-        f"<b>Open positions</b>\n"
-        f"  Intraday: {snap['intraday_open']}\n\n"
-        f"💰 Today's P&amp;L: {pnl_sign}₹{snap['pnl']:,.0f}"
-        f"{cb}\n\n"
-        f"<i>Generated at {generated_at}</i>"
-    )
-
-
 # ── Command handlers ───────────────────────────────────────────────────────────
-
-
-def handle_status(token: str, chat_id: str | int, db_path: str) -> None:
-    snap = _get_snapshot(db_path)
-    _send(token, chat_id, _fmt_status(snap))
 
 
 def handle_mode(db_path: str, text: str) -> str:
@@ -200,6 +96,28 @@ def handle_mode(db_path: str, text: str) -> str:
     )
     hint = "\nSend /mode live confirm to proceed." if "Repeat with" in result.message else ""
     return ("✅ " if result.ok else "⛔ ") + result.message + hint
+
+
+def handle_toggle(db_path: str, text: str) -> str:
+    """/toggle [confirm] (#103): flip the NEXT session between paper and live.
+
+    paper -> live needs `/toggle confirm` (real money); live -> paper is immediate. Same
+    audited path as /mode, so it applies from the next session, never mid-day."""
+    from src.executor.trading_mode import (
+        ENV_VAR,
+        LiveTradingAuthorisationStore,
+        resolve_trading_mode,
+    )
+
+    nxt = resolve_trading_mode(os.environ.get(ENV_VAR), LiveTradingAuthorisationStore(db_path))
+    target = "paper" if nxt.mode.value == "live" else "live"
+    confirmed = text.split()[1:2] == ["confirm"]
+    if target == "paper":
+        return handle_mode(db_path, "/mode paper")
+    if not confirmed:  # shows the paper record (or why live is refused) before anything changes
+        reply = handle_mode(db_path, "/mode live")
+        return reply.replace("/mode live confirm", "/toggle confirm")
+    return handle_mode(db_path, "/mode live confirm")
 
 
 def handle_canary(db_path: str) -> str:
@@ -267,24 +185,25 @@ class TelegramBot:
             return
 
         text = (msg.get("text") or "").strip().lower()
-        if text == "/mode" or text.startswith("/mode "):
-            _send(self._token, msg["chat"]["id"], handle_mode(self._db_path, text))
-        elif text in ("/canary", "/canary@boomerbot"):
-            _send(self._token, msg["chat"]["id"], handle_canary(self._db_path))
-        elif text in ("/status", "/status@boomerbot"):
-            handle_status(self._token, msg["chat"]["id"], self._db_path)
-        elif text in ("/help", "/start"):
-            _send(
-                self._token,
-                msg["chat"]["id"],
-                "<b>Boomer Bot Commands</b>\n\n"
-                "/status — system snapshot: mode, broker session, signals, queued GTTs, P&amp;L\n"
-                "/mode — paper or live: today's (locked) and the next session's\n"
-                "/mode paper — switch to paper from the next session\n"
-                "/mode live confirm — switch to LIVE (real money) from the next session\n"
-                "/canary — re-run today's Kite pre-flight + order canary (clears a "
-                "failed-check halt if both pass)\n",
-            )
+        chat = msg["chat"]["id"]
+        if not text.startswith("/"):
+            return
+        cmd, _ = commands.parse(text)
+        if cmd == "/mode":
+            _send(self._token, chat, handle_mode(self._db_path, text))
+        elif cmd == "/toggle":
+            _send(self._token, chat, handle_toggle(self._db_path, text))
+        elif cmd == "/canary":
+            _send(self._token, chat, handle_canary(self._db_path))
+        elif cmd in ("/help", "/start"):
+            _send(self._token, chat, commands.HELP)
+        else:
+            try:
+                reply = commands.run(self._db_path, text)
+            except Exception as exc:
+                logger.exception("command_failed cmd=%s", cmd)
+                reply = f"⛔ {cmd} failed: {exc}"
+            _send(self._token, chat, reply or "Unknown command. Send /help.")
 
     def run_forever(self) -> None:
         import signal as _signal

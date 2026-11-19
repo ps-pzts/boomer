@@ -1,0 +1,19 @@
+[Unit]
+Description=Boomer Telegram Feed — live trade and session messages (#103)
+After=network.target
+
+[Service]
+Type=simple
+User=boomer
+Group=boomer
+WorkingDirectory=/opt/boomer
+EnvironmentFile=/etc/boomer/secrets.env
+ExecStart=/opt/boomer/.venv/bin/python -m src.observability.telegram_feed
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/boomer/feed.log
+StandardError=append:/var/log/boomer/feed.log
+
+# Reads events only: its crashes never affect trading operations.
+[Install]
+WantedBy=multi-user.target
