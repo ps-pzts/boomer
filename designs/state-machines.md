@@ -50,17 +50,19 @@ A small in-house module, about 100 lines. Libraries such as `transitions` and `p
 ```python
 @dataclass(frozen=True)
 class Transition:
-    source: frozenset[str]          # states this transition may leave
+    source: frozenset[str]  # states this transition may leave
     target: str
-    trigger: str                    # name of the event that causes it, e.g. "entry_filled"
-    guard: Callable[[Context], str | None] | None = None   # None = allowed, str = blocked reason
+    trigger: str  # name of the event that causes it, e.g. "entry_filled"
+    guard: Callable[[Context], str | None] | None = None  # None = allowed, str = blocked reason
 
-class MachineSpec:                  # one per machine type, declared once at import time
-    name: str                       # "session" | "trade" | "order"
+
+class MachineSpec:  # one per machine type, declared once at import time
+    name: str  # "session" | "trade" | "order"
     states: frozenset[str]
     initial: str
     terminal: frozenset[str]
     transitions: tuple[Transition, ...]
+
 
 def transition(conn, spec, entity_id, trigger, *, rule, inputs, correlation, ctx=None) -> str:
     """Within ONE sqlite transaction on `conn`:
