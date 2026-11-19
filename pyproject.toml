@@ -33,7 +33,11 @@ ignore = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-x --tb=short"
+# live_kite tests hit the real Kite account (#85): opt-in only, never in CI.
+addopts = "-x --tb=short -m 'not live_kite'"
+markers = [
+    "live_kite: talks to the real Kite account; run with BOOMER_LIVE_KITE=1 pytest -m live_kite",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
