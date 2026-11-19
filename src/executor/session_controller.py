@@ -6,8 +6,10 @@
      circuit breakers, watchlist size;
   3. fires at most the transitions the current state and time call for.
 
-Time-based transitions win over everything: from 15:14 the session squares off
-(never blocked, SM3), from 14:30 no new entries. Every same-day resume goes
+An operator EMERGENCY_STOP wins over everything (#67): the session squares off at
+once, whatever the time, also exits broker MIS positions no trade owns, and ends
+for the day. Otherwise time wins: from 15:14 the session squares off (never
+blocked, SM3), from 14:30 no new entries. Every same-day resume goes
 HALTED → RECONCILING → (clean broker reconcile) → TRADING (#58).
 
 Threading: the supervisor and this controller share one SQLite connection; every
@@ -55,6 +57,7 @@ class SessionController:
         feed: object | None,
         supervisor: object | None,
         broker: object | None,
+        order_manager: object | None = None,
         bot_mode: Callable[[], str],
         watchlist_size: Callable[[date], int],
         ledger: Callable[[], object | None],
@@ -68,6 +71,7 @@ class SessionController:
         self._feed = feed
         self._sup = supervisor
         self._broker = broker
+        self._om = order_manager
         self._bot_mode = bot_mode
         self._watchlist_size = watchlist_size
         self._ledger = ledger
@@ -155,7 +159,9 @@ class SessionController:
 
     def _step(self, day: date, now: datetime, state: str, ctx: dict) -> None:
         t = now.time()
-        if t >= SQUARE_OFF:
+        if ctx["bot_mode"] == "emergency_stop":
+            self._end_of_day(day, state, ctx, emergency=True)
+        elif t >= SQUARE_OFF:
             self._end_of_day(day, state, ctx)
         elif t >= ENTRY_CUTOFF and state in (sm.TRADING, sm.HALTED, sm.RECONCILING):
             self._fire(day, "entry_cutoff", rule="entry_cutoff_1430")
@@ -173,17 +179,54 @@ class SessionController:
         elif state == sm.RECONCILING:
             self._reconcile(day, ctx)
 
-    def _end_of_day(self, day: date, state: str, ctx: dict) -> None:
-        if state in sm.NEVER_TRADED and ctx["active_trades"] == 0:
-            self._fire(day, "abandon", rule="never_reached_trading", inputs={"state": state})
+    def _end_of_day(self, day: date, state: str, ctx: dict, emergency: bool = False) -> None:
+        untracked = self._broker_net() if emergency else {}
+        if state in sm.NEVER_TRADED and ctx["active_trades"] == 0 and not untracked:
+            rule = "emergency_stop" if emergency else "never_reached_trading"
+            self._fire(day, "abandon", rule=rule, inputs={"state": state})
             return
         if state != sm.SQUARING_OFF:
-            self._fire(day, "square_off", rule="square_off_1514", severity="warn")
+            rule = "emergency_stop" if emergency else "square_off_1514"
+            self._fire(day, "square_off", rule=rule, severity="critical" if emergency else "warn")
+            if emergency:
+                self._alert(
+                    "critical",
+                    "EMERGENCY STOP — flattening everything",
+                    "Cancelling every stop/target, exiting every position at market "
+                    "(including positions the bot did not open). Session ends for today.",
+                )
         if self._sup is not None:
             self._sup.square_off_all()  # type: ignore[attr-defined]  # idempotent
+        if emergency:
+            self._flatten_untracked(day)
         ctx["active_trades"] = self._active_trades()
         ctx["broker_open_symbols"] = sorted(self._broker_net())
         self._fire(day, "all_flat", rule="flat_at_broker", ctx=ctx)
+
+    def _flatten_untracked(self, day: date) -> None:
+        if self._om is None or self._broker is None:
+            return
+        from executor.emergency import flatten_untracked
+        from observability.emit import emit
+
+        tracked = set(self._sup.net_positions()) if self._sup is not None else set()  # type: ignore[attr-defined]
+        actions = flatten_untracked(
+            self._conn,
+            self._om,
+            self._broker.list_positions(),
+            tracked,
+            day,  # type: ignore[attr-defined]
+        )
+        if actions:
+            emit(
+                "decision",
+                "emergency_flatten",
+                severity="critical",
+                entity_type="session",
+                entity_id=day.isoformat(),
+                actions=actions,
+            )
+            logger.error("emergency_flatten %s", actions)
 
     def _halt(self, day: date, reason: str, ctx: dict) -> None:
         resumable = reason in sm.RESUMABLE
@@ -354,11 +397,10 @@ class SessionController:
             getattr(self._alerter, level)(title, body, source_task_id="session_tick")
 
 
+# EMERGENCY_STOP is not a blocker: it squares off at once (#67, see _step).
 # Blockers, most severe first: a halt records the first one, and only the
 # resumable ones (feed_stale, nifty_move, paused) can clear the same day (§4.3).
 def _blocker(ctx: dict, *, has_execution: bool) -> str | None:
-    if ctx["bot_mode"] == "emergency_stop":
-        return "emergency_stop"
     hard = [b for b in ctx["breakers"] if b not in sm.RESUMABLE]
     if hard:
         return hard[0]

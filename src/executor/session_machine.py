@@ -30,8 +30,8 @@ ENTRIES_ALLOWED = frozenset({TRADING})
 TERMINAL = frozenset({CLOSED, ABANDONED})
 
 # §4.3: halt reasons that may clear the same day (then RECONCILING, never straight
-# back to TRADING). Everything else (loss breakers, emergency stop, cycle failures)
-# holds for the rest of the day.
+# back to TRADING). Everything else (loss breakers, cycle failures) holds for the
+# rest of the day. An operator emergency stop is not a halt: it squares off at once (#67).
 RESUMABLE = frozenset({"feed_stale", "breaker:nifty_move", "paused", "reconcile_mismatch"})
 
 Ctx = Mapping[str, Any]
