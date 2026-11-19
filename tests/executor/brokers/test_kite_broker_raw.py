@@ -10,6 +10,7 @@ import pytest
 
 from executor.brokers.kite_contract import check_shape
 from executor.models import OrderRequest, OrderSide, OrderType, ProductType
+from tests import kite_fixtures as kf
 from tests.executor.kite_fake import INFY_ROW, FakeKite
 
 
@@ -22,7 +23,10 @@ class TestRawRead:
     def test_each_read_only_endpoint(self, fk):
         b = fk.broker()
         assert b.raw_read("profile")["user_id"] == "AB1234"
-        assert b.raw_read("margins_equity")["available"]["cash"] == 100000.0
+        assert (
+            b.raw_read("margins_equity")["available"]["cash"]
+            == kf.sdk("margins")["available"]["cash"]
+        )
         fk.sdk.margins.assert_called_with(segment="equity")
         assert b.raw_read("orders") == []
         assert b.raw_read("positions") == {"net": [], "day": []}
@@ -80,8 +84,8 @@ class TestRecorder:
         assert fk.book[oid]["status"] == "CANCELLED"
 
 
-class TestContractStandIn:
-    """Minimal stand-in; replaced by the full kite_contract module at integration."""
+class TestFakeMatchesContract:
+    """The canary's fake speaks the real contract (#84)."""
 
     def test_fake_payloads_match(self, fk):
         b = fk.broker()
@@ -94,11 +98,12 @@ class TestContractStandIn:
 
     def test_missing_key_reported(self):
         problems = check_shape("margins_equity", {"available": {}, "utilised": {"debits": 0}})
-        assert problems and "cash" in problems[0]
+        assert any("cash" in p for p in problems)
 
     def test_wrong_container_reported(self):
         assert check_shape("positions", []) != []
         assert check_shape("ltp", {"NSE:INFY": {"instrument_token": 1}}) != []
 
     def test_unknown_kind(self):
-        assert check_shape("nope", {}) == ["unknown shape kind: nope"]
+        with pytest.raises(KeyError):
+            check_shape("nope", {})
