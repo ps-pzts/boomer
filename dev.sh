@@ -45,6 +45,8 @@ if [[ ! -f .env ]]; then
 BOOMER_DB_PATH=data/boomer.db
 BOOMER_ARCHIVE_DIR=data/archive
 BOOMER_BACKUP_DIR=data/backups
+BOOMER_MINUTE_BARS_DIR=data/parquet/minute_bars
+BOOMER_TRADING_MODE=paper
 
 BASIC_AUTH_USER=boomer
 BASIC_AUTH_PASSWORD=changeme
@@ -72,13 +74,15 @@ set -o allexport; source .env; set +o allexport
 : "${BOOMER_DB_PATH:=data/boomer.db}"
 : "${BOOMER_ARCHIVE_DIR:=data/archive}"
 : "${BOOMER_BACKUP_DIR:=data/backups}"
+: "${BOOMER_MINUTE_BARS_DIR:=data/parquet/minute_bars}"
+export BOOMER_MINUTE_BARS_DIR
 : "${BASIC_AUTH_USER:=boomer}"
 : "${BASIC_AUTH_PASSWORD:=changeme}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-8000}"
 
 # ── dirs ─────────────────────────────────────────────────────────────────────
 
-mkdir -p .pids data/logs "$BOOMER_ARCHIVE_DIR" "$BOOMER_BACKUP_DIR" "$(dirname "$BOOMER_DB_PATH")"
+mkdir -p .pids data/logs "$BOOMER_ARCHIVE_DIR" "$BOOMER_BACKUP_DIR" "$BOOMER_MINUTE_BARS_DIR" "$(dirname "$BOOMER_DB_PATH")"
 
 # ── orchestrator (runs migrations on startup automatically) ──────────────────
 

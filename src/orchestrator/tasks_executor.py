@@ -19,10 +19,12 @@ def _pre_market_executor_setup(
     db_path: str,
     brokers: list | None = None,
     feed: object | None = None,
+    bar_recorder: object | None = None,
     **_: object,
 ) -> None:
     """08:45 IST: refresh broker tokens via TOTP auto-login, re-authenticate broker
-    objects, then (re)connect the market-data feed with the fresh token."""
+    objects, start today's minute-bar session, then (re)connect the market-data
+    feed with the fresh token."""
     brokers = brokers or []
     logger.info("pre_market_executor_setup run_date=%s — refreshing broker tokens", run_date)
 
@@ -67,8 +69,34 @@ def _pre_market_executor_setup(
     except Exception as exc:
         logger.error("pre_market_executor_setup: auto_login error — %s", exc)
 
+    if bar_recorder is not None:
+        import datetime as _dt
+
+        bar_recorder.start_session(_dt.date.fromisoformat(run_date))  # type: ignore[attr-defined]
     if feed is not None:
         _connect_market_feed(feed)
+
+
+def _minute_bar_flush(
+    run_date: str, run_id: int, bar_recorder: object | None = None, now: object = None, **_: object
+) -> None:
+    """Every 15 min 09:00-15:45 IST: persist completed minute bars to parquet.
+
+    Bounds what a crash can lose (design L7). The 15:45 run writes the session's
+    last bars (the final bar is 15:29).
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    if bar_recorder is None:
+        return
+    now_ist = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    try:
+        path = bar_recorder.flush(now_ist)  # type: ignore[attr-defined]
+    except Exception as exc:
+        logger.error("minute_bar_flush failed run_date=%s error=%s", run_date, exc)
+        raise  # surface to task_runner so the failure is recorded and alerted
+    logger.info("minute_bar_flush run_date=%s wrote=%s", run_date, path)
 
 
 def _connect_market_feed(feed: object) -> None:
