@@ -29,6 +29,8 @@
 | Bug | OrderManager KeyError in paper mode (#41) | Symptom: syncing or cancelling any paper order raised `KeyError: paper`. Root cause: orders go through the `KITE` registry slot (holding `PaperBroker`) but rows record the broker's own id `paper`, which was then looked up as a key. Fix: resolve by key, then by each broker's own id. |
 | Bug | Live MARKET/SL-M orders would be rejected (#43) | Symptom (latent; live mode only): Kite rejects API MARKET and SL-M orders without `market_protection`, which would have blocked every stop-loss, market exit and square-off on the first live day. SL (stop-limit) orders were also sent with price 0. Fix: `KiteBroker.place_order` sends `market_protection=-1` for MARKET/SL-M and `price` for LIMIT/SL; `kiteconnect>=5.2.2`. |
 | Bug | main CI red after #48 (#51) | Symptom: Lint failed on main. Root cause: ruff 0.17's `format --check` also formats Python code blocks in Markdown; the code sketch in `designs/state-machines.md` wasn't formatted, and #48 was merged without confirming every check passed. Fix: formatted the block; gate now run for docs-only PRs and merges wait for all checks. |
+| Bug | Hidden ₹10 cr liquidity gate (#38) | Symptom: `risk_config`'s 5 cr turnover floor had no effect below 10 cr; names between 5 and 10 cr were silently dropped. Root cause: hardcoded `LIQUIDITY_GATE` in `signals/base.py` (also broke the no-hardcoded-rupees rule). Fix: gate removed; one floor in `risk_config`, now ₹10 cr (operator decision; migration 0011); missing volume/turnover now fails closed in `TradePlanGenerator`. |
+| Bug | BE stocks in intraday universe (#49) | Symptom: trade-for-trade (BE) stocks could enter the watchlist. Root cause: universe query used `series IN ('EQ','BE')`; BE is delivery-only, MIS rejected. Fix: `series = 'EQ'`. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 | Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
@@ -71,6 +73,13 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Bug: single ₹10 cr liquidity floor (#38) + EQ-only universe (#49)
+
+- **#38:** removed the hardcoded ₹10 cr `LIQUIDITY_GATE` from `brain/signals/base.py`; the generator now only scores. Liquidity is eligibility, enforced from `risk_config` by the watchlist and `TradePlanGenerator`. Floor set to ₹10 cr (operator decision 2026-11-19): `RISK_CONFIG_DEFAULTS` for fresh DBs, migration `0011` adds a new `risk_config` version for existing DBs with a lower floor (explicit column list; history kept). `TradePlanGenerator` now rejects missing volume/turnover (was `> 0 and <`, so missing passed).
+- **#49:** `morning_batch_features` and `intraday_watchlist` select `series = 'EQ'` (BE is trade-for-trade; MIS not allowed).
+- Next for the universe: #50 (F&O-only + ASM/GSM surveillance exclusion), operator-approved.
+- Tests: missing-data fail-closed, ₹7 cr rejected / ₹10 cr boundary, generator no longer gates, migration 0011 (existing 5 cr → new version, every other column copied; already 10 cr → no-op; fresh DB untouched), BE never in watchlist. 704 tests pass.
 
 ### 2026-11-19 — Docs: state machines + one-way event observability (#47)
 
