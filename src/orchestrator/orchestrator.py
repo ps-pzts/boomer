@@ -45,6 +45,7 @@ class Orchestrator:
         brokers: list | None = None,
         feed: object | None = None,
         bar_recorder: object | None = None,
+        session: object | None = None,
     ) -> None:
         self._db_path = db_path
         self._run_store = TaskRunStore(db_path)
@@ -58,6 +59,7 @@ class Orchestrator:
             brokers=brokers or [],
             feed=feed,
             bar_recorder=bar_recorder,
+            session=session,
         )
         self._scheduler = Scheduler(
             task_registry=self._tasks,
@@ -206,9 +208,13 @@ def main() -> None:
     brokers = _build_brokers()
     feed = _build_feed(brokers)
     bar_recorder = _build_bar_recorder(feed)
-    resume_market_session(db_path, feed, bar_recorder, datetime.datetime.now(_IST))
     mode = _log_trading_mode(db_path)
     emitter = _start_event_stream(db_path, mode, feed)
+    session = _build_session(db_path, mode, feed, brokers)
+    now = datetime.datetime.now(_IST)
+    resume_market_session(db_path, feed, bar_recorder, now)
+    if session is not None and _SESSION_RESUME_START <= now.time() < _SESSION_RESUME_END:
+        session.on_restart(now.date())  # type: ignore[attr-defined]  # SM6: → RECONCILING
 
     orc = Orchestrator(
         db_path=db_path,
@@ -218,6 +224,7 @@ def main() -> None:
         brokers=brokers,
         feed=feed,
         bar_recorder=bar_recorder,
+        session=session,
     )
     log_boot_sequence(db_path, poll_interval)
     try:
@@ -337,9 +344,21 @@ def resume_market_session(
     return True
 
 
+def _build_session(db_path: str, mode: str, feed: object | None, brokers: list) -> object | None:
+    """The Session machine + execution stack (#63). None only if wiring itself
+    crashes; a missing feed or capital ledger still yields a session that can't trade."""
+    from src.alerts.alerter import get_alerter
+    from src.orchestrator.execution import build_session
+
+    try:
+        return build_session(db_path, mode, feed, brokers, alerter=get_alerter())
+    except Exception as exc:
+        logging.getLogger(__name__).exception("session_build_failed error=%s", exc)
+        return None
+
+
 def _log_trading_mode(db_path: str) -> str:
-    """Resolve and log paper/live at boot; returns the mode. Execution broker wiring
-    lands with the Session machine (SM-3); until then nothing places orders."""
+    """Resolve and log paper/live at boot; returns the mode the session executes in."""
     from src.executor.trading_mode import (
         ENV_VAR,
         LiveTradingAuthorisationStore,

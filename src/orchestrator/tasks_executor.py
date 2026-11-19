@@ -20,11 +20,13 @@ def _pre_market_executor_setup(
     brokers: list | None = None,
     feed: object | None = None,
     bar_recorder: object | None = None,
+    session: object | None = None,
     **_: object,
 ) -> None:
     """08:45 IST: refresh broker tokens via TOTP auto-login, re-authenticate broker
     objects, start today's minute-bar session, then (re)connect the market-data
-    feed with the fresh token."""
+    feed with the fresh token. Creates today's Session row (`session_start`); the
+    session tick moves it on once the feed is connected."""
     brokers = brokers or []
     logger.info("pre_market_executor_setup run_date=%s — refreshing broker tokens", run_date)
 
@@ -75,6 +77,10 @@ def _pre_market_executor_setup(
         bar_recorder.start_session(_dt.date.fromisoformat(run_date))  # type: ignore[attr-defined]
     if feed is not None:
         _connect_market_feed(feed)
+    if session is not None:
+        import datetime as _dt
+
+        session.ensure(_dt.date.fromisoformat(run_date))  # type: ignore[attr-defined]
 
 
 def _minute_bar_flush(
@@ -276,14 +282,3 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     logger.info(
         "position_review completed open_positions=%d run_date=%s", len(open_positions), run_date
     )
-
-
-def _intraday_squareoff(
-    run_date: str, run_id: int, intraday_runner: object = None, **_: object
-) -> None:
-    """Square off intraday positions at 15:14 IST. Executor provides the method."""
-    if intraday_runner is None:
-        logger.warning("intraday_squareoff: no runner injected, skipping")
-        return
-    squared = intraday_runner.square_off_all_intraday()  # type: ignore[attr-defined]
-    logger.info("intraday_squareoff completed symbols_squared_off=%s", squared)

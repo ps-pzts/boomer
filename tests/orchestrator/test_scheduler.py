@@ -249,3 +249,32 @@ def test_every_multi_slot_task_in_registry_is_marked_repeating():
     for task_id, td in build_task_registry(":memory:", "/tmp/a", "/tmp/b").items():
         slots = sum(cron_matches(td.schedule, m) for m in minutes)
         assert td.repeats == (slots > 1), f"{task_id}: {slots} slots/day, repeats={td.repeats}"
+
+
+class TestSafetyTask:
+    """The session tick manages open trades and squares off: no bot mode stops it (#63)."""
+
+    def _sched(self, db_path: Path, mode: BotMode) -> tuple[Scheduler, TaskDefinition]:
+        task = _make_task("tick", "* * * * *")
+        task.safety_task = True
+        task.repeats = True
+        store = BotModeStore(db_path)
+        store.set_mode(mode)
+        return Scheduler({"tick": task}, TaskRunStore(db_path), store, str(db_path)), task
+
+    @pytest.mark.parametrize("mode", [BotMode.EMERGENCY_STOP, BotMode.PAUSED, BotMode.AUTO])
+    def test_runs_in_every_mode(self, db_path: Path, mode: BotMode) -> None:
+        s, task = self._sched(db_path, mode)
+        ok, reason = s.should_run(
+            task, datetime.datetime(2026, 5, 11, 15, 14, tzinfo=IST), "2026-05-11"
+        )
+        assert ok, reason
+
+    def test_registry_session_tick(self) -> None:
+        from src.orchestrator.tasks import build_task_registry
+
+        reg = build_task_registry(":memory:", "/tmp/a", "/tmp/b")
+        tick = reg["session_tick"]
+        assert (tick.safety_task, tick.repeats, tick.schedule) == (True, True, "* 9-15 * * 1-5")
+        assert tick.timeout_seconds < 60  # never overlaps the next minute's tick
+        assert "intraday_squareoff" not in reg  # square-off is a session transition now

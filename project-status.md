@@ -45,7 +45,7 @@
 
 ## What's in progress
 
-- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47). SM-1 + OBS-1 (#56) and SM-2 (Trade machine, #45) done 2026-11-19. Next: SM-3 (Session machine = B7 4c, incl. reconcile-before-resume #58). Was: SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
+- **B7 intraday live pipeline: design approved** (`designs/intraday-live-pipeline.md`). Approved 2026-11-19; all open questions resolved. Kite Personal gives live ticks/quotes but no historical candles, so minute bars are self-recorded. MIS-only with stop-loss (hotfix #26). Watchlist N = 50; ORB measured against ATR14; paper→live needs 20 clean paper sessions plus SEBI (B4). PR 1 (market-data feed + trading-mode switch) done 2026-11-19. PR 2 (minute bars + live features) done 2026-11-19. PR 3 (watchlist, #37) done 2026-11-19. PR 4 split into 4a/4b/4c; 4a (paper fill realism, #40/#41) done 2026-11-19. 4b (trade lifecycle supervisor) is in PR #46, unmerged. Re-sequenced 2026-11-19 (#47). SM-1 + OBS-1 (#56) and SM-2 (Trade machine, #45) done 2026-11-19. SM-3a (Session machine runs the day, #63) done 2026-11-19. Next: SM-3b (the decision cycle that opens trades while TRADING). Was: SM-2 (Trade machine; reworks #46), SM-3 (Session machine = 4c), OBS-* (observability module = old PR 5). Designs: `designs/state-machines.md`, `designs/observability.md`. Open: #38 liquidity gate 5 vs 10 crore (operator decision).
 
 ---
 
@@ -74,6 +74,19 @@
 ---
 
 ## Change log
+
+### 2026-11-19 — Feat: SM-3a — Session machine runs the trading day (#63)
+
+- **What:** `trading_sessions` (migration 0014) + `SESSION_SPEC` on the core (`executor/session_machine.py`, pure guards). `SessionController` (`executor/session_controller.py`) is driven by a new every-minute `session_tick` task (`* 9-15`). Each tick runs `TradeSupervisor.reconcile()` (stops, targets, OCO), builds the guard context once (feed tick age, bot mode, live breakers, watchlist size, clock), then fires what the state and time call for: setup → TRADING; halt / RECONCILING / resume; 14:30 `entry_cutoff`; 15:14 `square_off` through the supervisor; `all_flat` once the broker is flat.
+- **Live breakers** (`executor/session_inputs.py`): today's realised intraday P&L, losing streak and week P&L from `intraday_brackets`; drawdown vs the ledger high-water mark; NIFTY 50 move from the feed (`prev_close`). Unreadable breakers or a missing capital ledger fail closed.
+- **Reconcile before resume** (#58): the broker's MIS net vs our trades' net from fills, untracked broker positions, tracked legs resting, every OPEN stop resting, feed fresh, watchlist present. Any failure → `HALTED(reconcile_mismatch)` + CRITICAL. Resume needs an operator `acknowledge_mismatch` **and** a clean re-check. A `reconcile_report` decision event is emitted on every run.
+- **Execution wiring** (`orchestrator/execution.py`): the broker the trading mode picks (paper by default) → OrderManager + PositionManager + TradeSupervisor on one cross-thread connection under the controller's lock. Boot fires `restarted` → RECONCILING for a session found mid-day.
+- **Scheduler:** `TaskDefinition.safety_task` runs in PAUSED **and** EMERGENCY_STOP. Before this, EMERGENCY_STOP blocked every task, including square-off. `intraday_squareoff` removed. It was a no-op anyway: its runner was never wired.
+- **Design deviation** (recorded in §4.2): `abandon` at 15:14, also from READY.
+- **Follow-ups:**
+  - #64: the paper broker loses its book on a mid-session restart (fails safe as `reconcile_mismatch`).
+  - #65: orphan orders at the broker; needs `Broker.list_orders()`.
+- 867 tests pass. The session reaches TRADING, but nothing enters trades until SM-3b.
 
 ### 2026-11-19 — Bug: repeating tasks ran only once a day (#61)
 

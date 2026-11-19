@@ -102,10 +102,10 @@ class Scheduler:
         """Return (should_run, reason)."""
         mode = self._mode_store.current_mode()
 
-        if mode == BotMode.EMERGENCY_STOP:
+        if mode == BotMode.EMERGENCY_STOP and not task.safety_task:
             return False, "emergency_stop"
 
-        if mode == BotMode.PAUSED and not task.trailing_stop_task:
+        if mode == BotMode.PAUSED and not (task.trailing_stop_task or task.safety_task):
             return False, "paused"
 
         if not task.run_on_holiday and not is_trading_day(self._db_path, run_date):

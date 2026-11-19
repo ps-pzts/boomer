@@ -118,7 +118,9 @@ Non-trading days get no row (holiday / weekend): the scheduler doesn't start a s
 | `HALTED`, `RECONCILING` | `entry_cutoff` (14:30) | `NO_NEW_ENTRIES` | — (halt reason kept in history; open trades are still reconciled before square-off) |
 | `TRADING`, `HALTED`, `RECONCILING`, `NO_NEW_ENTRIES`, `READY`, `CONNECTED` | `square_off` (15:14) | `SQUARING_OFF` | **none: square-off is never blocked** |
 | `SQUARING_OFF` | `all_flat` | `CLOSED` | every trade CLOSED/CANCELLED **and** broker net position 0 |
-| `PRE_OPEN`, `CONNECTED` | `abandon` (15:30) | `ABANDONED` | — |
+| `PRE_OPEN`, `CONNECTED`, `READY` | `abandon` (15:14) | `ABANDONED` | — |
+
+**SM-3a deviation (#63):** `abandon` fires at 15:14 instead of 15:30, and also from `READY`. At 15:14 a session that never reached `TRADING` and has no active trade is abandoned; otherwise it squares off. The 15:30 slot fell after square-off had already taken the session out of `CONNECTED`, so `abandon` could never fire.
 
 ### 4.3 Halt policy
 
@@ -140,9 +142,9 @@ Every same-day resume passes through `RECONCILING` (§4.5): there is no direct `
 |---|---|
 | `session_start`, `setup_ok` | `pre_market_executor_setup` (08:45) |
 | `watchlist_ready` | `intraday_watchlist` (09:10) |
-| `market_open`, `halt`, `recover`, `reconciled`, `reconcile_failed` | the 30-minute cycle and the every-minute reconcile task (each run evaluates the guards) |
+| `setup_ok`, `watchlist_ready`, `market_open`, `halt`, `recover`, `reconciled`, `reconcile_failed` | the every-minute `session_tick` task (SM-3a, #63): it first runs `TradeSupervisor.reconcile()`, then builds the guard context once and fires what the state and time call for. `setup_ok` and `watchlist_ready` are retried every minute, so a slow feed connect or a late watchlist doesn't need its task to re-run |
 | `restarted` | orchestrator boot (`resume_market_session`), when today's session row is in `CONNECTED`, `READY` or `TRADING` |
-| `entry_cutoff`, `square_off`, `all_flat`, `abandon` | scheduled tasks at 14:30, 15:14, every minute after 15:14, 15:30 |
+| `entry_cutoff`, `square_off`, `all_flat`, `abandon` | `session_tick`, by the clock: 14:30; 15:14 (then every minute until flat); 15:14 |
 
 The **cycle asks the Session machine** "is the state TRADING?" before scoring anything. Every other component that today checks the clock or `_disabled_for_day` stops doing so.
 
@@ -237,7 +239,8 @@ Already explicit (`ALLOWED_TRANSITIONS`). Changes:
 |---|---|
 | SM-1 | `src/statemachine/` core + spec validation + `events` table and emitter (observability §4-5) + the guard test that keeps trading code from reading `events` + Order machine on the core. **Done 2026-11-19 (#56).** No-op triggers (§3) were not needed by the Order machine and are deferred to SM-2, where the Trade machine's reconcile loop needs them |
 | SM-2 | Trade machine on the core: reworks #46 (`TradeSupervisor`), adds `PROTECTING`. **Done 2026-11-19 (#45)**: `executor/trade_machine.py` (spec), `trade_lifecycle.py` (supervisor), `trade_store.py` (bracket persistence; `advance()` = fields + transition + event in one transaction), migration `0013`. Every exit passes through `EXITING` (`leg_filled` → `flat`) so the settlement is always recorded. No-op triggers turned out unnecessary: reconcile only fires a trigger when it observes a change |
-| SM-3 | Session machine + `trading_sessions` migration. This **is** B7 PR 4c: the cycle, live circuit breakers and execution-broker wiring are built as its guards and transitions |
+| SM-3a | Session machine + `trading_sessions` migration (0014) + every-minute `session_tick` + live circuit breakers + reconcile-before-resume + execution-broker wiring (#63). `executor/session_machine.py` (spec + pure guards), `session_controller.py`, `session_inputs.py`; `orchestrator/execution.py`, `tasks_session.py`. The session reaches `TRADING` but nothing enters yet. Follow-ups: #64 (paper broker restart), #65 (orphan orders at the broker) |
+| SM-3b | The decision cycle as the `TRADING` state's work: watchlist → features → signal → plan → sizing → `open_trade`; persistent cooldown; retire `IntradayPipeline`. Together SM-3a+b **are** B7 PR 4c |
 | OBS-* | Observability module (`designs/observability.md` §10). Replaces B7 PR 5 |
 
 ## 9. Open questions
