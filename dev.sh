@@ -100,9 +100,9 @@ echo "Orchestrator started (pid $!, log: $LOG_ORC)"
 BOOMER_DB_PATH="$BOOMER_DB_PATH" \
 BASIC_AUTH_USER="$BASIC_AUTH_USER" \
 BASIC_AUTH_PASSWORD="$BASIC_AUTH_PASSWORD" \
-nohup uvicorn src.dashboard.app:app --host 0.0.0.0 --port "$DASHBOARD_PORT" >> "$LOG_DASH" 2>&1 &
+nohup uvicorn src.observability.web.app:app --host 0.0.0.0 --port "$DASHBOARD_PORT" >> "$LOG_DASH" 2>&1 &
 echo $! > "$PIDFILE_DASH"
-echo "Dashboard started  (pid $!, log: $LOG_DASH)"
+echo "Live UI started  (pid $!, log: $LOG_DASH)"
 
 # ── telegram bot (long-poll — only starts if credentials are set) ─────────────
 

@@ -91,8 +91,3 @@ def _notify_telegram(message: str) -> None:
         send_telegram(token, chat_id, message)
     except Exception as exc:
         _log.warning("startup_telegram_notify_failed: %s", exc)
-
-
-def log_dashboard_online() -> None:
-    sys.stdout.write("  [FRIDAY] Dashboard live — WebSocket feed active\n")
-    sys.stdout.flush()

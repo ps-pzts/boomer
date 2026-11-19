@@ -20,5 +20,5 @@ ENV PYTHONPATH=/app
 
 EXPOSE 8080
 
-# Default: dashboard. Override CMD to run the orchestrator.
-CMD ["uvicorn", "src.dashboard.app:app", "--host", "0.0.0.0", "--port", "8080"]
+# Default: the observability web UI. Override CMD to run the orchestrator.
+CMD ["uvicorn", "src.observability.web.app:app", "--host", "0.0.0.0", "--port", "8080"]
