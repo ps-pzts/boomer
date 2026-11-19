@@ -207,3 +207,45 @@ class TestDependencyMet:
         ok, reason = dependency_met(task, "2026-05-10", store, manual_override=True)
         assert ok
         assert "manual_override" in reason
+
+
+# ─── Repeating tasks (#61) ────────────────────────────────────────────────────
+
+
+class TestRepeatingTasks:
+    """Regression #61: a task that succeeded once was skipped for the rest of the day,
+    so `minute_bar_flush` (first slot 09:00, nothing to write) never flushed again."""
+
+    def _scheduler(self, db_path: Path, repeats: bool) -> Scheduler:
+        task = _make_task("flush", "*/15 9-15 * * 1-5")
+        task.repeats = repeats
+        return Scheduler(
+            {"flush": task}, TaskRunStore(db_path), BotModeStore(db_path), str(db_path)
+        )
+
+    def _succeed(self, db_path: Path) -> None:
+        store = TaskRunStore(db_path)
+        store.update(store.create("flush", "2026-05-11"), TaskStatus.SUCCESS)
+
+    def test_repeating_task_runs_again_after_success(self, db_path: Path) -> None:
+        s = self._scheduler(db_path, repeats=True)
+        self._succeed(db_path)  # the 09:00 slot ran
+        later = datetime.datetime(2026, 5, 11, 9, 15, tzinfo=IST)
+        assert s.should_run(s._tasks["flush"], later, "2026-05-11") == (True, "ok")
+
+    def test_once_a_day_task_still_skipped_after_success(self, db_path: Path) -> None:
+        s = self._scheduler(db_path, repeats=False)
+        self._succeed(db_path)
+        later = datetime.datetime(2026, 5, 11, 9, 15, tzinfo=IST)
+        assert s.should_run(s._tasks["flush"], later, "2026-05-11") == (False, "already_succeeded")
+
+
+def test_every_multi_slot_task_in_registry_is_marked_repeating():
+    """Any task whose schedule fires more than once on a weekday must repeat (#61)."""
+    from src.orchestrator.tasks import build_task_registry
+
+    monday = datetime.datetime(2026, 5, 11, tzinfo=IST)
+    minutes = [monday + datetime.timedelta(minutes=m) for m in range(24 * 60)]
+    for task_id, td in build_task_registry(":memory:", "/tmp/a", "/tmp/b").items():
+        slots = sum(cron_matches(td.schedule, m) for m in minutes)
+        assert td.repeats == (slots > 1), f"{task_id}: {slots} slots/day, repeats={td.repeats}"
