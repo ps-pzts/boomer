@@ -21,7 +21,8 @@
 | Design | `designs/` folder (Phases 1-5, open-questions.md, design-evolution.md) | **Retired 2026-09-06** — described the 3-track (long_term/swing/intraday), dual-broker system being replaced. Deleted rather than rewritten; a fresh design doc will be written once the intraday-only system is rebuilt and validated in paper trading. Historical content still recoverable via git log/PR descriptions. |
 | Infra | CLAUDE.md | Project rules: git workflow, tests, PRs, file limits, context continuity |
 | Infra | UTC→IST migration | All timestamps now use IST (Asia/Kolkata) throughout — DB writes, market hours checks, cron comparisons, all tests. CLAUDE.md Rule 9 updated: "All timestamps use IST, never UTC." Root cause: system is India-only with no DST; UTC was unnecessary overhead. |
-| Bug | APM gate + GTT dispatch (historical) | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic. Fixed at the time to route swing/intraday through `packager.apm_decide()`. **Superseded 2026-09-06**: `AWAITING_HUMAN`/`requires_human` removed entirely (see Change log) — all recommendations now route through APM unconditionally. The GTT dispatch task (renamed `gtt_dispatch`, was `swing_gtt_dispatch`, 09:25 IST) still reads `queued_for_execution` recs and places OCO-GTT via Kite. |
+| Bug | APM gate + GTT dispatch (historical) | `_morning_batch_recommendations` was routing all tracks to `AWAITING_HUMAN`, bypassing packager's APM logic. Fixed at the time to route swing/intraday through `packager.apm_decide()`. **Superseded 2026-09-06**: `AWAITING_HUMAN`/`requires_human` removed entirely (see Change log) — all recommendations now route through APM unconditionally. The GTT dispatch task (renamed `gtt_dispatch`, was `swing_gtt_dispatch`, 09:25 IST) still reads `queued_for_execution` recs and places OCO-GTT via Kite. **Superseded 2026-11-19**: `gtt_dispatch` removed (see Change log). |
+| Hotfix | Intraday recs were sent as 365-day CNC GTTs | Symptom: with Kite credentials set, `gtt_dispatch` (09:25) placed every queued intraday rec as a CNC OCO-GTT valid 365 days, so an intraday signal became a year-long delivery position. Root cause: Kite GTTs only support CNC/NRML, and the task predates the intraday-only redesign. Fix: task removed; `OrderManager` pre-trade check #0 now rejects any non-MIS product. |
 | Bug | Weekend dispatch test | `test_orchestrator_dispatches_task_and_records_result` probe task added `run_on_holiday=True` so it dispatches on weekends/holidays (test does not depend on market being open). |
 | Ops | Nightly self-healing | `nightly_health_check` task at 01:45 IST: SQLite integrity_check, WAL checkpoint + VACUUM, stuck RUNNING task detection (>1h), disk space check (<20% warns). Sends single Telegram report (✅ all clear / ⚠️ issues found) before the 03:00 restart_guard fires. |
 | Ops | Full nightly service restart | `ops/restart_guard.sh` now restarts `boomer-dashboard.service` and `boomer-bot.service` in addition to the orchestrator. |
@@ -64,6 +65,14 @@ _Nothing — all 5 phases complete._
 ---
 
 ## Change log
+
+### 2026-11-19 — Hotfix: MIS-only, remove 365-day CNC GTT dispatch
+
+- **Why:** operator rule: Boomer places only MIS orders with a stop-loss, never long-validity delivery orders. `gtt_dispatch` violated this whenever Kite credentials were present (no paper-mode gate), and CLAUDE.md §10 forbids intraday becoming a held position.
+- Removed `_gtt_dispatch` from `orchestrator/tasks_executor.py` and its `gtt_dispatch` entry from the task registry. No other task depended on it. `morning_batch_recommendations` still writes `queued_for_execution` recs, but nothing executes them now; the live MIS path replaces this in B7 (`designs/intraday-live-pipeline.md`, on its own branch).
+- `OrderManager._pre_trade_checks` gains check #0: reject any product other than `ProductType.MIS`, before the order is persisted or sent to a broker.
+- GTT code (`GttManager`, `KiteBroker.place_gtt`) is left in place with no production caller; deletion is part of B7's retirement PR.
+- Tests: new `tests/orchestrator/test_tasks.py` (no GTT task registered, no dangling task dependencies); 3 new `OrderManager` tests (CNC rejected, CNC never reaches the broker or the `orders` table, MIS passes). 515 tests pass, lint clean.
 
 ### 2026-11-19 — Bug: KiteTicker subscription race + per-exchange instrument cache
 
