@@ -58,12 +58,12 @@ class TestLostAnswer:
         assert row["status"] == OrderStatus.PENDING.value and row["broker_order_id"]
         assert len(h.sim.orders()) == 1  # one order at the broker, and we track it
 
-    def test_a_refusal_with_no_order_is_still_an_error(self, h):
+    def test_a_refusal_with_no_order_is_rejected(self, h):
         h.tick(100.5)
         h.plan.fail("place_order", kex.InputException("refused"))
         with pytest.raises(kex.InputException):
             h.om.submit(limit_buy("refused-1"), "intraday")
-        assert h.db.execute("SELECT status FROM orders").fetchone()[0] == "error"
+        assert h.db.execute("SELECT status FROM orders").fetchone()[0] == "rejected"
         assert h.sim.orders() == []
 
     def test_lookup_failure_leaves_it_to_cancel_lost_orders(self, h):

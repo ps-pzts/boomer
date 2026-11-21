@@ -112,7 +112,7 @@ class TestPlainOrders:
         rec = h.om.sync_status(oid)
         assert rec.status == OrderStatus.CANCELLED
 
-    def test_broker_refusal_at_placement_is_recorded_as_error(self, h):
+    def test_broker_refusal_at_placement_is_recorded_as_rejected(self, h):
         h.tick(101.0)
         h.plan.fail("place_order", kex.InputException("bad"), times=1)
         with pytest.raises(kex.InputException):
@@ -124,4 +124,4 @@ class TestPlainOrders:
                 "intraday",
             )  # fmt: skip
         row = h.db.execute("SELECT status FROM orders").fetchone()
-        assert row[0] == OrderStatus.ERROR.value
+        assert row[0] == OrderStatus.REJECTED.value

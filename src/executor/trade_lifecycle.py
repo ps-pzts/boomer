@@ -54,9 +54,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 TRACK = "intraday"
 ENTRY_VALID_MINUTES = 30  # design L1
-_DEAD = frozenset(
-    {OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED, OrderStatus.ERROR}
-)
+_DEAD = frozenset({OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.ERROR})
 _RESTING = frozenset({OrderStatus.PENDING, OrderStatus.TRIGGERED, OrderStatus.PARTIAL})
 
 

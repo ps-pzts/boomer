@@ -174,12 +174,12 @@ class TestPartialFill:
 
 
 class TestRejections:
-    def test_input_errors_become_order_errors(self, stack):
+    def test_input_errors_become_rejected_orders(self, stack):
         stack.tick(100.0)
         with pytest.raises(kiteconnect.exceptions.InputException):
             stack.submit(SELL, OrderType.SL, trigger=100.5)  # wrong side
         (row,) = stack.db.execute("SELECT status FROM orders").fetchall()
-        assert row[0] == OrderStatus.ERROR
+        assert row[0] == OrderStatus.REJECTED
 
     @pytest.mark.parametrize(
         ("config", "price", "reason"),

@@ -62,8 +62,12 @@ class TestSpec:
                 found = ORDER_SPEC.find(src.value, dst.value)
                 assert (found is not None) == (dst in dsts), (src, dst)
 
-    def test_only_error_is_terminal(self):
-        assert ORDER_SPEC.terminal == {"error"}
+    def test_finished_statuses_are_terminal_and_never_reopened(self):
+        """#100: FILLED/CANCELLED/REJECTED/ERROR are final; no EXPIRED state exists."""
+        assert ORDER_SPEC.terminal == {"filled", "cancelled", "rejected", "error"}
+        assert "expired" not in {s.value for s in OrderStatus}
+        for status in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED):
+            assert ALLOWED_TRANSITIONS[status] == frozenset()
 
 
 class TestHistory:

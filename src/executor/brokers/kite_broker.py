@@ -8,6 +8,8 @@ from collections.abc import Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from kiteconnect import exceptions as kex
+
 from executor.brokers.base import Broker
 from executor.brokers.feeds.base import MarketDataFeed
 from executor.brokers.kite_contract import FINAL_ORDER_STATUSES, IN_FLIGHT_ORDER_STATUSES
@@ -17,6 +19,7 @@ from executor.models import (
     BrokerFunds,
     BrokerName,
     BrokerPosition,
+    BrokerRejected,
     GttRequest,
     OrderRequest,
     OrderSide,
@@ -55,6 +58,12 @@ def _kite_tag(raw: str) -> str:
     if len(clean) <= 20:
         return clean
     return hashlib.sha1((raw or "").encode()).hexdigest()[:20]  # noqa: S324 - not security
+
+
+def _refused(exc: Exception) -> Exception:
+    """The same Kite exception, also a BrokerRejected, so callers that catch either work."""
+    cls = type(f"Refused{type(exc).__name__}", (BrokerRejected, type(exc)), {})
+    return cls(*exc.args)
 
 
 def map_kite_status(status: str, order_type: str, filled: int, quantity: int) -> OrderStatus | None:
@@ -212,7 +221,10 @@ class KiteBroker(Broker):
             # Kite rejects API MARKET / SL-M orders without market protection (#43);
             # -1 lets Kite apply its automatic protection band.
             params["market_protection"] = _AUTO_MARKET_PROTECTION
-        resp = self._kite.place_order(variety=self._kite.VARIETY_REGULAR, **params)
+        try:
+            resp = self._kite.place_order(variety=self._kite.VARIETY_REGULAR, **params)
+        except (kex.InputException, kex.OrderException) as exc:
+            raise _refused(exc) from exc  # Kite said no: nothing was placed (#100)
         self._recorded("place_order", params, resp)
         # kiteconnect returns the order id itself (a str), not the response dict.
         # Indexing it raised TypeError AFTER Kite had accepted the order (#73).
