@@ -77,6 +77,10 @@
 
 ## Change log
 
+### 2026-11-21 — Chore: record two deferred dashboard audit findings as debt markers (#127)
+
+- **What:** `shortcut:` comments only (no behaviour change) at the `app.py` default `changeme` password, the `pyproject.toml` dependencies and the Dockerfile CMD. Deferred by the operator: refuse to start on unset/`changeme` password; add a `dashboard` extra (fastapi, uvicorn, python-multipart) and install it in Dockerfile and CI.
+
 ### 2026-11-21 — Test: a whole paper day through the production wiring (#116)
 
 - **What:** `tests/orchestrator/test_production_day.py` (rig in `production_day.py`) boots like `orchestrator.main()` (`build_session` + `build_decision_cycle` + `Orchestrator`, ManualFeed, real `SessionBarRecorder`, fake clock) and dispatches the registered tasks through the real Scheduler minute by minute, 08:45 to 15:30. ORB worked example: entry fills 1,007, stop trails to 1,020 at 1R, 15:14 square-off at 1,030, realised 49 x 23 = Rs 1,127. Asserts: mode paper and locked on the session row, every order MIS and every long covered by a resting stop (stops only up), mark-to-market mid-trade (#106), the trade/session events, the real Telegram feed formatter (one message per trade event, EOD summary totals). A second day with a feed that stops after 09:15: HALTED(feed_stale), no order all day, CRITICAL + halt alerts. Skipped tasks (network / batch pipeline / real Kite) are listed with reasons in `SKIPPED_TASKS`; their outputs are seeded.
