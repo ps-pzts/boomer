@@ -9,6 +9,9 @@ Selection, run once pre-market on batch (point-in-time) features only:
      (gap, opening range, NIFTY direction) can turn a flat pre-market score into
      a trade, so a quiet news day still yields a full watchlist.
 
+The caller passes only the universe (EQ ∩ F&O − ASM/GSM, brain/universe.py); the stocks
+it removed arrive as `universe_rejections` (`not_fno`, `under_surveillance`).
+
 Every rejection is counted by reason and logged (CLAUDE.md §9 attribution).
 """
 
@@ -83,10 +86,16 @@ def select_watchlist(
     now: datetime,
     size: int = WATCHLIST_SIZE,
     generator: IntradaySignalGenerator | None = None,
+    universe_rejections: dict[str, int] | None = None,
 ) -> list[WatchlistEntry]:
-    """Rank the universe and return the top `size` entries (fewer if not enough are eligible)."""
+    """Rank the universe and return the top `size` entries (fewer if not enough are eligible).
+
+    `universe_rejections` are the stocks the universe filter already removed before
+    this function sees them (`not_fno`, `under_surveillance`, #50); they are folded into
+    the rejection counts so the log accounts for every EQ stock.
+    """
     gen = generator or IntradaySignalGenerator()
-    rejected: Counter[str] = Counter()
+    rejected: Counter[str] = Counter({k: v for k, v in (universe_rejections or {}).items() if v})
     candidates: list[_Candidate] = []
 
     for symbol, exchange, features in features_by_symbol:

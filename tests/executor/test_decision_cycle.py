@@ -133,6 +133,32 @@ def test_opens_breakout_entries_up_to_the_cap(c):
     assert tuple(plans) == ("ID1", 1)  # live features kept with the signal (§3.4)
 
 
+def test_surveillance_listed_stocks_get_no_new_entry(c):
+    """#50: a list that arrives mid-session blocks NEW entries from the next cycle."""
+    _trading(c)
+    c.cycle._surveillance_blocked = lambda day: {"TCS", "SBIN"}
+    r = c.run()
+    assert r.rejected == {"TCS": "under_surveillance", "SBIN": "under_surveillance"}
+    assert len(r.opened) == 3  # HDFCBANK, ITC, LT fill the slots instead
+    symbols = {
+        x[0]
+        for x in c.d.h.db.execute("SELECT symbol FROM orders WHERE idempotency_key LIKE '%-entry'")
+    }
+    assert symbols == {"HDFCBANK", "ITC", "LT"}
+
+
+def test_surveillance_does_not_touch_an_already_open_trade(c):
+    """Operator decision: held stock is kept and managed normally, no panic exit."""
+    _trading(c)
+    c.watchlist = c.watchlist[:1]
+    c.run()  # TCS entry placed
+    c.cycle._surveillance_blocked = lambda day: {"TCS"}
+    c.d.at(10, 0)
+    assert c.run().rejected == {"TCS": "already_open"}  # not cancelled, not re-entered
+    assert c.d.h.db.execute("SELECT COUNT(*) FROM intraday_brackets").fetchone()[0] == 1
+    assert c.d.h.db.execute("SELECT state FROM intraday_brackets").fetchone()[0] != "cancelled"
+
+
 def test_full_session_blocks_another_cycle(c):
     _trading(c)
     c.run()

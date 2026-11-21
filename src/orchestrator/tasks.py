@@ -20,7 +20,11 @@ from .tasks_brain import (
     _intraday_watchlist,
     _morning_batch_features,
 )
-from .tasks_collector import _early_morning_data_check, _nightly_eod_collector
+from .tasks_collector import (
+    _early_morning_data_check,
+    _nightly_eod_collector,
+    _surveillance_refresh,
+)
 from .tasks_executor import (
     _feed_health_check,
     _intraday_cycle,
@@ -84,6 +88,15 @@ def build_task_registry(
             timeout_seconds=1800,
             retry_policy=RetryPolicy(max_attempts=4, backoff_seconds=[300, 900, 2700]),
             run_on_holiday=True,
+        ),
+        "surveillance_refresh": TaskDefinition(
+            task_id="surveillance_refresh",
+            fn=_wrap(_surveillance_refresh, {}),  # type: ignore[arg-type]
+            schedule="25,55 9-14 * * 1-5",  # 09:25..14:55 IST, just before each decision cycle
+            dependencies=[],
+            timeout_seconds=300,
+            retry_policy=RetryPolicy(max_attempts=1),  # the next slot retries
+            repeats=True,  # #61
         ),
         "early_morning_data_check": TaskDefinition(
             task_id="early_morning_data_check",

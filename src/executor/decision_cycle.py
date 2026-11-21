@@ -63,6 +63,7 @@ class DecisionCycle:
         ledger: Callable[[], object | None],
         watchlist: Callable[[date], list[object]],
         clock: Callable[[], datetime] = lambda: datetime.now(IST),
+        surveillance_blocked: Callable[[date], set[str]] = lambda day: set(),
     ) -> None:
         self._db_path = db_path
         self._session = session
@@ -75,6 +76,7 @@ class DecisionCycle:
         self._ledger = ledger
         self._watchlist = watchlist
         self._clock = clock
+        self._surveillance_blocked = surveillance_blocked
         self._failures = 0
 
     def run(self) -> CycleResult:
@@ -117,6 +119,9 @@ class DecisionCycle:
             return CycleResult(skipped="capital_unavailable")
         config, regime = self._risk_config(), self._regime(day)
         active, cooling = self._busy_symbols(day, now)
+        # ASM/GSM reconcile (#50): re-read every cycle, so a list that arrives mid-session
+        # blocks NEW entries from the next cycle. Open trades are untouched (no panic exit).
+        blocked = self._surveillance_blocked(day)
         result = CycleResult()
         conn = sqlite3.connect(self._db_path, timeout=10)
         try:
@@ -124,9 +129,19 @@ class DecisionCycle:
                 if slots <= 0:
                     break
                 sym, exch = entry.stock_symbol, entry.exchange  # type: ignore[attr-defined]
-                rule = "already_open" if sym in active else "cooldown" if sym in cooling else None
+                rule = (
+                    "already_open"
+                    if sym in active
+                    else "cooldown"
+                    if sym in cooling
+                    else "under_surveillance"
+                    if sym in blocked
+                    else None
+                )
                 if rule:
                     result.rejected[sym] = rule
+                    if rule == "under_surveillance":
+                        logger.info("entry_rejected symbol=%s rule=%s", sym, rule)
                     continue
                 outcome = self._evaluate(conn, sym, exch, day, now, regime, config, ledger)
                 if isinstance(outcome, Rejection):
