@@ -77,6 +77,12 @@
 
 ## Change log
 
+### 2026-11-21 — Bug: boomer-executor.service ran a module that does not exist (#109)
+
+- **Symptom:** `ops/systemd/boomer-executor.service` ran `python -m executor.main` (no such module); the runbook's `python -m executor.reconciliation --eod` has no `__main__` either; CD restarted and health-checked the dead unit.
+- **Root cause:** the unit predates the in-process design: `orchestrator.orchestrator` owns the feed, the one `SessionController` and every executor task. A separate executor process would be a second controller on one DB.
+- **Fix:** unit deleted; removed from runbook and `cd.yml` restart/health lines; the manual reconciliation step now points at the orchestrator's `eod_reconciliation` task. `tests/test_entrypoints.py` parses every `-m`/uvicorn target in the units, dev.sh, Dockerfile and runbook and asserts it exists and has a `__main__` guard.
+
 ### 2026-11-21 — Feat: paper to live readiness report (#119)
 
 - New read-only `executor/live_readiness.py` (`python -m executor.live_readiness`) and Telegram `/readiness`: pass / fail / insufficient-data with the exact numbers for each design Q5 criterion (20 closed paper sessions; zero unprotected moments from `exit_reason` of forced-out trades (state tables, not events), flagged positions and open trades without a stop; mean adverse slippage per leg class vs `SlippageModel`'s assumption (limit 0, stop 7.5 bps); expectancy after `CostModel` costs > 0; B4 manual flag `BOOMER_B4_RESOLVED`). Paper sessions only; opens the DB `mode=ro`; never enables live trading. Market exits are counted but not judged (no stored reference price).

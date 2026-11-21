@@ -138,11 +138,10 @@ jobs:
       - name: Restart services
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
-            systemctl restart boomer-orchestrator boomer-dashboard boomer-executor
+            systemctl restart boomer-orchestrator boomer-dashboard
             sleep 5
             systemctl is-active --quiet boomer-orchestrator && echo "orchestrator: OK" || echo "orchestrator: FAILED"
             systemctl is-active --quiet boomer-dashboard   && echo "dashboard: OK"    || echo "dashboard: FAILED"
-            systemctl is-active --quiet boomer-executor    && echo "executor: OK"     || echo "executor: FAILED"
           REMOTE
 
       - name: Health check — dashboard responds

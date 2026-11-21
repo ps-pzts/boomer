@@ -55,7 +55,7 @@ sudo -u boomer .venv/bin/python -c "from db.migrations import run_migrations; ru
 ```bash
 sudo cp /opt/boomer/ops/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now boomer-orchestrator boomer-dashboard boomer-executor
+sudo systemctl enable --now boomer-orchestrator boomer-dashboard
 ```
 
 ### 6. Install 3 AM restart cron
@@ -76,7 +76,7 @@ dashboard.yourdomain.com {
 ```
 
 ### 8. Verify everything is healthy
-- Check `systemctl status boomer-orchestrator boomer-dashboard boomer-executor`
+- Check `systemctl status boomer-orchestrator boomer-dashboard`
 - Open dashboard in browser — should show AUTO mode, no alerts
 - Check `/var/log/boomer/orchestrator.log` for startup message
 
@@ -133,7 +133,7 @@ sqlite3 /var/lib/boomer/boomer.db "PRAGMA integrity_check;"
 Checklist before resuming:
 - [ ] Understand why emergency_stop was triggered
 - [ ] Verify all open positions are visible in broker app with active stops
-- [ ] Run EOD reconciliation manually: `python -m executor.reconciliation --eod`
+- [ ] Confirm the orchestrator's `eod_reconciliation` task last ran clean (task run history; the executor runs in-process in the orchestrator, there is no separate executor process or CLI)
 - [ ] Verify no reconciliation alerts are unresolved
 - [ ] Check that the cause of emergency has been resolved (bug fixed, investigation complete)
 - [ ] Set bot_mode to `paused` first, monitor for one hour, then `auto`
@@ -167,7 +167,7 @@ When a bad deployment includes a schema migration:
    ```
 6. Restart services:
    ```bash
-   systemctl restart boomer-orchestrator boomer-dashboard boomer-executor
+   systemctl restart boomer-orchestrator boomer-dashboard
    ```
 7. Verify schema version:
    ```bash
@@ -185,7 +185,7 @@ When a bad deployment includes a schema migration:
 2. Set bot_mode to `paused`
 3. Take DB backup: `cp boomer.db backups/pre-deploy-$(date +%Y%m%d).db`
 4. `git pull && pip install -e ".[prod]"`
-5. `systemctl restart boomer-orchestrator boomer-dashboard boomer-executor`
+5. `systemctl restart boomer-orchestrator boomer-dashboard`
 6. Verify services are healthy, no migration errors in logs
 7. Resume to `auto`
 
@@ -200,7 +200,7 @@ Rebuild bot from scratch on a different VM using only the backup:
 
 ### Credential rotation
 - Kite tokens: expire daily (handled by pre_market_executor_setup task)
-- Kite API key: rotate if compromised. Update secrets.env, restart executor
+- Kite API key: rotate if compromised. Update secrets.env, restart the orchestrator
 - Telegram bot token: rotate via BotFather if compromised
 - SMTP credentials: rotate if compromised. Update secrets.env, restart services
 
@@ -214,7 +214,7 @@ Rebuild bot from scratch on a different VM using only the backup:
     missingok
     notifempty
     postrotate
-        systemctl reload boomer-orchestrator boomer-dashboard boomer-executor 2>/dev/null || true
+        systemctl reload boomer-orchestrator boomer-dashboard 2>/dev/null || true
     endscript
 }
 ```
