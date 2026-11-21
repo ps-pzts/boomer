@@ -43,6 +43,7 @@ stop_all() {
 [[ -f .venv/bin/activate ]] || die ".venv not found — run: python3.11 -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]'"
 if [[ ! -f .env ]]; then
     echo "No .env found — creating one with local defaults (edit to add broker tokens later)."
+    (umask 077; : > .env)  # secrets file: owner-only from the first byte
     cat > .env <<'ENVEOF'
 BOOMER_DB_PATH=data/boomer.db
 BOOMER_ARCHIVE_DIR=data/archive
@@ -66,6 +67,8 @@ TELEGRAM_CHAT_ID=
 ALERT_EMAIL_TO=
 ENVEOF
 fi
+
+[[ -z "$(find .env -perm /077 2>/dev/null)" ]] || echo "WARNING: .env is group/world accessible — run: chmod 600 .env" >&2
 
 # ── env ──────────────────────────────────────────────────────────────────────
 

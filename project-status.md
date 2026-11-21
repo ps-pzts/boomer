@@ -77,6 +77,12 @@
 
 ## Change log
 
+### 2026-11-21 — Bug: secrets leaking via Telegram, logs, terminal and `.env` mode (#142)
+
+- **Symptom/cause:** the login notice sent the first 12 token chars to Telegram, scripts printed the token (one the full token), failure alerts/logs carried `requests` URLs with `request_token`, `_write_env_token` left `.env` at the default umask (found 666), no `.dockerignore`, no global safety net.
+- **Fix:** `src/alerts/scrub.py` (`scrub`: live secret env values + bot-token and `request_token=`-style patterns; `ScrubFilter` for msg/args/exception text) applied in `alerts.format.finish` (all Telegram sends) and installed on log handlers in the orchestrator, bot, feed and scripts. Notice shows user and expiry only; `scripts/kite_login.py` saves the token via the writer. `_write_env_token` is atomic and 0600. `dev.sh` creates `.env` 0600 and warns; orchestrator boot warns on loose `.env`/data dir modes. `.dockerignore`. AST test forbids slicing token/secret/password in log/print/alert calls. Runbook Secrets section with the RISK note (password + TOTP secret beside the API key defeats 2FA; auto-login kept, operator decides).
+- **Not covered:** the dashboard (uvicorn configures its own logging) has no filter installed.
+
 ### 2026-11-21 — Enhancement: modern, consistent Telegram messages (#139)
 
 - **Added:** `src/alerts/format.py` (pure helpers: `header`, `stamp` (IST), `rows` aligned in `<pre>`, `note` blockquote, `capped` "+N more", `finish` = 4096 cap with tag balancing; `esc`/`money` moved here, re-exported by `alerts/commands/common.py`). Every message site now uses it: all bot commands, `/mode` `/canary` `/help`, bot online/offline, the live feed and end-of-day summary, `format_alert_text` (🟢 info, 🟡 warn, 🔴 critical), orchestrator boot/crash/offline, morning check-in, nightly health check, Kite auto-login. No information or behaviour changed.
