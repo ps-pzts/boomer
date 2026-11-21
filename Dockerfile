@@ -16,9 +16,9 @@ RUN mkdir -p /var/lib/boomer/archive /var/lib/boomer/backups /var/log/boomer
 ENV BOOMER_DB_PATH=/var/lib/boomer/boomer.db
 ENV BOOMER_ARCHIVE_DIR=/var/lib/boomer/archive
 ENV BOOMER_BACKUP_DIR=/var/lib/boomer/backups
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 
 EXPOSE 8080
 
 # Default: dashboard. Override CMD to run the orchestrator.
-CMD ["uvicorn", "src.dashboard.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "dashboard.app:app", "--host", "0.0.0.0", "--port", "8080"]

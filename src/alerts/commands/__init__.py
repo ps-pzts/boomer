@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from src.alerts.commands.control import emergency, pause, resume
-from src.alerts.commands.halt import ack, halt
-from src.alerts.commands.reads import pnl, positions, trades
-from src.alerts.commands.status import status
+from alerts.commands.control import emergency, pause, resume
+from alerts.commands.halt import ack, halt
+from alerts.commands.reads import pnl, positions, trades
+from alerts.commands.status import status
 
 HANDLERS: dict[str, Callable[[str, str], str]] = {
     "/status": status,

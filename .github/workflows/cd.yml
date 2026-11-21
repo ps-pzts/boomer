@@ -127,7 +127,7 @@ jobs:
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'REMOTE'
             cd /opt/boomer
             .venv/bin/python - <<'EOF'
-          from src.db.migrations import run_migrations
+          from db.migrations import run_migrations
           import os
           db = os.environ.get("BOOMER_DB_PATH", "/var/lib/boomer/boomer.db")
           run_migrations(db)

@@ -31,7 +31,7 @@ def _pre_market_executor_setup(
     logger.info("pre_market_executor_setup run_date=%s — refreshing broker tokens", run_date)
 
     try:
-        from src.executor.auto_login import refresh_all_broker_tokens
+        from executor.auto_login import refresh_all_broker_tokens
 
         updated = refresh_all_broker_tokens()
         if updated:
@@ -53,7 +53,7 @@ def _pre_market_executor_setup(
                         exc,
                     )
                     try:
-                        from src.alerts.alerter import get_alerter
+                        from alerts.alerter import get_alerter
 
                         get_alerter().critical(
                             f"Broker re-auth failed — {broker.broker_id}",
@@ -74,7 +74,7 @@ def _pre_market_executor_setup(
     try:  # #74: first run on a fresh DB: capital from the now-valid Kite token
         import datetime as _dt
 
-        from src.orchestrator.bootstrap import bootstrap_capital
+        from orchestrator.bootstrap import bootstrap_capital
 
         bootstrap_capital(
             db_path,
@@ -123,7 +123,7 @@ def _connect_market_feed(feed: object) -> None:
     """(Re)connect the feed with whatever token is now in the environment and make
     sure the NIFTY 50 heartbeat instrument is subscribed. reauthenticate() also
     works from cold (no ticker yet), and replaces yesterday's expired session."""
-    from src.executor.brokers.feeds.base import NIFTY_50
+    from executor.brokers.feeds.base import NIFTY_50
 
     try:
         feed.subscribe([NIFTY_50])  # type: ignore[attr-defined]
@@ -183,7 +183,7 @@ def _feed_health_check(
 
 def _alert_critical(title: str, body: str, source_task_id: str) -> None:
     try:
-        from src.alerts.alerter import get_alerter
+        from alerts.alerter import get_alerter
 
         get_alerter().critical(title, body, source_task_id=source_task_id)
     except Exception as exc:
@@ -212,9 +212,9 @@ def _position_review(run_date: str, run_id: int, db_path: str, **_: object) -> N
     import sqlite3
     from decimal import Decimal
 
-    from src.brain.feature_store import FeatureStore
-    from src.brain.models import Direction, SignalRecord
-    from src.brain.position_review import PositionRecord, PositionReviewer
+    from brain.feature_store import FeatureStore
+    from brain.models import Direction, SignalRecord
+    from brain.position_review import PositionRecord, PositionReviewer
 
     fs = FeatureStore(db_path)
     reviewer = PositionReviewer()

@@ -3,8 +3,8 @@ reported recommendations and queued GTTs."""
 
 from __future__ import annotations
 
-from src.alerts.commands.common import conn, esc, money, now_ist, session_row, today
-from src.alerts.commands.reads import pnl_numbers
+from alerts.commands.common import conn, esc, money, now_ist, session_row, today
+from alerts.commands.reads import pnl_numbers
 
 _STATE_ICON = {
     "trading": "🟢",

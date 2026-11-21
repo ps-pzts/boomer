@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from src.alerts.commands.common import conn, esc, now_ist, session_row
-from src.executor.session_halt import acknowledge_mismatch
-from src.executor.session_machine import KITE_CHECK_HALTS, RESUMABLE
+from alerts.commands.common import conn, esc, now_ist, session_row
+from executor.session_halt import acknowledge_mismatch
+from executor.session_machine import KITE_CHECK_HALTS, RESUMABLE
 
 _ADVICE = {
     "reconcile_mismatch": "Fix it at the broker, then /ack. The next reconcile may then resume.",

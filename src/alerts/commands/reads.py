@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.alerts.commands.common import conn, esc, money, today
+from alerts.commands.common import conn, esc, money, today
 
 _STATE_ICON = {
     "entry_pending": "⏳",

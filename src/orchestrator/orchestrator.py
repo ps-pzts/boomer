@@ -1,6 +1,6 @@
 """Main orchestrator supervisor process.
 
-Entry point: `python -m src.orchestrator.orchestrator`
+Entry point: `python -m orchestrator.orchestrator`
 
 Runs as a long-lived process managed by systemd. On startup:
 1. Runs database migrations
@@ -22,7 +22,8 @@ import sys
 import threading
 from zoneinfo import ZoneInfo
 
-from ..banner import log_boot_sequence, log_crash_recovery, log_shutdown
+from banner import log_boot_sequence, log_crash_recovery, log_shutdown
+
 from .models import BotModeStore, TaskRunStore
 from .scheduler import Scheduler
 from .task_runner import execute_with_retry
@@ -199,7 +200,7 @@ class Orchestrator:
 
     def _emit_task_failure_alert(self, task_id: str, run_date: str) -> None:
         try:
-            from src.alerts.alerter import get_alerter
+            from alerts.alerter import get_alerter
 
             alerter = get_alerter()
             alerter.critical(
@@ -218,8 +219,8 @@ def main() -> None:
     import os
     import pathlib
 
-    from src.banner import print_banner
-    from src.db.migrations import run_migrations
+    from banner import print_banner
+    from db.migrations import run_migrations
 
     logging.basicConfig(
         level=logging.INFO,
@@ -238,7 +239,7 @@ def main() -> None:
 
     migrations_dir = pathlib.Path(__file__).parents[3] / "migrations"
     run_migrations(db_path, migrations_dir)
-    from src.orchestrator.bootstrap import bootstrap_capital, seed_risk_config
+    from orchestrator.bootstrap import bootstrap_capital, seed_risk_config
 
     today = datetime.datetime.now(_IST).date()
     seed_risk_config(db_path, today)  # #74: a fresh DB must be able to trade
@@ -285,7 +286,7 @@ def _build_brokers() -> list:
     kite_token = os.environ.get("KITE_ACCESS_TOKEN", "")
     if kite_key and kite_token:
         try:
-            from src.executor.brokers.kite_broker import KiteBroker
+            from executor.brokers.kite_broker import KiteBroker
 
             kite = KiteBroker()
             kite.authenticate()
@@ -305,8 +306,8 @@ def _build_feed(brokers: list) -> object | None:
     """One KiteFeed per process, sharing KiteBroker's instrument cache. Not connected
     here: at boot (03:00 restart) the token is yesterday's and already expired.
     pre_market_executor_setup connects it at 08:45 after the token refresh."""
-    from src.executor.brokers.feeds.kite_feed import KiteFeed
-    from src.executor.models import BrokerName
+    from executor.brokers.feeds.kite_feed import KiteFeed
+    from executor.models import BrokerName
 
     kite = next((b for b in brokers if b.broker_id == BrokerName.KITE), None)
     if kite is None:
@@ -322,7 +323,7 @@ def _build_bar_recorder(feed: object | None) -> object | None:
     historical candles, so this is the only intraday history the system gets."""
     if feed is None:
         return None
-    from src.collector.live_bars import SessionBarRecorder
+    from collector.live_bars import SessionBarRecorder
 
     root = os.environ.get("BOOMER_MINUTE_BARS_DIR", "/var/lib/boomer/parquet/minute_bars")
     recorder = SessionBarRecorder(root)
@@ -349,9 +350,9 @@ def resume_market_session(
 
     Returns True if the session was resumed.
     """
-    from src.brain.watchlist import WatchlistStore
-    from src.executor.brokers.feeds.base import NIFTY_50
-    from src.orchestrator.models import is_trading_day
+    from brain.watchlist import WatchlistStore
+    from executor.brokers.feeds.base import NIFTY_50
+    from orchestrator.models import is_trading_day
 
     log = logging.getLogger(__name__)
     if feed is None:
@@ -389,8 +390,8 @@ def _build_session(
 ) -> object | None:
     """The Session machine + execution stack (#63). None only if wiring itself
     crashes; a missing feed or capital ledger still yields a session that can't trade."""
-    from src.alerts.alerter import get_alerter
-    from src.orchestrator.execution import build_session
+    from alerts.alerter import get_alerter
+    from orchestrator.execution import build_session
 
     try:
         return build_session(db_path, mode, feed, brokers, alerter=get_alerter())
@@ -402,7 +403,7 @@ def _build_session(
 def _build_cycle(
     db_path: str, session: object | None, feed: object | None, bar_recorder: object | None
 ) -> object | None:
-    from src.orchestrator.execution import build_decision_cycle
+    from orchestrator.execution import build_decision_cycle
 
     try:
         return build_decision_cycle(db_path, session, feed, bar_recorder)
@@ -413,7 +414,7 @@ def _build_cycle(
 
 def _log_trading_mode(db_path: str) -> str:
     """Resolve and log paper/live at boot; returns the mode the session executes in."""
-    from src.executor.trading_mode import (
+    from executor.trading_mode import (
         ENV_VAR,
         LiveTradingAuthorisationStore,
         resolve_trading_mode,

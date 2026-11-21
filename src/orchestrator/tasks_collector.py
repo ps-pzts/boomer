@@ -24,16 +24,16 @@ def _nightly_eod_collector(
     import sqlite3 as _sqlite3
     from pathlib import Path as _Path
 
-    from src.collector.health import CollectionRunStore
-    from src.collector.models import DataSource as _DataSource
-    from src.collector.parser import build_fetcher_registry
+    from collector.health import CollectionRunStore
+    from collector.models import DataSource as _DataSource
+    from collector.parser import build_fetcher_registry
 
     trade_date = _dt.date.fromisoformat(run_date)
     # Bulk deal files are published the next morning — always fetch the previous trading day.
     prev_trading_date = _prev_weekday(trade_date)
     _BULK_DEAL_SOURCES = {_DataSource.NSE_BULK_DEALS, _DataSource.BSE_BULK_DEALS}
 
-    from src.collector.parser import ParseWorker
+    from collector.parser import ParseWorker
 
     db_conn = _sqlite3.connect(db_path, timeout=10)
     store = CollectionRunStore(db_conn)

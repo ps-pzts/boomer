@@ -36,7 +36,8 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from ..banner import log_dashboard_online
+from banner import log_dashboard_online
+
 from .queries import (
     get_capital_view,
     get_open_positions,
@@ -129,7 +130,7 @@ async def today(request: Request, _: AuthDep) -> HTMLResponse:
 
 def _trading_mode_view() -> dict:
     """Paper/live: today's locked mode, what the next session will use (#76)."""
-    from src.executor.trading_mode import (
+    from executor.trading_mode import (
         ENV_VAR,
         LiveTradingAuthorisationStore,
         paper_record,
@@ -239,7 +240,7 @@ async def set_trading_mode(
 ) -> RedirectResponse:
     import urllib.parse
 
-    from src.executor.trading_mode import ENV_VAR, request_mode
+    from executor.trading_mode import ENV_VAR, request_mode
 
     result = request_mode(
         DB_PATH,

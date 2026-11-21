@@ -24,7 +24,7 @@ def _eod_reconciliation(
     if reconciler is not None:
         reconciler.run_eod(run_date=run_date)  # type: ignore[attr-defined]
     if brokers:
-        from src.orchestrator.capital_sync import sync_eod_capital
+        from orchestrator.capital_sync import sync_eod_capital
 
         sync_eod_capital(db_path, brokers, run_date)
     logger.info("eod_reconciliation completed run_date=%s", run_date)
@@ -34,8 +34,8 @@ def _weekly_harvest_check(run_date: str, run_id: int, db_path: str, **_: object)
     """Friday only: evaluate capital harvest threshold and persist if triggered."""
     import datetime as _dt
 
-    from src.capital.harvest import SelfFundingHarvest
-    from src.capital.state import CapitalStateManager
+    from capital.harvest import SelfFundingHarvest
+    from capital.state import CapitalStateManager
 
     capital_mgr = CapitalStateManager(db_path)
     ledger = capital_mgr.latest_ledger()

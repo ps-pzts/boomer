@@ -40,10 +40,10 @@ def build_session(
 ) -> object:
     """Return the SessionController for this process (with or without execution).
     mode None (production): resolved per session day and locked in its row (#76)."""
-    from src.capital.risk_config import RiskConfigStore
-    from src.capital.state import CapitalStateManager
-    from src.executor.session_controller import SessionController
-    from src.orchestrator.models import BotModeStore
+    from capital.risk_config import RiskConfigStore
+    from capital.state import CapitalStateManager
+    from executor.session_controller import SessionController
+    from orchestrator.models import BotModeStore
 
     conn = sqlite3.connect(db_path, timeout=10, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -55,7 +55,7 @@ def build_session(
         return built if built[0] is not None else None
 
     def watchlist_size(day: date) -> int:
-        from src.brain.watchlist import WatchlistStore
+        from brain.watchlist import WatchlistStore
 
         try:
             return len(WatchlistStore(db_path).load(day))
@@ -66,7 +66,7 @@ def build_session(
     def mode_for(day: date) -> str:  # resolved when the day's session starts (#76)
         import os
 
-        from src.executor.trading_mode import ENV_VAR, session_mode
+        from executor.trading_mode import ENV_VAR, session_mode
 
         try:
             return session_mode(db_path, day, os.environ.get(ENV_VAR))
@@ -98,12 +98,12 @@ def _build_execution(
     capital: object,
     alerter: object | None,
 ) -> tuple[object | None, object | None, object | None]:
-    from src.executor.brokers.paper_book import IST, PaperBook
-    from src.executor.models import BrokerName
-    from src.executor.order_manager import OrderManager
-    from src.executor.position_manager import PositionManager
-    from src.executor.trade_lifecycle import TradeSupervisor
-    from src.executor.trading_mode import TradingMode, build_execution_broker
+    from executor.brokers.paper_book import IST, PaperBook
+    from executor.models import BrokerName
+    from executor.order_manager import OrderManager
+    from executor.position_manager import PositionManager
+    from executor.trade_lifecycle import TradeSupervisor
+    from executor.trading_mode import TradingMode, build_execution_broker
 
     if feed is None:
         logger.warning("execution_unavailable reason=no_market_feed")
@@ -138,13 +138,13 @@ def build_decision_cycle(
     if session is None or feed is None:
         logger.error("decision_cycle_unavailable (no session / feed)")
         return None
-    from src.brain.feature_store import FeatureStore
-    from src.brain.features.live import latest_news_at
-    from src.brain.watchlist import WatchlistStore
-    from src.capital.risk_config import RiskConfigStore
-    from src.capital.state import CapitalStateManager
-    from src.executor.decision_cycle import DecisionCycle
-    from src.orchestrator.tasks_brain import _compute_market_regime
+    from brain.feature_store import FeatureStore
+    from brain.features.live import latest_news_at
+    from brain.watchlist import WatchlistStore
+    from capital.risk_config import RiskConfigStore
+    from capital.state import CapitalStateManager
+    from executor.decision_cycle import DecisionCycle
+    from orchestrator.tasks_brain import _compute_market_regime
 
     fs = FeatureStore(db_path)
     regimes: dict[date, str] = {}
