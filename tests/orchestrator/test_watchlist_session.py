@@ -56,11 +56,11 @@ def _add_fno(db_path: str, symbol: str, trade_date: str = "2026-11-18") -> None:
 
 
 def _add_surveillance(db_path: str, *symbols: str, list_date: str = "2026-11-19") -> None:
-    """A fresh ASM list holding `symbols` and a GSM list holding a placeholder."""
+    """A fresh ASM list holding `symbols` and one placeholder in each list."""
     conn = sqlite3.connect(db_path)
-    rows = [("ASM", s) for s in symbols] + [("GSM", "UNRELATED")]
+    rows = [("ASM", s) for s in symbols] + [("ASM", "UNRELATED1"), ("GSM", "UNRELATED")]
     conn.executemany(
-        "INSERT INTO surveillance_list (list_date, list_type, symbol, observed_at)"
+        "INSERT OR IGNORE INTO surveillance_list (list_date, list_type, symbol, observed_at)"
         " VALUES (?, ?, ?, ?)",
         [(list_date, t, s, f"{list_date}T07:30:00") for t, s in rows],
     )
