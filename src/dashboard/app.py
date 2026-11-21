@@ -65,6 +65,7 @@ DB_PATH: str = os.environ.get("BOOMER_DB_PATH", "/var/lib/boomer/boomer.db")
 
 def _verify_credentials(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     expected_user = os.environ.get("BASIC_AUTH_USER", "boomer")
+    # shortcut: unset password defaults to "changeme" on 0.0.0.0, refuse to start (deferred #127)
     expected_pass = os.environ.get("BASIC_AUTH_PASSWORD", "changeme")
     user_ok = secrets.compare_digest(credentials.username.encode(), expected_user.encode())
     pass_ok = secrets.compare_digest(credentials.password.encode(), expected_pass.encode())

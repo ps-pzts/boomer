@@ -20,5 +20,6 @@ ENV PYTHONPATH=/app/src
 
 EXPOSE 8080
 
+# shortcut: fastapi/uvicorn/python-multipart are not installed in this image so this CMD cannot start, install a `dashboard` extra here and in CI (deferred, see tracking issue)
 # Default: dashboard. Override CMD to run the orchestrator.
 CMD ["uvicorn", "dashboard.app:app", "--host", "0.0.0.0", "--port", "8080"]
