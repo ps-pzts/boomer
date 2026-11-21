@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from alerts.format import finish
+from alerts.format import esc, finish
 from alerts.scrub import REDACTED, ScrubFilter, install_log_scrubber, scrub, warn_if_loose_perms
 from alerts.telegram import send_telegram
 
@@ -119,3 +119,22 @@ def test_warn_if_loose_perms(tmp_path, caplog):
     assert len(caplog.records) == 1
     assert "loose" in caplog.text
     assert "666" in caplog.text
+
+
+def test_secret_with_html_chars_is_scrubbed_even_after_esc(monkeypatch):
+    monkeypatch.setenv("KITE_API_SECRET", "ab&c<d>efgh")
+    out = scrub(f"raw ab&c<d>efgh / escaped {esc('ab&c<d>efgh')}")
+    assert "efgh" not in out
+    assert out.count(REDACTED) == 2
+
+
+def test_directory_mask_keeps_755_quiet(tmp_path, caplog):
+    d = tmp_path / "d"
+    d.mkdir()
+    d.chmod(0o755)
+    with caplog.at_level(logging.WARNING, logger="alerts.scrub"):
+        warn_if_loose_perms(d, mask=0o022)
+        assert not caplog.records
+        d.chmod(0o777)
+        warn_if_loose_perms(d, mask=0o022)
+    assert len(caplog.records) == 1

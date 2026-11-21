@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -177,13 +178,11 @@ def _write_env_token(env_path: Path, key: str, value: str) -> None:
             break
     else:
         lines.append(f"{key}={value}")
-    tmp = env_path.with_name(env_path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd, tmp = tempfile.mkstemp(dir=env_path.parent, prefix=env_path.name + ".")  # 0600, unique
     try:
-        os.fchmod(fd, 0o600)  # a pre-existing wider temp file keeps its mode through O_CREAT
         with os.fdopen(fd, "w") as f:
             f.write("\n".join(lines) + "\n")
         os.replace(tmp, env_path)
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        Path(tmp).unlink(missing_ok=True)
         raise

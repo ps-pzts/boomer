@@ -4,6 +4,7 @@ rotated into os.environ mid-run is covered; the regexes catch secrets we do not 
 
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
@@ -22,6 +23,8 @@ _MIN_LEN = 6  # shorter values would shred ordinary words
 def scrub(text: object) -> str:
     out = str(text)
     values = {v for k, v in os.environ.items() if _SECRET_NAME.search(k) and len(v) >= _MIN_LEN}
+    # the HTML-escaped form too: esc() may run before scrub (a secret holding & < >)
+    values |= {html.escape(v, quote=False) for v in values}
     for v in sorted(values, key=len, reverse=True):
         out = out.replace(v, REDACTED)
     out = _PATTERNS[0].sub(REDACTED, out)
@@ -50,13 +53,14 @@ def install_log_scrubber() -> None:
             h.addFilter(ScrubFilter())
 
 
-def warn_if_loose_perms(*paths: str | Path) -> None:
-    """Log one WARNING per existing path that is group/world accessible. Never raises."""
+def warn_if_loose_perms(*paths: str | Path, mask: int = 0o077) -> None:
+    """Log one WARNING per existing path whose mode has any `mask` bit. Never raises.
+    Files use the default 0o077; directories pass 0o022 so a normal 755 stays quiet."""
     log = logging.getLogger(__name__)
     for p in paths:
         try:
             mode = stat.S_IMODE(Path(p).stat().st_mode)
         except OSError:
             continue
-        if mode & 0o077:
+        if mode & mask:
             log.warning("loose_permissions path=%s mode=%o fix=chmod_go-rwx", p, mode)
