@@ -4,10 +4,11 @@ never the events table; every handler takes (db_path, args) and returns HTML tex
 
 from __future__ import annotations
 
-import html
 import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from alerts.format import esc, money  # noqa: F401  (re-exported for the handlers)
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -25,18 +26,6 @@ def now_ist() -> datetime:
 
 def today() -> str:
     return now_ist().date().isoformat()
-
-
-def esc(value: object) -> str:
-    return html.escape(str(value), quote=False)
-
-
-def money(x: float | None) -> str:
-    """Signed rupees with thousands separators: +₹1,250, -₹30, ₹0."""
-    v = float(x or 0.0)
-    if abs(v) < 0.5:
-        return "₹0"
-    return f"{'+' if v > 0 else '-'}₹{abs(v):,.0f}"
 
 
 def session_row(c: sqlite3.Connection, day: str | None = None) -> sqlite3.Row | None:

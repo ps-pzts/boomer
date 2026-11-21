@@ -3,8 +3,9 @@ reported recommendations and queued orders."""
 
 from __future__ import annotations
 
-from alerts.commands.common import conn, esc, money, now_ist, session_row, today
+from alerts.commands.common import conn, session_row, today
 from alerts.commands.reads import pnl_numbers
+from alerts.format import dot, esc, header, money, note, rows, stamp
 
 _STATE_ICON = {
     "trading": "🟢",
@@ -35,25 +36,33 @@ def status(db_path: str, args: str = "") -> str:
     finally:
         c.close()
     bot_mode = bot["mode"] if bot else "auto"
-    lines = [f"<b>📊 Boomer — {day}</b>"]
-    if sess is None:
-        lines.append("Session: not started today")
-    else:
-        icon = _STATE_ICON.get(sess["state"], "⚪")
-        lines.append(f"{icon} Session: <b>{esc(sess['state'])}</b> ({esc(sess['mode']).upper()})")
-        if sess["halt_reason"]:
-            lines.append(f"   halted: {esc(sess['halt_reason'])}  → /halt")
-    lines.append(f"{_MODE_ICON.get(bot_mode, '⚪')} Bot mode: <b>{esc(bot_mode)}</b>")
-    if checks:
-        parts = [
-            f"{'✅' if r['ok'] else '⛔'} {esc(r['check_name'])} {esc(r['ran_at'][11:16])}"
-            for r in checks
-        ]
-        lines.append("Kite checks: " + ", ".join(parts))
-    else:
-        lines.append("Kite checks: none run today")
     n = pnl_numbers(db_path)
-    lines.append(f"Trades: {active} active, {n['closed']} closed ({n['wins']}W/{n['losses']}L)")
-    lines.append(f"P&amp;L: {money(n['realised'])} realised, {money(n['unrealised'])} unrealised")
-    lines.append(f"<i>{now_ist().strftime('%H:%M:%S IST')}</i>")
-    return "\n".join(lines)
+    out = [header("📊", "Boomer", stamp(sess["mode"] if sess else None))]
+    if sess is None:
+        out.append("⚪ Session not started today")
+    else:
+        out.append(f"{_STATE_ICON.get(sess['state'], '⚪')} Session <b>{esc(sess['state'])}</b>")
+        if sess["halt_reason"]:
+            out.append(note(f"halted: {esc(sess['halt_reason'])} → /halt"))
+    out.append(f"{_MODE_ICON.get(bot_mode, '⚪')} Bot <b>{esc(bot_mode)}</b>")
+    out.append(
+        "Kite checks: "
+        + (
+            "  ".join(
+                f"{dot(bool(r['ok']))} {esc(r['check_name'])} {esc(r['ran_at'][11:16])}"
+                for r in checks
+            )
+            or "none run today"
+        )
+    )
+    out.append(
+        rows(
+            [
+                ("Active", active),
+                ("Closed", f"{n['closed']} ({n['wins']}W/{n['losses']}L)"),
+                ("Realised", money(n["realised"])),
+                ("Unrealised", money(n["unrealised"])),
+            ]
+        )
+    )
+    return "\n".join(out)

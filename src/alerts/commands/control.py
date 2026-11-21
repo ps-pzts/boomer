@@ -4,6 +4,7 @@ through BotModeStore, so it is logged in bot_mode_log with `telegram` as the act
 from __future__ import annotations
 
 from alerts.commands.common import conn, session_row, today
+from alerts.format import esc, note
 from orchestrator.models import BotMode, BotModeStore
 
 
@@ -14,11 +15,13 @@ def _set(db_path: str, mode: BotMode, reason: str) -> None:
 def pause(db_path: str, args: str = "") -> str:
     current = BotModeStore(db_path).current_mode()
     if current == BotMode.EMERGENCY_STOP:
-        return "⛔ Emergency stop is active; the day is over. /resume first (from tomorrow)."
+        return "⛔ <b>Emergency stop is active</b>; the day is over.\n" + note(
+            "/resume first (from tomorrow)."
+        )
     _set(db_path, BotMode.PAUSED, "telegram /pause")
-    return (
-        "🟡 <b>Paused.</b> The session halts: no new entries. Open trades stay managed "
-        "(stops, targets, trailing). /resume to continue."
+    return "🟡 <b>Paused</b>\n" + note(
+        "The session halts: no new entries. Open trades stay managed (stops, targets, "
+        "trailing). /resume to continue."
     )
 
 
@@ -30,24 +33,26 @@ def resume(db_path: str, args: str = "") -> str:
         c.close()
     previous = BotModeStore(db_path).current_mode()
     _set(db_path, BotMode.AUTO, "telegram /resume")
-    note = ""
+    out = "🟢 <b>Resumed</b> (mode auto)"
     if previous == BotMode.EMERGENCY_STOP and row is not None and row["state"] in (
         "squaring_off", "closed", "abandoned"
     ):  # fmt: skip
-        note = "\nToday's session already ended after the emergency stop; it trades again tomorrow."
+        out += "\n" + note(
+            "Today's session already ended after the emergency stop; it trades again tomorrow."
+        )
     elif row is not None and row["state"] == "halted":
-        note = f"\nStill halted ({row['halt_reason']}); see /halt."
-    return "🟢 <b>Resumed</b> (mode auto)." + note
+        out += "\n" + note(f"Still halted ({esc(row['halt_reason'])}); see /halt.")
+    return out
 
 
 def emergency(db_path: str, args: str = "") -> str:
     if args.strip().lower() != "confirm":
-        return (
-            "🔴 <b>EMERGENCY STOP</b> cancels every stop and target, exits every position at "
-            "market (including ones the bot did not open) and ends the session for today.\n"
+        return "🔴 <b>EMERGENCY STOP</b>\n" + note(
+            "Cancels every stop and target, exits every position at market (including ones "
+            "the bot did not open) and ends the session for today.\n"
             "Send <code>/emergency confirm</code> to proceed."
         )
     _set(db_path, BotMode.EMERGENCY_STOP, "telegram /emergency confirm")
-    return (
-        "🔴 <b>EMERGENCY STOP engaged.</b> Flattening on the next session tick (within a minute)."
+    return "🔴 <b>EMERGENCY STOP engaged</b>\n" + note(
+        "Flattening on the next session tick (within a minute)."
     )

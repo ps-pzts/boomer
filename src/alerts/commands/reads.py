@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from alerts.commands.common import conn, esc, money, today
+from alerts.commands.common import conn, today
+from alerts.format import capped, dot, esc, header, money, rows, stamp
 
 _STATE_ICON = {
     "entry_pending": "⏳",
@@ -17,30 +18,36 @@ _STATE_ICON = {
 def positions(db_path: str, args: str = "") -> str:
     c = conn(db_path)
     try:
-        rows = c.execute(
+        rows_ = c.execute(
             "SELECT symbol, quantity, average_entry_price, current_price, unrealised_pnl,"
             " stop_loss_price, target_price, unprotected_flag FROM positions"
             " WHERE is_open=1 AND track='intraday' ORDER BY entry_at"
         ).fetchall()
     finally:
         c.close()
-    if not rows:
-        return "<b>Open positions</b>\nNone."
-    lines = ["<b>Open positions</b>"]
-    for r in rows:
-        flag = "  🚨 <b>UNPROTECTED</b>" if r["unprotected_flag"] else ""
-        lines.append(
-            f"<b>{esc(r['symbol'])}</b> {r['quantity']} @ {r['average_entry_price']:,.2f}"
-            f" (now {r['current_price']:,.2f}, {money(r['unrealised_pnl'])})\n"
-            f"  🛑 stop {r['stop_loss_price']:,.2f}  🎯 target {r['target_price']:,.2f}{flag}"
+    head = header("📈", "Open positions" + (f" ({len(rows_)})" if rows_ else ""), stamp())
+    if not rows_:
+        return head + "\nNone."
+    return (
+        head
+        + "\n"
+        + capped(
+            [
+                f"{dot(r['unrealised_pnl'] >= 0)} <b>{esc(r['symbol'])}</b> {r['quantity']} @ "
+                f"{r['average_entry_price']:,.2f}→{r['current_price']:,.2f} "
+                f"{money(r['unrealised_pnl'])}"
+                f" · 🛑 {r['stop_loss_price']:,.2f} 🎯 {r['target_price']:,.2f}"
+                + ("  🚨 <b>UNPROTECTED</b>" if r["unprotected_flag"] else "")
+                for r in rows_
+            ]
         )
-    return "\n".join(lines)
+    )
 
 
 def trades(db_path: str, args: str = "") -> str:
     c = conn(db_path)
     try:
-        rows = c.execute(
+        rows_ = c.execute(
             "SELECT symbol, state, planned_quantity, filled_quantity, entry_price, stop_price,"
             " target_price, exit_reason, realised_pnl FROM intraday_brackets"
             " WHERE session_date=? ORDER BY created_at",
@@ -48,22 +55,23 @@ def trades(db_path: str, args: str = "") -> str:
         ).fetchall()
     finally:
         c.close()
-    if not rows:
-        return "<b>Today's trades</b>\nNone yet."
-    lines = [f"<b>Today's trades</b> ({len(rows)})"]
-    for r in rows:
-        qty = r["filled_quantity"] or r["planned_quantity"]
+    head = header("🧾", "Today's trades" + (f" ({len(rows_)})" if rows_ else ""), stamp())
+    if not rows_:
+        return head + "\nNone yet."
+    items = []
+    for r in rows_:
         tail = ""
         if r["state"] in ("closed", "cancelled"):
             tail = f" — {esc(r['exit_reason'] or r['state'])}"
             if r["realised_pnl"] is not None:
                 tail += f", {money(r['realised_pnl'])}"
-        lines.append(
-            f"{_STATE_ICON.get(r['state'], '•')} <b>{esc(r['symbol'])}</b> {qty} "
-            f"{esc(r['state'])}: entry {r['entry_price']:,.2f}, stop {r['stop_price']:,.2f}, "
-            f"target {r['target_price']:,.2f}{tail}"
+        items.append(
+            f"{_STATE_ICON.get(r['state'], '•')} <b>{esc(r['symbol'])}</b> "
+            f"{r['filled_quantity'] or r['planned_quantity']} {esc(r['state'])}{tail}\n"
+            f"   entry {r['entry_price']:,.2f} · stop {r['stop_price']:,.2f}"
+            f" · target {r['target_price']:,.2f}"
         )
-    return "\n".join(lines)
+    return head + "\n" + capped(items, 12)
 
 
 def pnl_numbers(db_path: str, day: str | None = None) -> dict:
@@ -93,10 +101,16 @@ def pnl_numbers(db_path: str, day: str | None = None) -> dict:
 
 def pnl(db_path: str, args: str = "") -> str:
     n = pnl_numbers(db_path)
+    total = n["realised"] + n["unrealised"]
     return (
-        "<b>P&amp;L today</b>\n"
-        f"Realised: {money(n['realised'])} over {n['closed']} closed "
-        f"({n['wins']} won, {n['losses']} lost)\n"
-        f"Unrealised: {money(n['unrealised'])} on {n['open']} open\n"
-        f"Total: {money(n['realised'] + n['unrealised'])}"
+        header("💰", "P&L today", stamp())
+        + f"\n{dot(total >= 0)} <b>{money(total)}</b> total\n"
+        + rows(
+            [
+                ("Realised", money(n["realised"])),
+                ("Closed", f"{n['closed']} ({n['wins']} won, {n['losses']} lost)"),
+                ("Unrealised", money(n["unrealised"])),
+                ("Open", n["open"]),
+            ]
+        )
     )

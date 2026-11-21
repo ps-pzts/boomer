@@ -77,6 +77,12 @@
 
 ## Change log
 
+### 2026-11-21 — Enhancement: modern, consistent Telegram messages (#139)
+
+- **Added:** `src/alerts/format.py` (pure helpers: `header`, `stamp` (IST), `rows` aligned in `<pre>`, `note` blockquote, `capped` "+N more", `finish` = 4096 cap with tag balancing; `esc`/`money` moved here, re-exported by `alerts/commands/common.py`). Every message site now uses it: all bot commands, `/mode` `/canary` `/help`, bot online/offline, the live feed and end-of-day summary, `format_alert_text` (🟢 info, 🟡 warn, 🔴 critical), orchestrator boot/crash/offline, morning check-in, nightly health check, Kite auto-login. No information or behaviour changed.
+- **Fixed in passing:** alert title/body were not HTML-escaped (a `<` or `&` in a CRITICAL body made Telegram reject it); `send_telegram` and the bot's `_send` now cap at Telegram's 4096 limit instead of sending a message Telegram refuses.
+- **Not done:** inline keyboards/buttons (possible follow-up).
+
 ### 2026-11-21 — Refactor: delete the dead CNC GTT path (#129)
 
 - **Removed:** `executor/gtt_manager.py` (332 lines) and its tests, `PositionManager.trail_stop`/`link_gtt_oco` and the `gtt_manager` ctor arg (production passed `None` since #92), the `Broker` ABC GTT methods, `KiteBroker.modify_gtt` + `gtt_modified_legs`, `GttOrderRecord`/`GttStatus`, stale GTT docstrings. Guard test `tests/executor/test_no_gtt_placement.py` fails if any module outside the backtester stack defines or calls a GTT placement.

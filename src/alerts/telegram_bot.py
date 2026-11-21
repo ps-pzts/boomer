@@ -20,6 +20,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from alerts import commands
+from alerts.format import esc, finish, header, note, rows, stamp
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def _call(token: str, method: str, payload: dict, timeout: int = 15) -> dict:
 
 
 def _send(token: str, chat_id: str | int, text: str, reply_markup: dict | None = None) -> None:
-    payload: dict = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    payload: dict = {"chat_id": chat_id, "text": finish(text), "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = reply_markup
     _call(token, "sendMessage", payload)
@@ -79,11 +80,18 @@ def handle_mode(db_path: str, text: str) -> str:
         nxt = resolve_trading_mode(env, LiveTradingAuthorisationStore(db_path)).mode.value
         rec = paper_record(db_path)
         return (
-            f"<b>Trading mode</b>\nToday: {session_mode(db_path, today, env).upper()}\n"
-            f"Next session: {nxt.upper()}\n"
-            f"Paper: {rec['paper_sessions_closed']} sessions closed, "
-            f"{rec['paper_trades']} trades, P&amp;L ₹{rec['paper_realised_pnl']:,.2f}, "
-            f"{rec['unprotected_exits']} unprotected exits"
+            header("⚙️", "Trading mode", stamp())
+            + "\n"
+            + rows(
+                [
+                    ("Today", session_mode(db_path, today, env).upper()),
+                    ("Next session", nxt.upper()),
+                    ("Paper sessions closed", rec["paper_sessions_closed"]),
+                    ("Paper trades", rec["paper_trades"]),
+                    ("Paper P&L", f"₹{rec['paper_realised_pnl']:,.2f}"),
+                    ("Unprotected exits", rec["unprotected_exits"]),
+                ]
+            )
         )
     result = request_mode(
         db_path,
@@ -94,8 +102,12 @@ def handle_mode(db_path: str, text: str) -> str:
         confirmed=len(parts) > 2 and parts[2] == "confirm",
         today=today,
     )
-    hint = "\nSend /mode live confirm to proceed." if "Repeat with" in result.message else ""
-    return ("✅ " if result.ok else "⛔ ") + result.message + hint
+    hint = (
+        "\n" + note("Send <code>/mode live confirm</code> to proceed.")
+        if "Repeat with" in result.message
+        else ""
+    )
+    return ("✅ " if result.ok else "⛔ ") + esc(result.message) + hint
 
 
 def handle_toggle(db_path: str, text: str) -> str:
@@ -129,21 +141,21 @@ def handle_canary(db_path: str) -> str:
     try:
         broker = kite_checks.kite_broker_from_env()
     except Exception as exc:
-        return f"⛔ Could not connect to Kite: {exc}"
+        return f"⛔ <b>Could not connect to Kite</b>: {esc(exc)}"
     if broker is None:
-        return "⛔ Kite not configured: set KITE_API_KEY and KITE_ACCESS_TOKEN."
+        return "⛔ <b>Kite not configured</b>\n" + note("Set KITE_API_KEY and KITE_ACCESS_TOKEN.")
     reports = kite_checks.rerun(db_path, broker)
-    lines = ["<b>Kite checks re-run</b>"]
+    lines = [header("🔌", "Kite checks re-run", stamp())]
     for r in reports:
         if r.ok:
-            lines.append(f"✅ {r.kind} passed")
+            lines.append(f"🟢 {esc(r.kind)} passed")
         else:
-            lines.append(f"⛔ {r.kind} FAILED: " + "; ".join(r.failures()))
+            lines.append(f"🔴 {esc(r.kind)} <b>FAILED</b>: " + esc("; ".join(r.failures())))
     if len(reports) == 1:
         why = "pre-flight failed" if not reports[0].ok else "only 09:15-15:20 on a trading day"
-        lines.append(f"canary not run ({why})")
+        lines.append(note(f"canary not run ({why})"))
     elif all(r.ok for r in reports):
-        lines.append("Trading may resume after the next clean reconcile.")
+        lines.append(note("Trading may resume after the next clean reconcile."))
     return "\n".join(lines)
 
 
@@ -202,7 +214,7 @@ class TelegramBot:
                 reply = commands.run(self._db_path, text)
             except Exception as exc:
                 logger.exception("command_failed cmd=%s", cmd)
-                reply = f"⛔ {cmd} failed: {exc}"
+                reply = f"⛔ <b>{esc(cmd)} failed</b>: {esc(exc)}"
             _send(self._token, chat, reply or "Unknown command. Send /help.")
 
     def run_forever(self) -> None:
@@ -213,9 +225,12 @@ class TelegramBot:
             _send(
                 self._token,
                 self._chat_id,
-                f"🔴 <b>Boomer bot going offline</b>\n"
-                f"Graceful shutdown (signal {signum}). "
-                "Commands will not be processed until restarted.",
+                header("🔴", "Boomer bot going offline", stamp())
+                + "\n"
+                + note(
+                    f"Graceful shutdown (signal {signum}). "
+                    "Commands will not be processed until restarted."
+                ),
             )
             raise SystemExit(0)
 
@@ -223,7 +238,11 @@ class TelegramBot:
         _signal.signal(_signal.SIGINT, _shutdown)
 
         logger.info("telegram_bot_starting chat_id=%s", self._chat_id)
-        _send(self._token, self._chat_id, "🤖 <b>Boomer bot online.</b> Send /status.")
+        _send(
+            self._token,
+            self._chat_id,
+            header("🟢", "Boomer bot online", stamp()) + "\n" + note("Send /status."),
+        )
         while True:
             try:
                 updates = self._get_updates()

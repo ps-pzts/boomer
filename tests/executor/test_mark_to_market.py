@@ -16,6 +16,7 @@ from alerts import commands
 from db.migrations import run_migrations
 from executor.position_manager import PositionManager
 from executor.trade_lifecycle import TradeSupervisor
+from tests.alerts.plain import plain
 from tests.executor.test_trade_lifecycle import _MIGRATIONS, Harness, _filled_and_protected
 
 
@@ -96,6 +97,6 @@ def test_telegram_positions_and_pnl_read_live_numbers(h):
     _filled_and_protected(h)
     _with_price(h, {"INFY": 101.5}).reconcile()
     db_path = h.db.execute("PRAGMA database_list").fetchone()[2]
-    assert "now 101.50, +₹15" in commands.run(db_path, "/positions")
-    pnl = commands.run(db_path, "/pnl")
-    assert "Unrealised: +₹15 on 1 open" in pnl and "Total: +₹15" in pnl
+    assert "10 @ 100.00→101.50 +₹15" in plain(commands.run(db_path, "/positions"))
+    pnl = plain(commands.run(db_path, "/pnl"))
+    assert "Unrealised +₹15 Open 1" in pnl and "+₹15 total" in pnl

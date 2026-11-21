@@ -16,6 +16,7 @@ from executor.trading_mode import (
     request_mode,
     session_mode,
 )
+from tests.alerts.plain import plain
 
 DAY = date(2026, 11, 19)
 _MIGRATIONS = Path(__file__).parents[2] / "migrations"
@@ -158,7 +159,7 @@ def test_telegram_mode_command(db, monkeypatch, ready):
     from alerts.telegram_bot import handle_mode
 
     monkeypatch.setenv("BOOMER_TRADING_MODE", "live")
-    assert "Today: PAPER" in handle_mode(db, "/mode")
+    assert "Today PAPER" in plain(handle_mode(db, "/mode"))
     assert "/mode live confirm" in handle_mode(db, "/mode live")
     assert handle_mode(db, "/mode live confirm").startswith("✅")
-    assert "Next session: LIVE" in handle_mode(db, "/mode")
+    assert "Next session LIVE" in plain(handle_mode(db, "/mode"))
