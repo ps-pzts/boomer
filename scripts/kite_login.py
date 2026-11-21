@@ -30,13 +30,11 @@ def main() -> None:
         print("ERROR: Set KITE_API_KEY and KITE_API_SECRET in your .env file.")
         sys.exit(1)
 
-    from kiteconnect import KiteConnect  # type: ignore[import-untyped]
-
-    kite = KiteConnect(api_key=api_key)
+    from executor.brokers.kite_session import exchange_request_token, login_url
 
     print("\n── Kite Login ────────────────────────────────────────")
     print("1. Open this URL in your browser:")
-    print(f"\n   {kite.login_url()}\n")
+    print(f"\n   {login_url(api_key)}\n")
     print("2. Log in with your Zerodha credentials.")
     print("3. After login you will be redirected to a URL like:")
     print("   https://127.0.0.1/?request_token=XXXXXXXX&action=login&status=success")
@@ -49,12 +47,10 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        data = kite.generate_session(request_token, api_secret=api_secret)
+        access_token = exchange_request_token(api_key, api_secret, request_token)
     except Exception as exc:
         print(f"ERROR: Token exchange failed — {exc}")
         sys.exit(1)
-
-    access_token = data["access_token"]
 
     print("\n── Done ──────────────────────────────────────────────")
     print(f"KITE_ACCESS_TOKEN={access_token}")

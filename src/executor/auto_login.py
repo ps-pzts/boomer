@@ -21,6 +21,8 @@ from urllib.parse import parse_qs, urlparse
 import pyotp
 import requests
 
+from executor.brokers.kite_session import exchange_request_token
+
 logger = logging.getLogger(__name__)
 
 # .env path relative to this file (two levels up to repo root)
@@ -78,11 +80,7 @@ def kite_auto_login(
     logger.debug("kite_auto_login: request_token=%s…", request_token[:8])
 
     # Step 4: exchange request_token for access_token
-    from kiteconnect import KiteConnect  # type: ignore[import-untyped]
-
-    kite = KiteConnect(api_key=api_key)
-    data = kite.generate_session(request_token, api_secret=api_secret)
-    access_token = data["access_token"]
+    access_token = exchange_request_token(api_key, api_secret, request_token)
     logger.info("kite_auto_login: success user_id=%s", user_id)
     return access_token
 
