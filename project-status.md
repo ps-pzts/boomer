@@ -77,6 +77,10 @@
 
 ## Change log
 
+### 2026-11-21 — Bug: get_ltp returned unbounded-stale prices; silent excepts (#132)
+
+- **Symptom/cause/fix:** `KiteBroker.get_ltp` tier 3 returned the last known tick/REST value at any age; removed (it is always older than `_LTP_STALENESS_SECONDS` by construction), so callers get None. Each failed tier and the final None log at WARNING. The two `except: pass` in `get_ltp` and the alerter one in `pre_market_executor_setup` now log WARNING. `live_capital_view` still values a no-LTP position at entry, now with a WARNING. KiteSim/paper goes through the same `get_ltp`, so it is covered.
+
 ### 2026-11-21 — Refactor: Kite login SDK calls moved into the broker layer (#126)
 
 - **What:** `kite_auto_login` and `scripts/kite_login.py` imported `kiteconnect` directly (CLAUDE.md §9). The token exchange and login URL now live in `executor/brokers/kite_session.py`; the TOTP/browser scraping stays in `auto_login.py`. Behaviour unchanged. `tests/test_sdk_boundary.py` AST-scans `src/` and `scripts/` and fails on any `kiteconnect` import outside `executor/brokers/` (tests may fake the SDK).

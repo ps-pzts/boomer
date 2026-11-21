@@ -190,3 +190,19 @@ def test_worked_example_single_track(mgr: CapitalStateManager) -> None:
     )
     assert row30.high_water_mark == Decimal("50450")
     assert row30.peak_date == date(2026, 2, 1)
+
+
+def test_live_view_values_position_at_entry_and_warns_when_ltp_missing(mgr, caplog) -> None:
+    mgr.initialise(Decimal("100000"), date(2026, 11, 19))
+
+    class NoLtp:
+        def get_ltp(self, symbol, exchange):
+            return None
+
+    pos = {"symbol": "INFY", "exchange": "NSE", "track": "intraday", "quantity": 10,
+           "entry_price": "1500"}  # fmt: skip
+    with caplog.at_level("WARNING"):
+        view = mgr.live_capital_view(NoLtp(), [pos])
+    assert view.open_position_value == Decimal("15000")  # 10 x 1500 entry
+    assert view.intraday_unrealised_pnl == Decimal("0")
+    assert "no LTP for INFY" in caplog.text
