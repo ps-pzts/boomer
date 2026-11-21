@@ -16,10 +16,11 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
+from collector.dateparse import ParseTally, parse_date
 from collector.models import (
     DataSource,
     Exchange,
@@ -137,6 +138,7 @@ def _parse_nse_bulk_csv(
     text = body.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     inserted = 0
+    tally = ParseTally("NSE bulk deals")
     for row in reader:
         symbol = (row.get("Symbol") or row.get("SYMBOL") or "").strip()
         client = (row.get("Client Name") or row.get("CLIENT NAME") or "").strip()
@@ -171,6 +173,10 @@ def _parse_nse_bulk_csv(
 
         tx_type = TransactionType.BUY if "B" in tx_raw else TransactionType.SELL
         deal_date = _parse_date(date_str)
+        if deal_date is None:
+            tally.fail(date_str)
+            continue
+        tally.ok()
         client_norm = _normalize_client_name(client)
         deal_id = str(uuid.uuid4())
 
@@ -208,6 +214,7 @@ def _parse_nse_bulk_csv(
         except Exception as exc:
             logger.warning("NSE bulk deals: insert failed symbol=%s: %s", symbol, exc)
 
+    tally.finish(raw_row.raw_id, db)
     db.commit()
     return inserted
 
@@ -231,6 +238,7 @@ def _parse_bse_bulk_json(
 
     rows = data.get("Table", [])
     inserted = 0
+    tally = ParseTally("BSE bulk deals")
 
     for row in rows:
         scrip_code = str(row.get("SCRIP_CODE", "")).strip()
@@ -249,6 +257,10 @@ def _parse_bse_bulk_json(
 
         tx_type = TransactionType.BUY if tx_raw == "B" else TransactionType.SELL
         deal_date = _parse_date(date_str)
+        if deal_date is None:
+            tally.fail(date_str)
+            continue
+        tally.ok()
         client_norm = _normalize_client_name(client)
         deal_id = str(uuid.uuid4())
 
@@ -286,17 +298,17 @@ def _parse_bse_bulk_json(
         except Exception as exc:
             logger.warning("BSE bulk deals: insert failed scrip=%s: %s", scrip_code, exc)
 
+    tally.finish(raw_row.raw_id, db)
     db.commit()
     return inserted
 
 
-def _parse_date(s: str) -> str:
-    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%d-%B-%Y"):
-        try:
-            return datetime.strptime(s.strip(), fmt).date().isoformat()
-        except ValueError:
-            continue
-    return date.today().isoformat()
+_DATE_FORMATS = ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%d-%B-%Y")
+
+
+def _parse_date(s: str) -> str | None:
+    """ISO date, or None if unparseable (never an invented date — #54)."""
+    return parse_date(s, _DATE_FORMATS)
 
 
 def _normalize_client_name(name: str) -> str:

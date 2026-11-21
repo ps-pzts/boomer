@@ -12,11 +12,11 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from collector.base import BaseFetcher, _fmt_dt
+from collector.dateparse import ParseTally, parse_datetime
 from collector.models import (
     DataSource,
     Exchange,
@@ -70,6 +70,7 @@ class BseFilingsFetcher(BaseFetcher):
         data = json.loads(body)
         records = data.get("Table", [])
         inserted = 0
+        tally = ParseTally("BSE filings")
         for rec in records:
             filing_id = str(uuid.uuid4())
             # BSE field names as of 2024 — validate against live response on first deploy.
@@ -80,7 +81,12 @@ class BseFilingsFetcher(BaseFetcher):
             scrip_code = str(rec.get("SCRIP_CD", "") or "")
             attachment_url = rec.get("ATTACHMENTURL", "")
 
-            filing_date, filing_time = _parse_bse_datetime(filing_date_str)
+            parsed_dt = _parse_bse_datetime(filing_date_str)
+            if parsed_dt is None:
+                tally.fail(filing_date_str)
+                continue
+            tally.ok()
+            filing_date, filing_time = parsed_dt
             category = _classify_bse_category(category_raw, headline)
             # observed_at = time we fetched; filing_date = when BSE says it was filed.
             observed_at = raw_row.fetched_at
@@ -125,24 +131,22 @@ class BseFilingsFetcher(BaseFetcher):
             except Exception as exc:
                 logger.warning("BSE filings: failed to insert record %s: %s", filing_id, exc)
 
+        tally.finish(raw_row.raw_id, self._db)
         self._db.commit()
         self.mark_parsed(raw_row.raw_id, self.parser_version, ParseStatus.SUCCESS)
         return inserted
 
 
-def _parse_bse_datetime(dt_str: str) -> tuple[str, str | None]:
-    """Return (ISO date, ISO time | None) from BSE datetime string."""
-    if not dt_str:
-        return datetime.now(IST).date().isoformat(), None
-    dt_str = dt_str.strip()
-    for fmt in ("%d %b %Y %I:%M %p", "%d/%m/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(dt_str, fmt)
-            has_time = "%H" in fmt or "%I" in fmt
-            return dt.date().isoformat(), dt.strftime("%H:%M:%S") if has_time else None
-        except ValueError:
-            continue
-    return dt_str[:10], None
+_DATETIME_FORMATS = ("%d %b %Y %I:%M %p", "%d/%m/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d")
+
+
+def _parse_bse_datetime(dt_str: str) -> tuple[str, str | None] | None:
+    """(ISO date, ISO time | None), or None if unparseable (never an invented date — #54)."""
+    parsed = parse_datetime(dt_str, _DATETIME_FORMATS)
+    if parsed is None:
+        return None
+    has_time = ":" in dt_str  # only the time-bearing formats contain a clock
+    return parsed.date().isoformat(), parsed.strftime("%H:%M:%S") if has_time else None
 
 
 def _classify_bse_category(bse_category: str, headline: str) -> FilingCategory:

@@ -17,6 +17,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from collector.base import BaseFetcher, _fmt_dt, _now_ist
+from collector.dateparse import ParseTally, parse_datetime
 from collector.models import (
     DataSource,
     Exchange,
@@ -87,6 +88,7 @@ class NseFilingsFetcher(BaseFetcher):
         body = self.load_raw_body(raw_row.content_path)
         records = json.loads(body)
         inserted = 0
+        tally = ParseTally("NSE filings")
         for rec in records:
             filing_id = str(uuid.uuid4())
             # NSE field names as of 2024 — verify against live response on first deploy.
@@ -97,7 +99,12 @@ class NseFilingsFetcher(BaseFetcher):
             attachment_url = rec.get("attchmntFile", "")
             category_raw = rec.get("categoryDesc", "") or rec.get("an_type", "") or ""
 
-            filing_date, filing_time = _parse_nse_datetime(bcast_date)
+            parsed_dt = _parse_nse_datetime(bcast_date)
+            if parsed_dt is None:
+                tally.fail(bcast_date)
+                continue
+            tally.ok()
+            filing_date, filing_time = parsed_dt
             category = _classify_nse_category(category_raw, headline)
             observed_at = raw_row.fetched_at
 
@@ -141,6 +148,7 @@ class NseFilingsFetcher(BaseFetcher):
             except Exception as exc:
                 logger.warning("NSE filings: failed to insert record %s: %s", filing_id, exc)
 
+        tally.finish(raw_row.raw_id, self._db)
         self._db.commit()
         self.mark_parsed(raw_row.raw_id, self.parser_version, ParseStatus.SUCCESS)
         return inserted
@@ -156,19 +164,22 @@ class NseFilingsFetcher(BaseFetcher):
         logger.debug("NSE session cookies refreshed")
 
 
-def _parse_nse_datetime(dt_str: str) -> tuple[str, str | None]:
-    if not dt_str:
-        return datetime.now(IST).date().isoformat(), None
-    dt_str = dt_str.strip()
-    fmts = ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
-    for fmt in fmts:
-        try:
-            dt = datetime.strptime(dt_str, fmt)
-            has_time = any(tok in fmt for tok in ("%H", "%I"))
-            return dt.date().isoformat(), dt.strftime("%H:%M:%S") if has_time else None
-        except ValueError:
-            continue
-    return dt_str[:10], None
+_DATETIME_FORMATS = (
+    "%d-%b-%Y %H:%M:%S",
+    "%d-%b-%Y",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d",
+)
+
+
+def _parse_nse_datetime(dt_str: str) -> tuple[str, str | None] | None:
+    """(ISO date, ISO time | None), or None if unparseable (never an invented date — #54)."""
+    parsed = parse_datetime(dt_str, _DATETIME_FORMATS)
+    if parsed is None:
+        return None
+    has_time = ":" in dt_str  # only the time-bearing formats contain a clock
+    return parsed.date().isoformat(), parsed.strftime("%H:%M:%S") if has_time else None
 
 
 def _classify_nse_category(nse_category: str, headline: str) -> FilingCategory:

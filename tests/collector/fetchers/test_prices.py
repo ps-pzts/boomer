@@ -160,3 +160,44 @@ def test_validate_raises_on_404(tmp_path):
     )
     with pytest.raises(Exception, match="404"):
         fetcher.validate(bad)
+
+
+def test_parse_date_unparseable_returns_none_not_today():
+    """Regression #54: used to return date.today(), writing prices under today."""
+    assert _parse_date("garbage") is None
+    assert _parse_date("") is None
+
+
+PRICE_HEADER = NSE_BHAVCOPY_CSV.split(b"\n", 1)[0] + b"\n"
+
+
+def _price_row(date_str: str, symbol: str) -> bytes:
+    return (
+        f"{date_str},{date_str},CM,CM,EQ,{symbol},INE000A00001,{symbol},EQ,"
+        "100.00,110.00,90.00,105.00,105.00,100.00,1000,105000.00\n"
+    ).encode()
+
+
+def test_parse_skips_unparseable_date_row(tmp_path, caplog):
+    body = PRICE_HEADER + b"".join(_price_row("2024-04-22", f"S{i}") for i in range(30))
+    body += _price_row("22.04.2024", "BADDATE")  # 1/31 < 5%
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    with caplog.at_level("WARNING"):
+        count = _parse_nse_bhavcopy_csv(body, raw_row, db, "v1")
+    assert count == 30
+    bad = db.execute("SELECT COUNT(*) FROM prices WHERE stock_symbol='BADDATE'").fetchone()[0]
+    assert bad == 0
+    assert {r[0] for r in db.execute("SELECT DISTINCT trade_date FROM prices")} == {"2024-04-22"}
+    assert "1 of 31" in caplog.text
+
+
+def test_parse_rejects_file_when_dates_all_fail(tmp_path):
+    from collector.dateparse import DateFormatError
+
+    body = PRICE_HEADER + b"".join(_price_row("22.04.2024", f"S{i}") for i in range(5))
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    with pytest.raises(DateFormatError):
+        _parse_nse_bhavcopy_csv(body, raw_row, db, "v1")
+    assert db.execute("SELECT COUNT(*) FROM prices").fetchone()[0] == 0

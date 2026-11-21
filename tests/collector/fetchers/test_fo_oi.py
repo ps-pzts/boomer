@@ -176,3 +176,55 @@ def test_validate_404_raises(tmp_path):
     )
     with pytest.raises(Exception, match="404"):
         fetcher.validate(bad)
+
+
+def test_parse_date_unparseable_returns_none_not_today():
+    """Regression #54: used to return date.today() and invent a trade_date."""
+    assert _parse_date("not-a-date") is None
+    assert _parse_date("") is None
+
+
+FO_OLD_HEADER = (
+    b"SYMBOL,INSTRUMENT,EXPIRY_DT,STRIKE_PR,OPTION_TYP,OPEN,HIGH,LOW,CLOSE,"
+    b"SETTLE_PR,CONTRACTS,VAL_INLAKH,OPEN_INT,CHG_IN_OI,TIMESTAMP\n"
+)
+
+
+def _fo_row(expiry: str, ts: str) -> bytes:
+    return (
+        f"RELIANCE,FUTSTK,{expiry},0,XX,2900,2960,2890,2920,2920,15000,4380000,50000,2000,{ts}\n"
+    ).encode()
+
+
+def test_parse_skips_row_with_bad_trade_date_and_logs(tmp_path, caplog):
+    """Regression #54: a bad trade date must skip the row, not stamp today's date."""
+    body = FO_OLD_HEADER + b"".join(_fo_row("25-Apr-2024", "22-Apr-2024") for _ in range(30))
+    body += _fo_row("25-Apr-2024", "??")  # 1/31 = 3.2% < 5%
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    with caplog.at_level("WARNING"):
+        count = _parse_fo_bhavcopy_csv(body, raw_row, db, "v1")
+    assert count == 30
+    dates = {r[0] for r in db.execute("SELECT DISTINCT trade_date FROM fo_oi_daily")}
+    assert dates == {"2024-04-22"}
+    assert "1 of 31" in caplog.text
+
+
+def test_parse_skips_row_with_bad_expiry(tmp_path):
+    body = FO_OLD_HEADER + b"".join(_fo_row("25-Apr-2024", "22-Apr-2024") for _ in range(30))
+    body += _fo_row("", "22-Apr-2024")
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    assert _parse_fo_bhavcopy_csv(body, raw_row, db, "v1") == 30
+
+
+def test_parse_rejects_file_when_most_dates_fail(tmp_path):
+    """A format change (every date unparseable) rejects the file and writes nothing."""
+    from collector.dateparse import DateFormatError
+
+    body = FO_OLD_HEADER + b"".join(_fo_row("25-Apr-2024", "22.04.2024") for _ in range(10))
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    with pytest.raises(DateFormatError):
+        _parse_fo_bhavcopy_csv(body, raw_row, db, "v1")
+    assert db.execute("SELECT COUNT(*) FROM fo_oi_daily").fetchone()[0] == 0

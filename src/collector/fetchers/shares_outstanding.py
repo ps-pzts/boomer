@@ -18,10 +18,11 @@ import io
 import logging
 import sqlite3
 import zipfile
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
+from collector.dateparse import ParseTally, parse_date
 from collector.models import DataSource, FetchResult, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,7 @@ def _parse_mktcap_csv(
         return 0
 
     inserted = 0
+    tally = ParseTally("Shares outstanding")
     for row in reader:
         series = (row.get("SERIES") or "").strip()
         if series not in ("EQ", "BE", ""):
@@ -108,10 +110,15 @@ def _parse_mktcap_csv(
         symbol = (row.get("SYMBOL") or "").strip()
         isin = (row.get("ISIN") or "").strip()
         date_str = (row.get("DATE") or row.get("DATE1") or "").strip()
-        trade_date = _parse_date(date_str)
 
         if not symbol or not isin:
             continue
+
+        trade_date = _parse_date(date_str)
+        if trade_date is None:
+            tally.fail(date_str)
+            continue
+        tally.ok()
 
         try:
             if has_total_shares:
@@ -153,14 +160,14 @@ def _parse_mktcap_csv(
         except Exception as exc:
             logger.warning("Shares outstanding: insert failed isin=%s: %s", isin, exc)
 
+    tally.finish(raw_row.raw_id, db)
     db.commit()
     return inserted
 
 
-def _parse_date(s: str) -> str:
-    for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d%b%Y"):
-        try:
-            return datetime.strptime(s.strip(), fmt).date().isoformat()
-        except ValueError:
-            continue
-    return date.today().isoformat()
+_DATE_FORMATS = ("%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d%b%Y")
+
+
+def _parse_date(s: str) -> str | None:
+    """ISO date, or None if unparseable (never an invented date — #54)."""
+    return parse_date(s, _DATE_FORMATS)

@@ -208,3 +208,70 @@ def test_nse_validate_empty_body_raises(tmp_path):
     )
     with pytest.raises(ValueError, match="empty"):
         fetcher.validate(bad)
+
+
+def test_parse_date_unparseable_returns_none_not_today():
+    """Regression #54: used to return date.today()."""
+    assert _parse_date("garbage") is None
+    assert _parse_date("") is None
+
+
+NSE_HEADER = NSE_CSV.split(b"\n", 1)[0] + b"\n"
+
+
+def _nse_deal(date_str: str, symbol: str) -> bytes:
+    return (f'{date_str},{symbol},CO,LIC OF INDIA,BUY,"1,000","100.00",-\n').encode()
+
+
+def test_nse_skips_row_with_unparseable_date(tmp_path):
+    body = NSE_HEADER + b"".join(_nse_deal("22/04/2024", f"S{i}") for i in range(30))
+    body += _nse_deal("April 22", "BAD")
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    assert _parse_nse_bulk_csv(body, raw_row, db, "v1") == 30
+    assert db.execute("SELECT COUNT(*) FROM bulk_deals WHERE stock_symbol='BAD'").fetchone()[0] == 0
+
+
+def test_nse_rejects_file_when_dates_fail(tmp_path):
+    from collector.dateparse import DateFormatError
+
+    body = NSE_HEADER + b"".join(_nse_deal("April 22", f"S{i}") for i in range(4))
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    with pytest.raises(DateFormatError):
+        _parse_nse_bulk_csv(body, raw_row, db, "v1")
+    assert db.execute("SELECT COUNT(*) FROM bulk_deals").fetchone()[0] == 0
+
+
+def _bse_deal(date_str, code):
+    return {
+        "DEAL_DATE": date_str,
+        "SCRIP_CODE": code,
+        "CLIENT_NAME": "X",
+        "TRANSACTION_TYPE": "B",
+        "QUANTITY": 10.0,
+        "PRICE": 5.0,
+    }
+
+
+def test_bse_skips_row_with_missing_date(tmp_path):
+    import json
+
+    rows = [_bse_deal("22/04/2024", 500000 + i) for i in range(30)] + [_bse_deal("", 1)]
+    body = json.dumps({"Table": rows}).encode()
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    assert _parse_bse_bulk_json(body, raw_row, db, "v1") == 30
+
+
+def test_bse_rejects_file_when_dates_missing(tmp_path):
+    import json
+
+    from collector.dateparse import DateFormatError
+
+    body = json.dumps({"Table": [_bse_deal("", 1), _bse_deal("", 2)]}).encode()
+    db = _make_db()
+    raw_row = _make_raw_row(db, body, tmp_path)
+    with pytest.raises(DateFormatError):
+        _parse_bse_bulk_json(body, raw_row, db, "v1")
+    assert db.execute("SELECT COUNT(*) FROM bulk_deals").fetchone()[0] == 0
