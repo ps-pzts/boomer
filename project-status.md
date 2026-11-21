@@ -77,6 +77,9 @@
 
 ## Change log
 
+### 2026-11-21 — Refactor: Kite login SDK calls moved into the broker layer (#126)
+
+- **What:** `kite_auto_login` and `scripts/kite_login.py` imported `kiteconnect` directly (CLAUDE.md §9). The token exchange and login URL now live in `executor/brokers/kite_session.py`; the TOTP/browser scraping stays in `auto_login.py`. Behaviour unchanged. `tests/test_sdk_boundary.py` AST-scans `src/` and `scripts/` and fails on any `kiteconnect` import outside `executor/brokers/` (tests may fake the SDK).
 ### 2026-11-21 — Chore: record two deferred dashboard audit findings as debt markers (#127)
 
 - **What:** `shortcut:` comments only (no behaviour change) at the `app.py` default `changeme` password, the `pyproject.toml` dependencies and the Dockerfile CMD. Deferred by the operator: refuse to start on unset/`changeme` password; add a `dashboard` extra (fastapi, uvicorn, python-multipart) and install it in Dockerfile and CI.
