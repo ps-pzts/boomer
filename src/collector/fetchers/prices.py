@@ -19,10 +19,11 @@ import io
 import logging
 import sqlite3
 import zipfile
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from collector.base import BaseFetcher, PermanentFetchError
+from collector.dateparse import ParseTally, parse_date
 from collector.models import DataSource, Exchange, FetchResult, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ def _parse_nse_bhavcopy_csv(
     text = body.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     inserted = 0
+    tally = ParseTally("Prices")
 
     for row in reader:
         series = (row.get("SctySrs") or "").strip()
@@ -94,6 +96,10 @@ def _parse_nse_bhavcopy_csv(
 
         date_str = (row.get("TradDt") or row.get("BizDt") or "").strip()
         trade_date = _parse_date(date_str)
+        if trade_date is None:
+            tally.fail(date_str)
+            continue
+        tally.ok()
 
         try:
             open_ = float((row.get("OpnPric") or "0").replace(",", ""))
@@ -139,6 +145,7 @@ def _parse_nse_bhavcopy_csv(
                 "NSE prices: insert failed symbol=%s date=%s: %s", symbol, trade_date, exc
             )
 
+    tally.finish(raw_row.raw_id, db)
     db.commit()
     return inserted
 
@@ -157,10 +164,9 @@ def prune_old_prices(db: sqlite3.Connection, keep_days: int = 30) -> int:
     return cursor.rowcount
 
 
-def _parse_date(s: str) -> str:
-    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d-%m-%Y", "%d%b%Y"):
-        try:
-            return datetime.strptime(s.strip(), fmt).date().isoformat()
-        except ValueError:
-            continue
-    return date.today().isoformat()
+_DATE_FORMATS = ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d-%m-%Y", "%d%b%Y")
+
+
+def _parse_date(s: str) -> str | None:
+    """ISO date, or None if unparseable (never an invented date — #54)."""
+    return parse_date(s, _DATE_FORMATS)

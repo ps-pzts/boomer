@@ -18,10 +18,11 @@ import logging
 import sqlite3
 import uuid
 import zipfile
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
+from collector.dateparse import ParseTally, parse_date
 from collector.models import DataSource, FetchResult, InstrumentType, RawArchiveRow
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ def _parse_fo_bhavcopy_csv(
     use_new_format = "FinInstrmTp" in (f.strip() for f in fieldnames)
 
     inserted = 0
+    tally = ParseTally("F&O OI")
     for row in reader:
         record_id = str(uuid.uuid4())
         try:
@@ -129,6 +131,10 @@ def _parse_fo_bhavcopy_csv(
 
             expiry_date = _parse_date(expiry_str)
             trade_date = _parse_date(trade_date_str)
+            if expiry_date is None or trade_date is None:
+                tally.fail(f"expiry={expiry_str!r} trade={trade_date_str!r}")
+                continue
+            tally.ok()
             strike = float(strike_str) if strike_str and strike_str not in ("0", "-") else None
             oi = int(float(oi_str)) if oi_str else 0
             oi_chg = int(float(oi_chg_str)) if oi_chg_str else None
@@ -174,6 +180,7 @@ def _parse_fo_bhavcopy_csv(
         except Exception as exc:
             logger.warning("F&O OI: insert failed record_id=%s: %s", record_id, exc)
 
+    tally.finish(raw_row.raw_id, db)
     db.commit()
     return inserted
 
@@ -191,10 +198,9 @@ def _map_instrument_type(raw: str) -> InstrumentType | None:
     return None
 
 
-def _parse_date(s: str) -> str:
-    for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d%b%Y"):
-        try:
-            return datetime.strptime(s.strip(), fmt).date().isoformat()
-        except ValueError:
-            continue
-    return date.today().isoformat()
+_DATE_FORMATS = ("%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d%b%Y")
+
+
+def _parse_date(s: str) -> str | None:
+    """ISO date, or None if unparseable (never an invented date — #54)."""
+    return parse_date(s, _DATE_FORMATS)

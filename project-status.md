@@ -77,6 +77,12 @@
 
 ## Change log
 
+### 2026-11-21 — Bug: collector date parsers invented today's date on failure (#54)
+
+- **Symptom:** `_parse_date()` in `prices`, `fo_oi`, `bulk_deals` and `shares_outstanding` returned `date.today()` when no format matched; `nse_filings`/`bse_filings` returned today for an empty date and the first 10 characters of the string for an unparseable one. Silent lookahead / point-in-time corruption (a price row written under today).
+- **Root cause:** a fallback chosen for convenience instead of treating an unparseable date as unknown.
+- **Fix:** new `collector/dateparse.py` (`parse_date`/`parse_datetime` return `None`; `ParseTally`). Every affected parser skips the row and counts it, logs `N of M rows skipped` per file, and raises `DateFormatError` (after rolling back that file's inserts, so the ParseWorker marks the raw row FAILED) when more than 5% of date-bearing rows fail, the signature of an NSE/BSE format change. Fetchers audited with no date fallback: `sector`, `instruments`, `screener`. Regression tests added for every fetcher.
+
 ### 2026-11-21 — Feat: intraday universe = EQ ∩ F&O minus ASM/GSM surveillance (#50 part 2)
 
 - **Universe:** `brain/universe.py` now subtracts NSE ASM/GSM stocks (`brain/surveillance.py`) from EQ ∩ F&O; applied to both `morning_batch_features` and `intraday_watchlist`. Matching by upper-cased symbol and by ISIN when the list carries one. F&O underlyings with no EQ instrument (renames) are reported (`fno_unmatched`, WARN); no EQ/F&O symbol overlap fails closed (`no_fno_equity_match`). Watchlist rejection counts now include `not_fno` and `under_surveillance`.

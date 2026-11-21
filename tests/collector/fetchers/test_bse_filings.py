@@ -128,9 +128,14 @@ def test_parse_bse_datetime_iso_format():
     assert date_str == "2024-04-22"
 
 
-def test_parse_bse_datetime_empty():
-    date_str, time_str = _parse_bse_datetime("")
-    assert len(date_str) == 10  # falls back to today
+def test_parse_bse_datetime_empty_is_none():
+    """Regression #54: empty used to return today's date."""
+    assert _parse_bse_datetime("") is None
+
+
+def test_parse_bse_datetime_garbage_is_none():
+    """Regression #54: unparseable used to return the first 10 chars of the string."""
+    assert _parse_bse_datetime("Apr 22nd, 2024 3pm") is None
 
 
 # ── parse() integration ───────────────────────────────────────────────────────
@@ -241,3 +246,37 @@ def test_validate_raises_on_missing_table_key(tmp_path):
     )
     with pytest.raises(ValueError, match="missing 'Table'"):
         fetcher.validate(bad_result)
+
+
+def _bse_rec(news_dt: str, scrip: str) -> dict:
+    return {
+        "SCRIP_CD": scrip,
+        "HEADLINE": "Some announcement",
+        "CATEGORYNAME": "Misc",
+        "NEWS_DT": news_dt,
+        "NEWSSUB": "",
+        "ATTACHMENTURL": "",
+    }
+
+
+def test_parse_skips_filing_with_unparseable_date(tmp_path):
+    """Regression #54: such a filing was stamped with today's date / a garbage string."""
+    db = _make_db()
+    fetcher = BseFilingsFetcher(db, tmp_path / "raw")
+    recs = [_bse_rec("22 Apr 2024 03:30 PM", str(500000 + i)) for i in range(30)]
+    recs.append(_bse_rec("", "999999"))
+    raw_row = _make_raw_row(db, json.dumps({"Table": recs}).encode(), tmp_path)
+    assert fetcher.parse(raw_row) == 30
+    assert db.execute("SELECT COUNT(*) FROM filings WHERE stock_symbol='999999'").fetchone()[0] == 0
+
+
+def test_parse_rejects_file_when_dates_widely_unparseable(tmp_path):
+    from collector.dateparse import DateFormatError
+
+    db = _make_db()
+    fetcher = BseFilingsFetcher(db, tmp_path / "raw")
+    recs = [_bse_rec("22.04.2024", str(i)) for i in range(4)]
+    raw_row = _make_raw_row(db, json.dumps({"Table": recs}).encode(), tmp_path)
+    with pytest.raises(DateFormatError):
+        fetcher.parse(raw_row)
+    assert db.execute("SELECT COUNT(*) FROM filings").fetchone()[0] == 0
