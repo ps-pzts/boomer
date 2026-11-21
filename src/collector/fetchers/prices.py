@@ -22,7 +22,7 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
-from collector.base import BaseFetcher, PermanentFetchError
+from collector.base import BaseFetcher, PermanentFetchError, ist_today
 from collector.dateparse import ParseTally, parse_date
 from collector.models import DataSource, Exchange, FetchResult, RawArchiveRow
 
@@ -43,7 +43,7 @@ class NsePricesFetcher(BaseFetcher):
         self._session.headers.update({"Referer": "https://www.nseindia.com/"})
 
     def fetch_url(self, trade_date: date | None = None, **kwargs) -> str:
-        d = trade_date or date.today()
+        d = trade_date or ist_today()
         return _NSE_BHAVCOPY_URL.format(date=d.strftime("%Y%m%d"))
 
     def validate(self, result: FetchResult) -> None:
@@ -158,7 +158,7 @@ def prune_old_prices(db: sqlite3.Connection, keep_days: int = 30) -> int:
     """
     from datetime import timedelta
 
-    cutoff = (date.today() - timedelta(days=keep_days)).isoformat()
+    cutoff = (ist_today() - timedelta(days=keep_days)).isoformat()
     cursor = db.execute("DELETE FROM prices WHERE trade_date < ?", (cutoff,))
     db.commit()
     return cursor.rowcount

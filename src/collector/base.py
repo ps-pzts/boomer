@@ -19,7 +19,7 @@ import sqlite3
 import time
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -225,6 +225,11 @@ class BaseFetcher(ABC):
 
 def _now_ist() -> datetime:
     return datetime.now(IST).replace(tzinfo=None)
+
+
+def ist_today() -> date:
+    """Today's IST date. Never date.today(): a UTC server is a day behind 00:00-05:30 IST."""
+    return _now_ist().date()
 
 
 def _fmt_dt(dt: datetime | None) -> str | None:

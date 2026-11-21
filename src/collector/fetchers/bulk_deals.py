@@ -19,7 +19,7 @@ import uuid
 from datetime import date
 from pathlib import Path
 
-from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
+from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt, ist_today
 from collector.dateparse import ParseTally, parse_date
 from collector.models import (
     DataSource,
@@ -103,7 +103,7 @@ class BseBulkDealsFetcher(BaseFetcher):
         )
 
     def fetch_url(self, trade_date: date | None = None, **kwargs) -> str:
-        d = trade_date or date.today()
+        d = trade_date or ist_today()
         ds = d.strftime("%Y%m%d")
         return _BSE_BULK_DEALS_URL.format(date=ds)
 
