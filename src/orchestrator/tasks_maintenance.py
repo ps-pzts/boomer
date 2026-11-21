@@ -72,10 +72,7 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
     """
     import os
     import sqlite3
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
 
-    IST = ZoneInfo("Asia/Kolkata")
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat_id:
@@ -99,19 +96,17 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
     finally:
         conn.close()
 
-    now_str = datetime.now(IST).strftime("%H:%M IST")
-    cb_line = f"\n⚡ <b>Circuit breakers:</b> {', '.join(tripped)}" if tripped else ""
-
+    from alerts.format import esc, header, note, rows, stamp
     from alerts.telegram import send_telegram
 
-    send_telegram(
-        token,
-        chat_id,
-        f"✅ <b>Boomer — morning check-in</b> ({now_str})\n"
-        f"Orchestrator is running. Today is {run_date}.\n"
-        f"🚀 Queued for execution: {queued}"
-        f"{cb_line}",
+    msg = (
+        header("🟢", "Morning check-in", stamp())
+        + f"\n{note('Orchestrator is running.')}\n"
+        + rows([("Date", run_date), ("Queued for execution", queued)])
     )
+    if tripped:
+        msg += f"\n🟡 <b>Circuit breakers:</b> {esc(', '.join(tripped))}"
+    send_telegram(token, chat_id, msg)
     logger.info(
         "morning_heartbeat sent run_date=%s queued=%d",
         run_date,
@@ -206,23 +201,30 @@ def _nightly_health_check(run_date: str, run_id: int, db_path: str, **_: object)
         )
         return
 
+    from alerts.format import capped, esc, header, note, rows, stamp
     from alerts.telegram import send_telegram
 
     if issues:
-        lines = "\n".join(f"  ⚠️ {i}" for i in issues)
         msg = (
-            f"⚠️ <b>Nightly health check — issues found</b> ({run_date})\n\n"
-            f"{lines}\n\n"
-            "<i>Review before market open.</i>"
+            header("🟡", "Nightly health check: issues found", f"{run_date} · {stamp()}")
+            + "\n"
+            + capped([f"🟡 {esc(i)}" for i in issues])
+            + "\n"
+            + note("Review before market open.")
         )
     else:
         msg = (
-            f"✅ <b>Nightly health check — all clear</b> ({run_date})\n\n"
-            f"  DB integrity: ok\n"
-            f"  WAL checkpoint: done\n"
-            f"  VACUUM: done — DB now {db_mb:.1f} MB\n"
-            f"  Stuck tasks: none\n"
-            f"  Disk free: {free_pct:.1f}%"
+            header("🟢", "Nightly health check: all clear", f"{run_date} · {stamp()}")
+            + "\n"
+            + rows(
+                [
+                    ("DB integrity", "ok"),
+                    ("WAL checkpoint", "done"),
+                    ("VACUUM", f"done, DB {db_mb:.1f} MB"),
+                    ("Stuck tasks", "none"),
+                    ("Disk free", f"{free_pct:.1f}%"),
+                ]
+            )
         )
 
     send_telegram(token, chat_id, msg)

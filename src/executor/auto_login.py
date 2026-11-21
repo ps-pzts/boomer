@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 import pyotp
 import requests
 
+from alerts.format import esc, header, note, rows, stamp
 from executor.brokers.kite_session import exchange_request_token
 
 logger = logging.getLogger(__name__)
@@ -111,16 +112,18 @@ def refresh_all_broker_tokens() -> dict[str, str]:
             updated["kite"] = token
             logger.info("refresh_all_broker_tokens: kite token refreshed")
             _notify(
-                f"Kite token refreshed for <b>{kite_user}</b>\n"
-                f"Token: <code>{token[:12]}…</code>\n"
-                f"Expires: today 11:59 PM IST (Kite tokens reset at midnight)"
+                "Kite token refreshed",
+                rows(
+                    [("User", kite_user), ("Token", f"{token[:12]}…"), ("Expires", "11:59 PM IST")]
+                )
+                + "\n"
+                + note("Kite tokens reset at midnight."),
             )
         except Exception as exc:
             logger.error("refresh_all_broker_tokens: kite failed — %s", exc)
             _notify(
-                f"Kite auto-login FAILED for <b>{kite_user}</b>\n"
-                f"Error: {exc}\n"
-                "Action: check KITE_PASSWORD / KITE_TOTP_SECRET in .env",
+                f"Kite auto-login FAILED · {kite_user}",
+                note(f"Error: {esc(exc)}\nAction: check KITE_PASSWORD / KITE_TOTP_SECRET in .env"),
                 error=True,
             )
     else:
@@ -154,7 +157,7 @@ def _kite_extract_request_token(session: requests.Session, api_key: str) -> str:
     )
 
 
-def _notify(message: str, error: bool = False) -> None:
+def _notify(title: str, body: str, error: bool = False) -> None:
     """Send a Telegram notification if credentials are configured."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -162,8 +165,7 @@ def _notify(message: str, error: bool = False) -> None:
         return
     from alerts.telegram import send_telegram  # type: ignore[import-untyped]
 
-    prefix = "🚨" if error else "✅"
-    send_telegram(token, chat_id, f"{prefix} <b>Boomer</b>\n{message}")
+    send_telegram(token, chat_id, f"{header('🔴' if error else '🟢', title, stamp())}\n{body}")
 
 
 def _write_env_token(env_path: Path, key: str, value: str) -> None:
