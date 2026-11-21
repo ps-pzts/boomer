@@ -15,15 +15,13 @@ BROKERS = ROOT / "src" / "executor" / "brokers"
 def sdk_import_lines(source: str) -> list[int]:
     lines = []
     for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Import) and any(
-            a.name.split(".")[0] == "kiteconnect" for a in node.names
-        ):
-            lines.append(node.lineno)
-        elif (
-            isinstance(node, ast.ImportFrom)
-            and node.level == 0
-            and (node.module or "").split(".")[0] == "kiteconnect"
-        ):
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            names = [node.module or ""]
+        else:
+            continue
+        if any(n.split(".")[0] == "kiteconnect" for n in names):
             lines.append(node.lineno)
     return lines
 
