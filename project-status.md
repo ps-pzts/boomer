@@ -92,7 +92,7 @@
 - `session_controller.py` (534 -> 330 lines) keeps the `SessionController` class; guard context moved to `session_context.py` (`ContextMixin`, timing constants, `_blocker`), reconcile to `session_reconcile.py` (`ReconcileMixin`), emergency cancel/flatten to `session_emergency.py` (`EmergencyMixin`). Constants and `_blocker` are re-exported, so every import path is unchanged.
 - `order_manager.py` (528 -> 324 lines) keeps `OrderManager`; the 8 pre-trade checks moved to `order_checks.py` (`pre_trade_checks`, called from `OrderManager._pre_trade_checks`), persistence helpers to `order_store.py` (`OrderStoreMixin`).
 - `tests/test_integration_full_pipeline.py` (652) split into `tests/integration/test_pipeline_orchestrator.py`, `test_pipeline_collector.py` and `pipeline_helpers.py`; resolves the follow-up noted under the #54-era entries.
-- Zero behaviour change: full suite 1663 passed / 1 skipped / 2 deselected before and after (1832 passed after rebasing on #120). Mutation: `order_checks.pre_trade_checks` 51/51 (same as `_pre_trade_checks` before); reconcile code 4/6 both before (in `session_controller`) and after (`session_reconcile`), same two `untracked_orders` survivors. `scripts/mutation_all.sh` targets updated.
+- Zero behaviour change: full suite 1663 passed / 1 skipped / 2 deselected before and after (1865 passed after rebasing on #120 and #125). Mutation: `order_checks.pre_trade_checks` 51/51 (same as `_pre_trade_checks` before); reconcile code 4/6 both before (in `session_controller`) and after (`session_reconcile`), same two `untracked_orders` survivors. `scripts/mutation_all.sh` targets updated.
 
 ### 2026-11-21 — Bug: collector date parsers invented today's date on failure (#54)
 
