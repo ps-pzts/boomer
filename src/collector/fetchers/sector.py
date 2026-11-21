@@ -27,7 +27,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
+from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt, ist_today
 from collector.models import DataSource, FetchResult, RawArchiveRow
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -82,7 +82,7 @@ class NseSectorFetcher(BaseFetcher):
 
     def run(self, trade_date: date | None = None, **kwargs) -> RawArchiveRow | None:
         """Fetch all sector index CSVs; archive each independently."""
-        run_date = (trade_date or date.today()).isoformat()
+        run_date = (trade_date or ist_today()).isoformat()
         last_raw_row: RawArchiveRow | None = None
 
         for stub, _sector in _SECTOR_INDICES:

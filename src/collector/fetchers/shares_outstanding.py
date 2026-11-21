@@ -21,7 +21,7 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
-from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt
+from collector.base import BaseFetcher, PermanentFetchError, _fmt_dt, ist_today
 from collector.dateparse import ParseTally, parse_date
 from collector.models import DataSource, FetchResult, RawArchiveRow
 
@@ -47,7 +47,7 @@ class SharesOutstandingFetcher(BaseFetcher):
         self._session.headers.update({"Referer": "https://www.nseindia.com/"})
 
     def fetch_url(self, trade_date: date | None = None, **kwargs) -> str:
-        d = trade_date or date.today()
+        d = trade_date or ist_today()
         return _NSE_MKTCAP_BHAVCOPY_URL.format(date=d.strftime("%d%b%Y").upper())
 
     def validate(self, result: FetchResult) -> None:
