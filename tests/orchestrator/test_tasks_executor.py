@@ -149,3 +149,15 @@ class TestMinuteBars:
     def test_flush_schedule_covers_whole_session(self):
         td = build_task_registry(":memory:", "/tmp/a", "/tmp/b")["minute_bar_flush"]
         assert td.schedule == "*/15 9-15 * * 1-5"  # last run 15:45, after the 15:29 bar
+
+
+def test_reauth_failure_with_broken_alerter_is_logged_not_swallowed(caplog):
+    broker = MagicMock(broker_id="kite")
+    broker.authenticate.side_effect = RuntimeError("bad token")
+    with (
+        patch("executor.auto_login.refresh_all_broker_tokens", return_value={"kite": "t"}),
+        patch("alerts.alerter.get_alerter", side_effect=RuntimeError("telegram down")),
+        caplog.at_level("WARNING"),
+    ):
+        _pre_market_executor_setup("2026-11-19", 1, db_path=":memory:", brokers=[broker])
+    assert "alert not sent" in caplog.text and "telegram down" in caplog.text

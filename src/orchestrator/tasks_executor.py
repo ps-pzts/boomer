@@ -61,8 +61,11 @@ def _pre_market_executor_setup(
                             "Orders and market data will fail today. Check broker credentials.",
                             source_task_id="pre_market_executor_setup",
                         )
-                    except Exception:
-                        pass
+                    except Exception as alert_exc:
+                        logger.warning(
+                            "pre_market_executor_setup: re-auth failure alert not sent — %s",
+                            alert_exc,
+                        )
         else:
             logger.info(
                 "pre_market_executor_setup: no TOTP credentials configured — "

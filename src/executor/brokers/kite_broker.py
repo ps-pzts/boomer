@@ -337,8 +337,8 @@ class KiteBroker(Broker):
             self._ltp[symbol] = price
             self._ltp_timestamp[symbol] = now
             return price
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("get_ltp %s: REST ltp tier failed: %s", symbol, exc)
         # Tier 2: holdings + positions — available on base plan, covers held stocks
         try:
             for h in self._kite.holdings():
@@ -347,12 +347,12 @@ class KiteBroker(Broker):
             for p in self._kite.positions().get("day", []):
                 if p["tradingsymbol"] == symbol and p.get("last_price", 0) > 0:
                     return float(p["last_price"])
-        except Exception:
-            pass
-        # Tier 3: last known price (stale tick or old REST value — better than None)
-        if tick:
-            return tick.ltp
-        return self._ltp.get(symbol)
+        except Exception as exc:
+            logger.warning("get_ltp %s: holdings/positions tier failed: %s", symbol, exc)
+        # No tier 3: a last-known value here is by construction older than
+        # _LTP_STALENESS_SECONDS (tiers 0/cache returned otherwise); None beats a stale price.
+        logger.warning("get_ltp %s: no fresh price from any tier; returning None", symbol)
+        return None
 
     # ── GTT methods ───────────────────────────────────────────────────────────
 

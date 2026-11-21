@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 import uuid
 from datetime import date, datetime
@@ -15,6 +16,7 @@ from capital.models import (
     allocation_for_capital,
 )
 
+logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -99,7 +101,9 @@ class CapitalStateManager:
             qty = Decimal(str(pos["quantity"]))
             entry = Decimal(str(pos["entry_price"]))
             ltp = ltp_source.get_ltp(symbol, exchange)
-            price = ltp if ltp is not None else entry  # stale fallback
+            if ltp is None:  # unrealised P&L reads as 0 for this position
+                logger.warning("live_capital_view: no LTP for %s; valuing at entry price", symbol)
+            price = ltp if ltp is not None else entry
             open_position_value += qty * price
             if pos.get("track") == Track.INTRADAY.value:
                 intraday_unrealised += (price - entry) * qty

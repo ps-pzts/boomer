@@ -58,10 +58,23 @@ class TestGetLtp:
         _ltp_down(broker, positions=kf.sdk("positions"))
         assert broker.get_ltp("INFY", "NSE") == 1510.15
 
-    def test_tier3_stale_tick_cache_used_as_last_resort(self, broker: KiteBroker) -> None:
+    def test_stale_cached_price_is_not_returned_and_failures_are_logged(
+        self, broker: KiteBroker, caplog
+    ) -> None:
         _ltp_down(broker)
-        broker._ltp["KPEL"] = 355.0  # stale but present
-        assert broker.get_ltp("KPEL", "NSE") == 355.0
+        broker._ltp["KPEL"] = 355.0
+        broker._ltp_timestamp["KPEL"] = broker._clock() - timedelta(hours=2)  # older than limit
+        with caplog.at_level("WARNING"):
+            assert broker.get_ltp("KPEL", "NSE") is None
+        assert "REST ltp tier failed" in caplog.text
+        assert "no fresh price" in caplog.text
+
+    def test_holdings_tier_failure_is_logged(self, broker: KiteBroker, caplog) -> None:
+        respond(broker._kite, "ltp", kf.sdk_error("permission"))
+        respond(broker._kite, "holdings", kf.sdk_error("permission"))
+        with caplog.at_level("WARNING"):
+            assert broker.get_ltp("KPEL", "NSE") is None
+        assert "holdings/positions tier failed" in caplog.text
 
     def test_returns_none_when_all_tiers_exhausted(self, broker: KiteBroker) -> None:
         _ltp_down(broker)
@@ -161,12 +174,12 @@ class TestFeedDelegation:
         respond(broker._kite, "ltp", kf.ltp("KPEL", 402.0))
         assert broker.get_ltp("KPEL", "NSE") == 402.0
 
-    def test_stale_feed_tick_is_last_resort(self, broker: KiteBroker) -> None:
+    def test_stale_feed_tick_is_never_returned(self, broker: KiteBroker) -> None:
         feed = ManualFeed()
         broker.attach_feed(feed)
         feed.push(_tick("KPEL", 390.0, age_seconds=600))
         _ltp_down(broker)
-        assert broker.get_ltp("KPEL", "NSE") == 390.0
+        assert broker.get_ltp("KPEL", "NSE") is None
 
     def test_on_tick_subscribes_and_filters_to_requested_symbols(self, broker: KiteBroker) -> None:
         feed = ManualFeed()
