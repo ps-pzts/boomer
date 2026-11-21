@@ -1,0 +1,52 @@
+{
+ "module": "src/capital/pre_trade.py",
+ "func": null,
+ "tests": [
+  "tests/capital/test_pre_trade.py"
+ ],
+ "total": 91,
+ "killed": 87,
+ "score": 95.6,
+ "seconds": 441,
+ "survivors": [
+  {
+   "index": 30,
+   "line": 153,
+   "kind": "return",
+   "original": "return TradePermission.reject('trade_quality', 'stop_loss_price >= entry_price')",
+   "mutated": "return None",
+   "status": "survived",
+   "note": "equivalent: the same reject is raised again by _check_trade_quality (duplicate guard), outcome and message identical"
+  },
+  {
+   "index": 42,
+   "line": 162,
+   "kind": "const",
+   "original": "100",
+   "mutated": "101",
+   "status": "survived",
+   "note": "equivalent: only the rounding of the percentage text changes (5.05 -> '5')"
+  },
+  {
+   "index": 49,
+   "line": 170,
+   "kind": "const",
+   "original": "100",
+   "mutated": "101",
+   "status": "survived",
+   "note": "equivalent: only the rounding of the percentage text changes (25.25 -> '25')"
+  },
+  {
+   "index": 56,
+   "line": 181,
+   "kind": "const",
+   "original": "100",
+   "mutated": "101",
+   "status": "survived",
+   "note": "equivalent: only the rounding of the percentage text changes (35.35 -> '35')"
+  }
+ ],
+ "score_before": 48.4,
+ "killed_before": 44,
+ "total_before": 91
+}

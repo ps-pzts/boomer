@@ -56,6 +56,46 @@ class TestRule:
     def test_modify_budget(self):
         assert _next(103.5, current=100.0, moves=MAX_MOVES).rule == "max_moves"
 
+    def test_budget_is_exactly_max_moves(self):
+        # literal 20, not the constant: the Kite budget (~25/order) must stay 20 with headroom
+        assert _next(103.5, current=100.0, moves=19).new_stop == 101.5
+        assert _next(103.5, current=100.0, moves=20).rule == "max_moves"
+
+    def test_same_stop_is_not_higher(self):
+        # candidate 100.00 == current 100.00: held as not_higher, not as a "small step"
+        assert _next(102.0, current=100.0).rule == "not_higher"
+
+    def test_step_just_below_the_minimum_is_skipped_after_breakeven(self):
+        # stop already at entry (100); trail 100.30 is a 0.30 step < 0.25 x ATR(2) = 0.50
+        m = _next(102.3, current=100.0)
+        assert (m.new_stop, m.rule) == (None, "step_too_small")
+
+    def test_step_of_exactly_the_minimum_is_taken(self):
+        # 101.0 -> 101.5 is 0.50 = 0.25 x ATR(2): allowed
+        m = _next(103.5, current=101.0)
+        assert (m.new_stop, m.rule) == (101.5, "trail")
+
+    def test_stop_equal_to_the_last_price_is_refused(self):
+        # a SELL stop at 101.5 with LTP 101.5 would trigger at once
+        assert _next(103.5, current=100.0, ltp=101.5).rule == "at_or_above_market"
+        assert _next(103.5, current=100.0, ltp=101.55).new_stop == 101.5
+
+    def test_zero_atr_is_invalid_and_tiny_values_are_not(self):
+        def call(risk, atr):
+            return next_stop(
+                entry=100.0, initial_stop=100.0 - risk, current_stop=100.0 - risk,
+                high_water=110, atr=atr, ltp=110, moves=0,
+            )  # fmt: skip
+
+        assert call(2, 0).rule == "invalid_inputs"
+        assert call(2, -1).rule == "invalid_inputs"
+        assert call(0.5, 2).new_stop == 108.0  # 0.5 risk is real: 1R = 100.5, trail 110 - 2
+        assert call(2, 0.5).new_stop == 109.5  # ATR 0.5 is real: trail 110 - 0.5
+
+    def test_move_is_frozen(self):
+        with pytest.raises(AttributeError):
+            _next(103.5, current=100.0).new_stop = 1.0  # type: ignore[misc]
+
     @pytest.mark.parametrize("stop", [100.0, 101.0])
     def test_invalid(self, stop):
         assert (

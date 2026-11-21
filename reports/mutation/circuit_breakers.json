@@ -1,0 +1,15 @@
+{
+ "module": "src/capital/circuit_breakers.py",
+ "func": null,
+ "tests": [
+  "tests/capital/test_circuit_breakers.py"
+ ],
+ "total": 51,
+ "killed": 51,
+ "score": 100.0,
+ "seconds": 181,
+ "survivors": [],
+ "score_before": 78.4,
+ "killed_before": 40,
+ "total_before": 51
+}

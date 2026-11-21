@@ -1,0 +1,16 @@
+{
+ "module": "src/executor/brokers/kite_broker.py",
+ "func": "map_kite_status",
+ "tests": [
+  "tests/executor/brokers/test_kite_order_status.py",
+  "tests/executor/brokers/test_kite_broker.py"
+ ],
+ "total": 13,
+ "killed": 13,
+ "score": 100.0,
+ "seconds": 22,
+ "survivors": [],
+ "score_before": 84.6,
+ "killed_before": 11,
+ "total_before": 13
+}

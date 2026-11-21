@@ -1,0 +1,17 @@
+{
+ "module": "src/executor/session_machine.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_session_machine.py",
+  "tests/executor/test_session_controller.py",
+  "tests/executor/test_session_kite_gate.py"
+ ],
+ "total": 42,
+ "killed": 42,
+ "score": 100.0,
+ "seconds": 75,
+ "survivors": [],
+ "score_before": 92.9,
+ "killed_before": 39,
+ "total_before": 42
+}

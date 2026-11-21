@@ -117,10 +117,12 @@
 - `trading_sessions.halt_detail` (migration `0018`) records why a session halted so `/halt` needs no events read; `executor/session_halt.py` holds the shared ack.
 - Not done: derived alerts from the observability projection (SILENT component, drift, PROTECTING too long: OBS-3); quiet hours; per-chat roles beyond the single configured chat id.
 
-### 2026-11-19 — Test: mutation testing of the money-critical modules (#89, in progress)
+### 2026-11-21 — Test: mutation testing of the money-critical modules (#89)
 
-- `scripts/mutation.py` (AST mutation runner: comparison/arith/boolean/constant/condition/return mutants, one at a time, file always restored) and `scripts/mutation_all.sh`. Slow, run by hand, not in CI. Reports in `reports/mutation/*.json`.
-- First scores: `ticks.py` 56.8% -> 83.8% after new edge tests (the 6 survivors are an unused constant and 5 equivalent mutants); `trailing.py` 78.7% (37/47) and `sizing.py` 78.9% (15/19), survivors listed in their JSON, not yet killed. Still to run: pre_trade, circuit_breakers, trade/session machines, session_inputs, status mapping, kitesim rules, trade_lifecycle.
+- `scripts/mutation.py` (AST mutation runner: comparison/arith/boolean/constant/condition/return mutants, one at a time, file always restored) and `scripts/mutation_all.sh`. Slow, run by hand, not in CI. Reports (survivors with a reason for each equivalent/unreachable one) in `reports/mutation/*.json`. Parallel runs must use separate copies of the tree (a mutant in one file is visible to another run's tests).
+- **Scores, before -> after (killed/total):** trailing 78.7 -> 100 (47/47); sizing 78.9 -> 94.7 (18/19); ticks 56.8 -> 83.8 (31/37, earlier run); pre_trade gate 48.4 -> 95.6 (87/91); circuit_breakers 78.4 -> 100 (51/51); session_machine 92.9 -> 100 (42/42); session_inputs 77.8 -> 100 (54/54); `map_kite_status` 84.6 -> 100 (13/13); KiteSim rules 77.4 -> 99.1 (114/115); `OrderManager._pre_trade_checks` 62.7 -> 100 (51/51); reconciliation 41.5 -> 95.1 (39/41); trade_lifecycle 66.9 -> 94.9 (112/118). `trade_machine` (1/1) and `order_machine` (0 sites) are pure spec tables, covered by the transition-coverage gate. Every module is above the 85% target.
+- Remaining survivors are all equivalent or unreachable (redundant guards, percentage-text rounding, non-zero-integer comparisons, an unreachable `else 0`); each is explained in its JSON.
+- Gaps found and closed: the pre-trade gate's sector/cluster/single-stock caps, regime gate and RR/EV edges were untested at their boundaries; reconciliation EOD cash and alert payloads were untested; trade_lifecycle `open_legs`, exit keys (`-exit1`), exit price and alert paths were unasserted. No source bug was found; `_check_time`, `_check_black_swan` and `_check_capital_availability` in `capital/pre_trade.py` are unreachable from `check()` (an earlier rule always fires first) and are tested directly.
 
 ### 2026-11-19 — Bugs: four stranded-position bugs found by the integration suite (#97, #98, #99, #101)
 

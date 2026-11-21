@@ -1,0 +1,17 @@
+{
+ "module": "src/executor/session_inputs.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_session_inputs.py",
+  "tests/executor/test_untracked_orders.py",
+  "tests/executor/test_session_controller.py"
+ ],
+ "total": 54,
+ "killed": 54,
+ "score": 100.0,
+ "seconds": 241,
+ "survivors": [],
+ "score_before": 77.8,
+ "killed_before": 42,
+ "total_before": 54
+}
