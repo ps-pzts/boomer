@@ -78,7 +78,7 @@ def kite_auto_login(
 
     # Step 3: follow Kite Connect redirect to extract request_token
     request_token = _kite_extract_request_token(session, api_key)
-    logger.debug("kite_auto_login: request_token=%s…", request_token[:8])
+    logger.debug("kite_auto_login: request_token obtained")
 
     # Step 4: exchange request_token for access_token
     access_token = exchange_request_token(api_key, api_secret, request_token)
@@ -113,9 +113,7 @@ def refresh_all_broker_tokens() -> dict[str, str]:
             logger.info("refresh_all_broker_tokens: kite token refreshed")
             _notify(
                 "Kite token refreshed",
-                rows(
-                    [("User", kite_user), ("Token", f"{token[:12]}…"), ("Expires", "11:59 PM IST")]
-                )
+                rows([("User", kite_user), ("Expires", "11:59 PM IST")])
                 + "\n"
                 + note("Kite tokens reset at midnight."),
             )
@@ -169,17 +167,23 @@ def _notify(title: str, body: str, error: bool = False) -> None:
 
 
 def _write_env_token(env_path: Path, key: str, value: str) -> None:
-    """Update KEY=value in .env file in-place, appending if the key is absent."""
+    """Update KEY=value in .env in-place (appending if absent), atomically and mode 0600."""
     if not env_path.exists():
         return
     lines = env_path.read_text().splitlines()
-    updated = False
     for i, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+        if line.lstrip().startswith((f"{key}=", f"{key} =")):
             lines[i] = f"{key}={value}"
-            updated = True
             break
-    if not updated:
+    else:
         lines.append(f"{key}={value}")
-    env_path.write_text("\n".join(lines) + "\n")
+    tmp = env_path.with_name(env_path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)  # a pre-existing wider temp file keeps its mode through O_CREAT
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        os.replace(tmp, env_path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
