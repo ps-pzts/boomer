@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from alerts.commands.control import emergency, pause, resume
 from alerts.commands.halt import ack, halt
+from alerts.commands.readiness import readiness
 from alerts.commands.reads import pnl, positions, trades
 from alerts.commands.status import status
 
@@ -20,6 +21,7 @@ HANDLERS: dict[str, Callable[[str, str], str]] = {
     "/positions": positions,
     "/trades": trades,
     "/pnl": pnl,
+    "/readiness": readiness,
 }
 
 HELP = (
@@ -28,7 +30,8 @@ HELP = (
     "/status — session, bot mode, Kite checks, trades, P&amp;L\n"
     "/positions — open positions with stops and targets\n"
     "/trades — today's trades and their state\n"
-    "/pnl — realised and unrealised P&amp;L today\n\n"
+    "/pnl — realised and unrealised P&amp;L today\n"
+    "/readiness — paper-to-live criteria with numbers (evidence only)\n\n"
     "<b>Steer</b>\n"
     "/pause — halt new entries (open trades stay managed)\n"
     "/resume — back to auto\n"
