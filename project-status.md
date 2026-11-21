@@ -77,6 +77,11 @@
 
 ## Change log
 
+### 2026-11-21 — Test: a whole paper day through the production wiring (#116)
+
+- **What:** `tests/orchestrator/test_production_day.py` (rig in `production_day.py`) boots like `orchestrator.main()` (`build_session` + `build_decision_cycle` + `Orchestrator`, ManualFeed, real `SessionBarRecorder`, fake clock) and dispatches the registered tasks through the real Scheduler minute by minute, 08:45 to 15:30. ORB worked example: entry fills 1,007, stop trails to 1,020 at 1R, 15:14 square-off at 1,030, realised 49 x 23 = Rs 1,127. Asserts: mode paper and locked on the session row, every order MIS and every long covered by a resting stop (stops only up), mark-to-market mid-trade (#106), the trade/session events, the real Telegram feed formatter (one message per trade event, EOD summary totals). A second day with a feed that stops after 09:15: HALTED(feed_stale), no order all day, CRITICAL + halt alerts. Skipped tasks (network / batch pipeline / real Kite) are listed with reasons in `SKIPPED_TASKS`; their outputs are seeded.
+- **Bug found (#122):** the Telegram feed said "stop raised to None" (read `new_stop`/`stop`, trailing writes `to`). Fixed in its own commit with a regression test.
+
 ### 2026-11-21 — Bug: boomer-executor.service ran a module that does not exist (#109)
 
 - **Symptom:** `ops/systemd/boomer-executor.service` ran `python -m executor.main` (no such module); the runbook's `python -m executor.reconciliation --eod` has no `__main__` either; CD restarted and health-checked the dead unit.
