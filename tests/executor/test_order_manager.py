@@ -308,3 +308,88 @@ class TestCancelRace:
         assert (rec.status, rec.filled_quantity) == (OrderStatus.CANCELLED, 3)
         n = om._db.execute("SELECT SUM(quantity) FROM executions WHERE order_id=?", (oid,))
         assert n.fetchone()[0] == 3
+
+
+class TestPreTradeBoundaries:
+    """Each pre-trade rule at its exact edge (#89). Hand numbers: LTP 100 -> the 5%
+    sanity band is 95..105 and the 20% circuit band 80..120; 10 x 2,500 needs 25,000."""
+
+    @staticmethod
+    def _req(kind=OrderType.LIMIT, price=100.0, qty=1, side=OrderSide.BUY):
+        return OrderRequest(
+            "RELIANCE", "NSE", side, kind, qty, ProductType.MIS, price, idempotency_key=""
+        )
+
+    def _check(self, req, *, ltp=None, cash=500_000.0, track="other"):
+        om, broker, _ = _make_om(cash=cash)
+        om._pre_trade_checks(req, broker, ltp=ltp, track=track)
+
+    def test_one_share_is_a_valid_quantity(self):
+        self._check(self._req(qty=1))
+        with pytest.raises(PreTradeCheckError, match="Invalid quantity: 0"):
+            self._check(self._req(qty=0))
+        with pytest.raises(PreTradeCheckError, match="Invalid quantity: -1"):
+            self._check(self._req(qty=-1))
+
+    def test_price_sanity_band_is_inclusive_at_5pct(self):
+        self._check(self._req(price=105.0), ltp=100.0)  # exactly +5%
+        self._check(self._req(price=95.0), ltp=100.0)  # exactly -5%
+        with pytest.raises(PreTradeCheckError, match="deviates 5.1% from LTP"):
+            self._check(self._req(price=105.1), ltp=100.0)
+        with pytest.raises(PreTradeCheckError, match="deviates"):
+            self._check(self._req(price=94.9), ltp=100.0)
+
+    def test_small_price_is_still_sanity_checked(self):
+        with pytest.raises(PreTradeCheckError, match="deviates"):
+            self._check(self._req(price=0.5), ltp=100.0)
+
+    def test_priceless_limit_skips_the_price_checks(self):
+        self._check(self._req(price=0.0), ltp=100.0)
+
+    def test_market_order_is_not_sanity_checked_but_is_circuit_checked(self):
+        m = OrderType.MARKET
+        self._check(self._req(kind=m, price=119.0), ltp=100.0)
+        with pytest.raises(PreTradeCheckError, match="20% circuit band"):
+            self._check(self._req(kind=m, price=120.0), ltp=100.0)  # exactly 20%: locked
+        with pytest.raises(PreTradeCheckError, match="20% circuit band"):
+            self._check(self._req(kind=m, price=150.0), ltp=100.0)
+        with pytest.raises(PreTradeCheckError, match="20% circuit band"):
+            self._check(self._req(kind=m, price=0.5), ltp=100.0)  # a small price still counts
+
+    def test_funds_must_cover_price_times_quantity(self):
+        req = self._req(price=2500.0, qty=10)  # needs 25,000
+        self._check(req, cash=25_000.0)  # exactly enough
+        with pytest.raises(PreTradeCheckError, match="need 25000, have 24999"):
+            self._check(req, cash=24_999.0)
+
+    def test_small_buy_with_no_cash_is_refused(self):
+        with pytest.raises(PreTradeCheckError, match="Insufficient funds"):
+            self._check(self._req(price=0.5, qty=1), cash=0.0)
+
+    def test_market_buy_without_a_price_is_not_a_funds_question(self):
+        m = self._req(kind=OrderType.MARKET, price=0.0)
+        self._check(m, cash=0.0)
+        self._check(m, cash=-1.0)
+
+    @pytest.mark.parametrize(
+        "h, m, s, us, ok",
+        [
+            (9, 14, 59, 0, False),
+            (9, 15, 0, 0, True),  # the open itself
+            (9, 15, 0, 1, True),
+            (15, 30, 0, 0, True),  # the close itself
+            (15, 30, 0, 1, False),
+            (15, 30, 1, 0, False),
+        ],
+    )
+    def test_market_hours_edges(self, h, m, s, us, ok):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        om, broker, _ = _make_om()
+        om._clock = lambda: datetime(2026, 11, 19, h, m, s, us, tzinfo=ZoneInfo("Asia/Kolkata"))
+        if ok:
+            om._pre_trade_checks(self._req(), broker, ltp=None, track="intraday")
+        else:
+            with pytest.raises(PreTradeCheckError, match="outside market hours"):
+                om._pre_trade_checks(self._req(), broker, ltp=None, track="intraday")
