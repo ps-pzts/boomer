@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from executor.gtt_manager import GttManager
 from executor.models import (
     BrokerName,
     OrderRequest,
@@ -27,7 +26,6 @@ class PositionManager:
     - open_position(): create on entry fill
     - close_position(): mark closed on exit fill
     - update_ltp(): refresh unrealised P&L from tick
-    - trail_stop(): delegate to GttManager when 2×ATR gain is reached
     - handle_exit_recommendation(): process Stage 4b ExitRecommendation
     - mark_unprotected() / clear_unprotected(): unprotected flag lifecycle
     """
@@ -35,11 +33,9 @@ class PositionManager:
     def __init__(
         self,
         db: sqlite3.Connection,
-        gtt_manager: GttManager,
         order_manager: object,
     ) -> None:
         self._db = db
-        self._gtt = gtt_manager
         self._om = order_manager  # OrderManager (local import avoids circular)
 
     # ── Position lifecycle ────────────────────────────────────────────────────
@@ -137,22 +133,6 @@ class PositionManager:
             (position_id,),
         )
         self._db.commit()
-
-    def link_gtt_oco(self, position_id: str, gtt_id: str) -> None:
-        self._db.execute(
-            "UPDATE positions"
-            " SET gtt_oco_id=?, unprotected_flag=0, unprotected_since=NULL WHERE position_id=?",
-            (gtt_id, position_id),
-        )
-        self._db.commit()
-
-    # ── Trail stop ────────────────────────────────────────────────────────────
-
-    def trail_stop(self, position_id: str, current_price: float) -> bool:
-        pos = self._load(position_id)
-        if not pos or not pos.is_open or pos.track == "intraday":
-            return False
-        return self._gtt.trail_stop(pos, current_price)
 
     # ── Exit recommendation handler ───────────────────────────────────────────
 

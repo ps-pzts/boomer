@@ -7,7 +7,6 @@ from executor.models import (
     BrokerFunds,
     BrokerName,
     BrokerPosition,
-    GttRequest,
     OrderRequest,
     PriceBar,
 )
@@ -68,28 +67,6 @@ class Broker(ABC):
     @abstractmethod
     def on_tick(self, symbols: list[str], callback: Callable[[str, float], None]) -> None:
         """Subscribe to price tick feed. callback(symbol, ltp)."""
-
-    # ── GTT methods ───────────────────────────────────────────────────────────
-
-    @abstractmethod
-    def place_gtt(self, request: GttRequest) -> str:
-        """Place GTT single-leg or OCO. Returns broker_gtt_id."""
-
-    @abstractmethod
-    def modify_gtt(self, broker_gtt_id: str, changes: dict) -> None:
-        """Modify an active GTT (e.g., trail stop upward)."""
-
-    @abstractmethod
-    def cancel_gtt(self, broker_gtt_id: str) -> None:
-        """Cancel an active GTT."""
-
-    @abstractmethod
-    def get_gtt(self, broker_gtt_id: str) -> dict:
-        """Return raw broker GTT dict."""
-
-    @abstractmethod
-    def list_gtts(self) -> list[dict]:
-        """Return all active GTTs as raw broker dicts."""
 
     # ── Historical data (used by morning batch and backtester) ───────────────
 

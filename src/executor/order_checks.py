@@ -91,5 +91,3 @@ def pre_trade_checks(
             raise PreTradeCheckError(
                 f"Order price {request.price} is at/beyond 20% circuit band (LTP={ltp})"
             )
-
-    # 8. GTT duplicate check is handled in GttManager.place_gtt_for_position()

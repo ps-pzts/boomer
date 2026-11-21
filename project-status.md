@@ -77,6 +77,11 @@
 
 ## Change log
 
+### 2026-11-21 — Refactor: delete the dead CNC GTT path (#129)
+
+- **Removed:** `executor/gtt_manager.py` (332 lines) and its tests, `PositionManager.trail_stop`/`link_gtt_oco` and the `gtt_manager` ctor arg (production passed `None` since #92), the `Broker` ABC GTT methods, `KiteBroker.modify_gtt` + `gtt_modified_legs`, `GttOrderRecord`/`GttStatus`, stale GTT docstrings. Guard test `tests/executor/test_no_gtt_placement.py` fails if any module outside the backtester stack defines or calls a GTT placement.
+- **Kept:** `KiteBroker.place_gtt/cancel_gtt/get_gtt/list_gtts`, `kite_gtt.py`, KiteSim GTT engine, `GttRequest`/`GttType`, GTT contract fixtures: the backtester protects positions with a KiteSim OCO GTT (follow-up: move it to MIS SL/LIMIT orders, then delete these). DB table `gtt_orders` and columns `positions.gtt_oco_id`, `orders.parent_gtt_id` untouched (no schema change; drop via a forward migration later). `trailing.py` untouched.
+
 ### 2026-11-21 - Enhancement: the live switch enforces the paper-to-live criteria (#128)
 
 - **What:** `request_mode(target=live)` (Telegram /mode and /toggle, dashboard POST /trading-mode) now also needs every `live_readiness` criterion to PASS (>= 20 closed paper sessions, zero unprotected, slippage within assumption, positive expectancy after costs, B4 flag). INSUFFICIENT_DATA is a refusal; the message lists each non-passing criterion with its numbers; unreadable evidence refuses (fail closed); refusal is logged as `live_switch_refused`. Checked before the confirm prompt. live -> paper is never gated. No operator override added: a knowing early-live decision now needs a code change, flagged on the PR as a decision for the operator.

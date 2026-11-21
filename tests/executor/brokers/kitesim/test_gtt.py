@@ -129,24 +129,6 @@ class TestModifyAndCancel:
         broker.cancel_gtt(gid)
         assert broker.get_gtt(gid)["status"] == "deleted"
 
-    def test_modify_moves_only_the_named_leg(self, sim, broker):
-        """#84: Kite's modify_gtt replaces the whole trigger; the stop leg trails,
-        the target leg is resent unchanged."""
-        sim.on_price("ONGC", "NSE", 170.0)
-        gid = broker.place_gtt(oco())
-        broker.modify_gtt(gid, {"leg1": {"stopPrice": 160.0, "limitPrice": 159.0}})
-        gtt = broker.get_gtt(gid)
-        assert gtt["condition"]["trigger_values"] == [160.0, 200.0]
-        assert [o["price"] for o in gtt["orders"]] == [159.0, 202.0]
-        assert gtt["condition"]["last_price"] == 170.0
-
-    def test_triggered_gtt_cannot_be_modified(self, sim, broker):
-        sim.on_price("ONGC", "NSE", 160.0)
-        gid = broker.place_gtt(oco())
-        sim.on_price("ONGC", "NSE", 149.0)
-        with pytest.raises(kiteconnect.exceptions.InputException, match="triggered"):
-            broker.modify_gtt(gid, {"leg1": {"stopPrice": 140.0, "limitPrice": 139.0}})
-
     def test_unknown_gtt(self, broker):
         with pytest.raises(kiteconnect.exceptions.InputException):
             broker.get_gtt("424242")

@@ -102,7 +102,7 @@ dashboard.yourdomain.com {
 
 ### "Broker API is down"
 1. Set bot_mode to `paused` via dashboard
-2. Confirm all open positions have broker-side GTT stops (check Kite app directly)
+2. Confirm every open MIS position has its SL-M stop order resting at the broker (check the Kite orders tab directly)
 3. Wait for broker to restore. Check status pages.
 4. Once restored, refresh tokens if expired, resume `auto`
 5. If broker is down at open and you have intraday positions: manually close via broker app

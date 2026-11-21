@@ -77,7 +77,7 @@ def _partial_harness(tmp_path, per_tick: int) -> Harness:
         config=KiteSimConfig(liquidity_per_tick=per_tick),
     )
     h.om = OrderManager(h.db, {h.om._brokers.popitem()[0]: h.paper}, ltp_cache={}, clock=h.clock)
-    h.pm = PositionManager(h.db, gtt_manager=None, order_manager=h.om)
+    h.pm = PositionManager(h.db, order_manager=h.om)
     h.sup = TradeSupervisor(h.db, h.om, h.pm, h.alerter, clock=h.clock)
     return h
 

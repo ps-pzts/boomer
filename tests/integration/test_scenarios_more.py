@@ -38,7 +38,7 @@ def partial_fill(h: Hostile, bid: str, qty: int, price: float = 100.0) -> None:
 def restarted(h: Hostile) -> TradeSupervisor:
     """A new process: fresh OrderManager and supervisor on the same database."""
     om = OrderManager(h.db, {BrokerName.KITE: h.paper}, ltp_cache={}, clock=h.clock)
-    pm = PositionManager(h.db, gtt_manager=None, order_manager=om)
+    pm = PositionManager(h.db, order_manager=om)
     return TradeSupervisor(h.db, om, pm, h.alerter, clock=h.clock)
 
 

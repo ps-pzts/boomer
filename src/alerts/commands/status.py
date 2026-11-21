@@ -1,5 +1,5 @@
 """/status: the session at a glance (#103). Replaces the pre-redesign snapshot that still
-reported recommendations and queued GTTs."""
+reported recommendations and queued orders."""
 
 from __future__ import annotations
 

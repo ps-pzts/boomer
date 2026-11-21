@@ -37,20 +37,3 @@ def gtt_place_params(kite: object, request: GttRequest, last_price: float) -> di
             _leg(request.quantity, request.target_limit_price),
         ],
     }
-
-
-def gtt_modified_legs(current: dict, changes: dict) -> tuple[list, list[dict]]:
-    """The full trigger_values and orders of `current` (a get_gtt payload) with the
-    `{"legN": {"stopPrice", "limitPrice"}}` changes applied (#84: Kite's
-    modify_gtt replaces the whole trigger)."""
-    trigger_values = list(current["condition"]["trigger_values"])
-    orders = [
-        {k: o[k] for k in ("transaction_type", "quantity", "product", "order_type", "price")}
-        for o in current["orders"]
-    ]
-    for i in range(len(orders)):
-        leg = changes.get(f"leg{i + 1}")
-        if leg:
-            trigger_values[i] = leg["stopPrice"]
-            orders[i]["price"] = leg["limitPrice"]
-    return trigger_values, orders

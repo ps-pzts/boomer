@@ -81,7 +81,7 @@ def test_short_position_sign(tmp_path):
     path = str(tmp_path / "s.db")
     run_migrations(path, _MIGRATIONS)
     db = sqlite3.connect(path)
-    pm = PositionManager(db, gtt_manager=None, order_manager=None)
+    pm = PositionManager(db, order_manager=None)
     pid = pm.open_position(
         symbol="INFY", exchange="NSE", track="intraday", bucket_id="intraday",
         broker_id="kite", quantity=-10, average_entry_price=100.0, stop_loss_price=102.0,
