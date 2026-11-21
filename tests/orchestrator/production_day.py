@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib
+import pkgutil
 import sqlite3
 import sys
 from datetime import datetime as RealDatetime
@@ -43,40 +44,30 @@ SKIPPED_TASKS = {
     "nightly_health_check": "01:45",
 }
 
-_PRELOAD = [
-    "executor.session_controller",
-    "executor.decision_cycle",
-    "executor.trade_lifecycle",
-    "executor.trade_store",
-    "executor.order_manager",
-    "executor.position_manager",
-    "executor.trading_mode",
-    "executor.brokers.paper_book",
-    "executor.brokers.kitesim.paper",
-    "executor.brokers.kitesim.sim",
-    "executor.kite_checks",
-    "executor.trailing",
-    "brain.watchlist",
-    "brain.feature_store",
-    "brain.features.live",
-    "brain.surveillance",
-    "brain.signal_store",
-    "brain.intraday_decision",
-    "capital.state",
-    "capital.risk_config",
-    "collector.live_bars",
-    "observability.emit",
-    "observability.telegram_feed",
-    "orchestrator.models",
-    "orchestrator.execution",
-    "orchestrator.orchestrator",
-    "orchestrator.tasks_executor",
-    "orchestrator.tasks_session",
-    "orchestrator.task_runner",
-    "orchestrator.scheduler",
-    "orchestrator.bootstrap",
-    "alerts.commands.reads",
-]
+# Packages whose every module is imported before the clock is patched, so none can be
+# missed by a fixed list (a split or a new module is picked up by itself).
+_PACKAGES = ["executor", "brain", "capital", "orchestrator", "observability", "alerts"]
+_EXTRA = ["collector.live_bars"]
+
+
+def _import_all() -> None:
+    names = list(_EXTRA)
+    for pkg in _PACKAGES:
+        names.append(pkg)
+        names += [m.name for m in pkgutil.walk_packages([str(SRC / pkg)], f"{pkg}.")]
+    for name in names:
+        try:
+            importlib.import_module(name)
+        except Exception:  # an optional dependency missing: that module is not in play
+            continue
+
+
+def src_modules() -> list:
+    return [
+        m
+        for m in list(sys.modules.values())
+        if str(getattr(m, "__file__", "") or "").startswith(str(SRC))
+    ]
 
 
 class FakeClock:
@@ -100,13 +91,20 @@ class FakeClock:
             def now(cls, tz=None):
                 return clock.now.astimezone(tz) if tz else clock.now.replace(tzinfo=None)
 
-        for name in _PRELOAD:
-            importlib.import_module(name)
+        _import_all()
         monkeypatch.setattr(dt, "datetime", FakeDatetime)  # `import datetime` / local imports
         for mod in list(sys.modules.values()):  # `from datetime import datetime`
             f = getattr(mod, "__file__", None)
             if f and str(f).startswith(str(SRC)) and getattr(mod, "datetime", None) is real:
                 monkeypatch.setattr(mod, "datetime", FakeDatetime)
+
+    @staticmethod
+    def on_real_clock() -> list[str]:
+        """Source modules that still resolve `datetime` to the real class (call while the
+        clock is installed): their `datetime.now()` would read the wall clock."""
+        return sorted(
+            m.__name__ for m in src_modules() if getattr(m, "datetime", None) is RealDatetime
+        )
 
     def at(self, hh: int, mm: int) -> RealDatetime:
         self.now = RealDatetime(DAY.year, DAY.month, DAY.day, hh, mm, tzinfo=IST)

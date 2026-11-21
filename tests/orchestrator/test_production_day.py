@@ -103,6 +103,11 @@ class Day:
         for minute in range(8 * 60 + 45, CLOSE + 1):
             self.minute(minute)
         self.rig.emitter.stop()  # flush queued events
+        # Every module that was imported during the day (lazily too) is on the fake clock.
+        self.real_clock = self.clock.on_real_clock()
+        self.fake_clock_modules = [
+            m.__name__ for m in pd.src_modules() if m.__name__.startswith("executor.")
+        ]
         self.sent = self.poll()  # the Telegram feed process catches up
         self.texts = [c.args[2] for c in self.out.call_args_list]
         self.repeat = self.poll()
@@ -186,6 +191,12 @@ class TestWholePaperDay:
     @pytest.fixture(autouse=True)
     def _day(self, paper_day: Day):
         self.d = paper_day
+
+    def test_no_module_is_left_on_the_real_clock(self):
+        assert self.d.real_clock == []
+        # the modules #123 split out are in play and covered
+        for name in ("executor.order_store", "executor.session_context", "executor.order_checks"):
+            assert name in self.d.fake_clock_modules
 
     def test_clock_is_fake_everywhere(self):
         row = self.d.q("SELECT created_at FROM trading_sessions")[0][0]
