@@ -32,6 +32,7 @@ def db_path(tmp_path) -> str:
     p = str(tmp_path / "b.db")
     run_migrations(p, _MIGRATIONS)
     RiskConfigStore(p).seed_defaults(DAY)
+    _add_surveillance(p)  # a fresh list by default; tests of the degraded paths delete it
     return p
 
 
@@ -49,6 +50,19 @@ def _add_fno(db_path: str, symbol: str, trade_date: str = "2026-11-18") -> None:
         " instrument_type, expiry_date, trade_date, observed_at, open_interest)"
         " VALUES (?, 'raw', 'v1', ?, 'FUT', '2026-11-26', ?, ?, 1000)",
         (f"{symbol}-{trade_date}", symbol, trade_date, f"{trade_date}T18:00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _add_surveillance(db_path: str, *symbols: str, list_date: str = "2026-11-19") -> None:
+    """A fresh ASM list holding `symbols` and a GSM list holding a placeholder."""
+    conn = sqlite3.connect(db_path)
+    rows = [("ASM", s) for s in symbols] + [("GSM", "UNRELATED")]
+    conn.executemany(
+        "INSERT INTO surveillance_list (list_date, list_type, symbol, observed_at)"
+        " VALUES (?, ?, ?, ?)",
+        [(list_date, t, s, f"{list_date}T07:30:00") for t, s in rows],
     )
     conn.commit()
     conn.close()
@@ -131,6 +145,57 @@ class TestIntradayWatchlistTask:
         assert feed.subscribed == set()
         assert "No F&O universe" in alerter.critical.call_args.args[0]
 
+    def test_asm_gsm_stock_never_in_watchlist_and_counted(self, db_path, alerter, caplog):
+        """#50: F&O stock under ASM is excluded from the watchlist; both reasons counted."""
+        import logging
+
+        _add_surveillance(db_path, "PUMPED", list_date="2026-11-19")
+        _add_stock(db_path, "PUMPED", 900, oi_change=9.0)
+        _add_stock(db_path, "CASHONLY", 900, fno=False)
+        _add_stock(db_path, "LIQUID", 800)
+        with caplog.at_level(logging.INFO):
+            _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=None)
+        assert [e.stock_symbol for e in WatchlistStore(db_path).load(DAY)] == ["LIQUID"]
+        line = next(r.message for r in caplog.records if "watchlist_selected" in r.message)
+        assert "'not_fno': 1" in line and "'under_surveillance': 1" in line
+        alerter.critical.assert_not_called()
+        alerter.warn.assert_not_called()
+
+    def test_missing_surveillance_list_trades_fno_only_with_critical(self, db_path, alerter):
+        sqlite3.connect(db_path).execute("DELETE FROM surveillance_list").connection.commit()
+        _add_stock(db_path, "LIQUID", 900)
+        _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=None)
+        assert [e.stock_symbol for e in WatchlistStore(db_path).load(DAY)] == ["LIQUID"]
+        titles = [c.args[0] for c in alerter.critical.call_args_list]
+        assert titles == ["ASM/GSM list unavailable: trading F&O-only"]
+
+    def test_stale_surveillance_list_warns_and_still_filters(self, db_path, alerter):
+        sqlite3.connect(db_path).execute("DELETE FROM surveillance_list").connection.commit()
+        _add_surveillance(db_path, "PUMPED", list_date="2026-11-17")  # 2 trading days old
+        _add_stock(db_path, "PUMPED", 900)
+        _add_stock(db_path, "LIQUID", 800)
+        _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=None)
+        assert [e.stock_symbol for e in WatchlistStore(db_path).load(DAY)] == ["LIQUID"]
+        assert alerter.warn.call_args.args[0] == "ASM/GSM list is stale"
+        alerter.critical.assert_not_called()
+
+    def test_renamed_fno_underlying_warns(self, db_path, alerter):
+        _add_stock(db_path, "LIQUID", 900)
+        _add_fno(db_path, "OLDNAME")  # F&O knows a symbol the equity master doesn't
+        _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=None)
+        assert alerter.warn.call_args.args[0] == "F&O underlyings with no equity match"
+
+    def test_morning_features_computed_only_for_the_universe(self, db_path, alerter):
+        from orchestrator.tasks_brain import _morning_batch_features
+
+        _add_surveillance(db_path, "PUMPED")
+        _add_stock(db_path, "PUMPED", 900)
+        _add_stock(db_path, "LIQUID", 900)
+        _add_stock(db_path, "CASHONLY", 900, fno=False)
+        with patch("brain.features.runner.run_track_computers") as run:
+            _morning_batch_features(DAY.isoformat(), 1, db_path=db_path)
+        assert [c.args[3] for c in run.call_args_list] == ["LIQUID"]
+
     def test_without_feed_still_persists(self, db_path, alerter):
         _add_stock(db_path, "LIQUID", 900)
         _intraday_watchlist(DAY.isoformat(), 1, db_path=db_path, feed=None)
@@ -141,6 +206,8 @@ class TestIntradayWatchlistTask:
         td = tasks["intraday_watchlist"]
         assert td.schedule == "10 9 * * 1-5"
         assert td.dependencies == ["morning_batch_features"]
+        refresh = tasks["surveillance_refresh"]
+        assert refresh.repeats and refresh.schedule == "25,55 9-14 * * 1-5"
         # Retired in #37: they produced recommendations nothing executes since #26.
         assert "morning_batch_signals" not in tasks
         assert "morning_batch_recommendations" not in tasks

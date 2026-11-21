@@ -140,6 +140,7 @@ def build_decision_cycle(
         return None
     from brain.feature_store import FeatureStore
     from brain.features.live import latest_news_at
+    from brain.surveillance import blocked_symbols
     from brain.watchlist import WatchlistStore
     from capital.risk_config import RiskConfigStore
     from capital.state import CapitalStateManager
@@ -165,4 +166,5 @@ def build_decision_cycle(
         risk_config=RiskConfigStore(db_path).load_current,
         ledger=CapitalStateManager(db_path).latest_ledger,
         watchlist=WatchlistStore(db_path).load,
+        surveillance_blocked=lambda day: blocked_symbols(db_path, day),
     )

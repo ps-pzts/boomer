@@ -19,6 +19,7 @@ class DataSource(StrEnum):
     INDEX_DATA = "index_data"
     MINUTE_BARS = "minute_bars"
     SECTOR_CLASSIFICATIONS = "sector_classifications"
+    SURVEILLANCE = "surveillance"
 
 
 class ParseStatus(StrEnum):

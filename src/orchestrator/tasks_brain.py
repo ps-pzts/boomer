@@ -130,6 +130,7 @@ def _intraday_watchlist(
             "Check the nightly F&O bhavcopy collection.",
         )
         return
+    _alert_universe_notices(universe)
     symbols = universe.symbols
 
     def _features():
@@ -138,7 +139,16 @@ def _intraday_watchlist(
             if features:
                 yield sym, "NSE", features
 
-    entries = select_watchlist(_features(), risk_config, regime, now_ist)
+    entries = select_watchlist(
+        _features(),
+        risk_config,
+        regime,
+        now_ist,
+        universe_rejections={
+            "not_fno": universe.not_fno_count,
+            "under_surveillance": len(universe.under_surveillance),
+        },
+    )
     WatchlistStore(db_path).save(session_date, entries)
     if not entries:
         logger.error("intraday_watchlist empty run_date=%s universe=%d", run_date, len(symbols))
@@ -155,6 +165,40 @@ def _intraday_watchlist(
         len(entries),
         feed is not None,
     )
+
+
+def _alert_universe_notices(universe: object) -> None:
+    """Surface a degraded surveillance filter or symbol mismatches (#50). The filter is
+    never silently dropped: stale -> WARN, unavailable -> CRITICAL (trading F&O-only)."""
+    from alerts.alerter import get_alerter
+
+    status = universe.surveillance_status  # type: ignore[attr-defined]
+    asof, age = universe.surveillance_as_of, universe.surveillance_age  # type: ignore[attr-defined]
+    try:
+        if status == "stale":
+            get_alerter().warn(
+                "ASM/GSM list is stale",
+                f"Last surveillance list is from {asof} ({age} trading days old); still "
+                "applied. Check the nightly surveillance fetch.",
+                source_task_id="intraday_watchlist",
+            )
+        elif status == "unavailable":
+            _alert_critical_brain(
+                "ASM/GSM list unavailable: trading F&O-only",
+                f"No usable surveillance list (last: {asof}, age: {age} trading days; "
+                "usable only up to 3). Stocks under ASM/GSM are NOT excluded today. "
+                "Fix the NSE surveillance fetch; it is reconciled as soon as a list arrives.",
+            )
+        unmatched = universe.fno_unmatched  # type: ignore[attr-defined]
+        if unmatched:
+            get_alerter().warn(
+                "F&O underlyings with no equity match",
+                f"{len(unmatched)} F&O stock(s) match no EQ instrument (renamed or series "
+                f"change?): {', '.join(unmatched[:15])}. They are not tradable today.",
+                source_task_id="intraday_watchlist",
+            )
+    except Exception as exc:
+        logger.error("alert_send_failed title=universe_notice error=%s", exc)
 
 
 def _alert_critical_brain(title: str, body: str) -> None:

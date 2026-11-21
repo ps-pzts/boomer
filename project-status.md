@@ -77,6 +77,14 @@
 
 ## Change log
 
+### 2026-11-21 — Feat: intraday universe = EQ ∩ F&O minus ASM/GSM surveillance (#50 part 2)
+
+- **Universe:** `brain/universe.py` now subtracts NSE ASM/GSM stocks (`brain/surveillance.py`) from EQ ∩ F&O; applied to both `morning_batch_features` and `intraday_watchlist`. Matching by upper-cased symbol and by ISIN when the list carries one. F&O underlyings with no EQ instrument (renames) are reported (`fno_unmatched`, WARN); no EQ/F&O symbol overlap fails closed (`no_fno_equity_match`). Watchlist rejection counts now include `not_fno` and `under_surveillance`.
+- **Fail-safe staleness** (trading days from list fetch date to session, older of ASM/GSM): 0 fresh; 1-3 last list applied + WARN; >3 or never fetched -> F&O-only + CRITICAL. Never silently unfiltered.
+- **Collector:** `collector/fetchers/surveillance.py` (cookie handshake, API then CSV fallback, schema-agnostic parser, empty payload rejected) writes `surveillance_list` (migration `0019`); registered in the nightly collector. **UNVERIFIED against the live NSE site** (endpoint unreachable at build time): response shape and the CSV fallback URLs are assumptions.
+- **Mid-session reconcile:** new repeating task `surveillance_refresh` (09:25..14:55, :25/:55) fetches a missing list; the decision cycle re-reads the list each cycle and rejects NEW entries on listed stocks (`under_surveillance`); open trades are never touched.
+- Tests: `tests/brain/test_surveillance.py` (worked example, staleness boundaries, symbol edge cases), `tests/collector/fetchers/test_surveillance.py`, `tests/orchestrator/test_surveillance_refresh.py`, plus additions to the watchlist-task and decision-cycle tests.
+
 ### 2026-11-21 — Bug: open positions never got a current price or unrealised P&L (#106)
 
 - **Symptom:** `positions.current_price`/`unrealised_pnl` stayed at entry/0 all session, so `/positions`, `/pnl` and the UI showed 0 open P&L.
