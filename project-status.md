@@ -77,6 +77,10 @@
 
 ## Change log
 
+### 2026-11-21 — Feat: paper to live readiness report (#119)
+
+- New read-only `executor/live_readiness.py` (`python -m executor.live_readiness`) and Telegram `/readiness`: pass / fail / insufficient-data with the exact numbers for each design Q5 criterion (20 closed paper sessions; zero unprotected moments from `exit_reason` of forced-out trades (state tables, not events), flagged positions and open trades without a stop; mean adverse slippage per leg class vs `SlippageModel`'s assumption (limit 0, stop 7.5 bps); expectancy after `CostModel` costs > 0; B4 manual flag `BOOMER_B4_RESOLVED`). Paper sessions only; opens the DB `mode=ro`; never enables live trading. Market exits are counted but not judged (no stored reference price).
+
 ### 2026-11-21 — Bug: collector date parsers invented today's date on failure (#54)
 
 - **Symptom:** `_parse_date()` in `prices`, `fo_oi`, `bulk_deals` and `shares_outstanding` returned `date.today()` when no format matched; `nse_filings`/`bse_filings` returned today for an empty date and the first 10 characters of the string for an unparseable one. Silent lookahead / point-in-time corruption (a price row written under today).
