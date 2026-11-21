@@ -48,3 +48,25 @@ def test_too_small_is_zero():
 def test_stop_must_be_below_entry(stop):
     with pytest.raises(ValueError):
         _size(stop=stop)
+
+
+def test_low_priced_stock_is_valid():
+    # entry 1, stop 0.50 -> 0.50 a share: 5,000 / 0.50 = 10,000 risk; cap 50,000 / 1 = 50,000
+    s = _size(entry="1", stop="0.5")
+    assert (s.quantity, s.binding, s.risk_rupees) == (10000, "risk", D("5000.0"))
+    # entry 2, stop 1 -> 1 a share: 5,000 risk shares; cap 50,000 / 2 = 25,000
+    s = _size(entry="2", stop="1")
+    assert (s.quantity, s.binding, s.risk_rupees) == (5000, "risk", D("5000"))
+
+
+def test_sizing_is_immutable():
+    with pytest.raises(AttributeError):
+        _size().quantity = 1  # type: ignore[misc]
+
+
+def test_non_positive_entry_is_refused():
+    # entry <= 0 is already caught by the stop checks, so the entry guard is redundant
+    # (mutant `entry < 0` is equivalent); this pins the behaviour.
+    for entry, stop in [("0", "-1"), ("-5", "-10")]:
+        with pytest.raises(ValueError):
+            _size(entry=entry, stop=stop)
