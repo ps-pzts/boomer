@@ -87,6 +87,13 @@
 
 - New read-only `executor/live_readiness.py` (`python -m executor.live_readiness`) and Telegram `/readiness`: pass / fail / insufficient-data with the exact numbers for each design Q5 criterion (20 closed paper sessions; zero unprotected moments from `exit_reason` of forced-out trades (state tables, not events), flagged positions and open trades without a stop; mean adverse slippage per leg class vs `SlippageModel`'s assumption (limit 0, stop 7.5 bps); expectancy after `CostModel` costs > 0; B4 manual flag `BOOMER_B4_RESOLVED`). Paper sessions only; opens the DB `mode=ro`; never enables live trading. Market exits are counted but not judged (no stored reference price).
 
+### 2026-11-21 — Refactor: split files over the size limit (#95, #117)
+
+- `session_controller.py` (534 -> 330 lines) keeps the `SessionController` class; guard context moved to `session_context.py` (`ContextMixin`, timing constants, `_blocker`), reconcile to `session_reconcile.py` (`ReconcileMixin`), emergency cancel/flatten to `session_emergency.py` (`EmergencyMixin`). Constants and `_blocker` are re-exported, so every import path is unchanged.
+- `order_manager.py` (528 -> 324 lines) keeps `OrderManager`; the 8 pre-trade checks moved to `order_checks.py` (`pre_trade_checks`, called from `OrderManager._pre_trade_checks`), persistence helpers to `order_store.py` (`OrderStoreMixin`).
+- `tests/test_integration_full_pipeline.py` (652) split into `tests/integration/test_pipeline_orchestrator.py`, `test_pipeline_collector.py` and `pipeline_helpers.py`; resolves the follow-up noted under the #54-era entries.
+- Zero behaviour change: full suite 1663 passed / 1 skipped / 2 deselected before and after (1878 passed after rebasing on #120, #125 and #118). Mutation: `order_checks.pre_trade_checks` 51/51 (same as `_pre_trade_checks` before); reconcile code 4/6 both before (in `session_controller`) and after (`session_reconcile`), same two `untracked_orders` survivors. `scripts/mutation_all.sh` targets updated.
+
 ### 2026-11-21 — Bug: collector date parsers invented today's date on failure (#54)
 
 - **Symptom:** `_parse_date()` in `prices`, `fo_oi`, `bulk_deals` and `shares_outstanding` returned `date.today()` when no format matched; `nse_filings`/`bse_filings` returned today for an empty date and the first 10 characters of the string for an unparseable one. Silent lookahead / point-in-time corruption (a price row written under today).
@@ -389,7 +396,7 @@ Live-only bugs that paper could never show (MockBroker uses our own statuses):
 
 - **Why:** CI runs `ruff format --check`, which had failed on every merge to `main` since at least #24 (32 unformatted files). The CLAUDE.md pre-push gate only runs `ruff check`, so this was never caught locally.
 - Formatting pushed `src/backtester/simulation.py` (590 → 613 lines) and `tests/backtester/test_simulation.py` past the 600-line limit, so they were split by responsibility first: SQL persistence moved to the new `src/backtester/run_store.py` (`BacktestSimulation` keeps thin delegating methods; `run_store.py` added to the code-hash file list), and acceptance-gate tests moved to `tests/backtester/test_simulation_acceptance.py`, with shared fixtures in `tests/backtester/sim_helpers.py`. New `tests/backtester/test_run_store.py`. No behaviour change. The backtest code hash changes, which resets holdout-burn tracking.
-- Follow-up, not done here: `tests/test_integration_full_pipeline.py` is 652 lines (over the limit before this change).
+- ~~Follow-up, not done here: `tests/test_integration_full_pipeline.py` is 652 lines~~ — split in #117.
 - 519 tests pass, `ruff check` and `ruff format --check` clean.
 
 ### 2026-11-19 — Hotfix: MIS-only, remove 365-day CNC GTT dispatch
