@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import subprocess
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -147,30 +145,3 @@ class TestAsyncPath:
 
     def test_unconfigured_module_emit_is_a_counted_noop(self):
         obs.emit("k", "n")  # default emitter has no db: must not raise
-
-
-class TestModuleIdentity:
-    @pytest.mark.parametrize(
-        "first, second",
-        [
-            ("observability.emit", "src.observability.emit"),
-            ("src.observability.emit", "observability.emit"),
-        ],
-    )
-    def test_one_emitter_whichever_root_imports_first(self, first, second):
-        """The codebase imports both `observability` and `src.observability`; they
-        must share one emitter or half the events go nowhere (#56)."""
-        code = (
-            f"import importlib; a = importlib.import_module('{first}'); "
-            f"b = importlib.import_module('{second}'); print(a is b)"
-        )
-        repo = Path(__file__).parents[2]
-        out = subprocess.run(
-            [sys.executable, "-c", code],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            env={"PYTHONPATH": f"{repo}/src:{repo}", "PATH": ""},
-            check=True,
-        )
-        assert out.stdout.strip() == "True"

@@ -25,7 +25,7 @@ MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 @pytest.fixture()
 def db_path(tmp_path: Path) -> str:
     path = str(tmp_path / "test.db")
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     run_migrations(path, MIGRATIONS_DIR)
     return path
@@ -55,7 +55,7 @@ class TestNightlyHealthCheckAllClear:
             patch("alerts.telegram.send_telegram", return_value=True) as mock_send,
             patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"}),
         ):
-            from src.orchestrator.tasks_maintenance import _nightly_health_check
+            from orchestrator.tasks_maintenance import _nightly_health_check
 
             _nightly_health_check(run_date="2026-05-24", run_id=1, db_path=db_path)
 
@@ -75,7 +75,7 @@ class TestNightlyHealthCheckAllClear:
             patch("alerts.telegram.send_telegram", return_value=True) as mock_send,
             patch.dict(os.environ, env, clear=True),
         ):
-            from src.orchestrator.tasks_maintenance import _nightly_health_check
+            from orchestrator.tasks_maintenance import _nightly_health_check
 
             _nightly_health_check(run_date="2026-05-24", run_id=1, db_path=db_path)
 
@@ -92,7 +92,7 @@ class TestNightlyHealthCheckStuckTasks:
             patch("alerts.telegram.send_telegram", return_value=True) as mock_send,
             patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"}),
         ):
-            from src.orchestrator.tasks_maintenance import _nightly_health_check
+            from orchestrator.tasks_maintenance import _nightly_health_check
 
             _nightly_health_check(run_date="2026-05-24", run_id=1, db_path=db_path)
 
@@ -110,7 +110,7 @@ class TestNightlyHealthCheckStuckTasks:
             patch("alerts.telegram.send_telegram", return_value=True) as mock_send,
             patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"}),
         ):
-            from src.orchestrator.tasks_maintenance import _nightly_health_check
+            from orchestrator.tasks_maintenance import _nightly_health_check
 
             _nightly_health_check(run_date="2026-05-24", run_id=1, db_path=db_path)
 
@@ -134,7 +134,7 @@ class TestNightlyHealthCheckDiskSpace:
             patch("alerts.telegram.send_telegram", return_value=True) as mock_send,
             patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "tok", "TELEGRAM_CHAT_ID": "123"}),
         ):
-            from src.orchestrator.tasks_maintenance import _nightly_health_check
+            from orchestrator.tasks_maintenance import _nightly_health_check
 
             _nightly_health_check(run_date="2026-05-24", run_id=1, db_path=db_path)
 

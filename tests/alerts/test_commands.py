@@ -14,9 +14,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from alerts import commands, telegram_bot
+from alerts.commands import common
 from db.migrations import run_migrations
-from src.alerts import commands, telegram_bot
-from src.alerts.commands import common
 
 IST = ZoneInfo("Asia/Kolkata")
 _MIGRATIONS = Path(__file__).parents[2] / "migrations"

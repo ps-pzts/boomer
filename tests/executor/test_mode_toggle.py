@@ -104,7 +104,7 @@ def test_paper_record_counts_only_paper(db):
 
 
 def test_telegram_mode_command(db, monkeypatch):
-    from src.alerts.telegram_bot import handle_mode
+    from alerts.telegram_bot import handle_mode
 
     monkeypatch.setenv("BOOMER_TRADING_MODE", "live")
     assert "Today: PAPER" in handle_mode(db, "/mode")

@@ -8,7 +8,7 @@ import pytest
 
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
-from src.orchestrator.models import (
+from orchestrator.models import (
     BotMode,
     BotModeStore,
     RetryPolicy,
@@ -16,7 +16,7 @@ from src.orchestrator.models import (
     TaskRunStore,
     TaskStatus,
 )
-from src.orchestrator.scheduler import Scheduler, cron_matches, dependency_met
+from orchestrator.scheduler import Scheduler, cron_matches, dependency_met
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -24,7 +24,7 @@ IST = ZoneInfo("Asia/Kolkata")
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
@@ -242,7 +242,7 @@ class TestRepeatingTasks:
 
 def test_every_multi_slot_task_in_registry_is_marked_repeating():
     """Any task whose schedule fires more than once on a weekday must repeat (#61)."""
-    from src.orchestrator.tasks import build_task_registry
+    from orchestrator.tasks import build_task_registry
 
     monday = datetime.datetime(2026, 5, 11, tzinfo=IST)
     minutes = [monday + datetime.timedelta(minutes=m) for m in range(24 * 60)]
@@ -271,7 +271,7 @@ class TestSafetyTask:
         assert ok, reason
 
     def test_registry_session_tick(self) -> None:
-        from src.orchestrator.tasks import build_task_registry
+        from orchestrator.tasks import build_task_registry
 
         reg = build_task_registry(":memory:", "/tmp/a", "/tmp/b")
         tick = reg["session_tick"]

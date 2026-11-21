@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from src.alerts import telegram_bot
-from src.executor import kite_checks
-from src.executor.preflight import CheckReport, CheckResult
+from alerts import telegram_bot
+from executor import kite_checks
+from executor.preflight import CheckReport, CheckResult
 
 
 def _rep(kind: str, ok: bool) -> CheckReport:

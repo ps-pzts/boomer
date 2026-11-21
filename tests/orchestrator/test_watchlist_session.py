@@ -10,16 +10,16 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.brain.feature_store import FeatureStore
-from src.brain.watchlist import WatchlistEntry, WatchlistStore
-from src.capital.risk_config import RiskConfigStore
-from src.collector.live_bars import SessionBarRecorder
-from src.db.migrations import run_migrations
-from src.executor.brokers.feeds.base import NIFTY_50
-from src.executor.brokers.feeds.manual_feed import ManualFeed
-from src.orchestrator.orchestrator import resume_market_session
-from src.orchestrator.tasks import build_task_registry
-from src.orchestrator.tasks_brain import _intraday_watchlist
+from brain.feature_store import FeatureStore
+from brain.watchlist import WatchlistEntry, WatchlistStore
+from capital.risk_config import RiskConfigStore
+from collector.live_bars import SessionBarRecorder
+from db.migrations import run_migrations
+from executor.brokers.feeds.base import NIFTY_50
+from executor.brokers.feeds.manual_feed import ManualFeed
+from orchestrator.orchestrator import resume_market_session
+from orchestrator.tasks import build_task_registry
+from orchestrator.tasks_brain import _intraday_watchlist
 
 IST = ZoneInfo("Asia/Kolkata")
 DAY = date(2026, 11, 19)  # Thursday
@@ -38,7 +38,7 @@ def db_path(tmp_path) -> str:
 @pytest.fixture()
 def alerter():
     fake = MagicMock()
-    with patch("src.alerts.alerter.get_alerter", return_value=fake):
+    with patch("alerts.alerter.get_alerter", return_value=fake):
         yield fake
 
 

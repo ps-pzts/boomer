@@ -8,11 +8,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.collector.live_bars import SessionBarRecorder
-from src.executor.brokers.feeds.base import NIFTY_50, Tick
-from src.executor.brokers.feeds.manual_feed import ManualFeed
-from src.orchestrator.tasks import build_task_registry
-from src.orchestrator.tasks_executor import (
+from collector.live_bars import SessionBarRecorder
+from executor.brokers.feeds.base import NIFTY_50, Tick
+from executor.brokers.feeds.manual_feed import ManualFeed
+from orchestrator.tasks import build_task_registry
+from orchestrator.tasks_executor import (
     _feed_health_check,
     _minute_bar_flush,
     _pre_market_executor_setup,
@@ -25,7 +25,7 @@ OPEN_PLUS_2 = datetime(2026, 11, 19, 9, 17, 0, tzinfo=IST)
 @pytest.fixture()
 def alerter():
     fake = MagicMock()
-    with patch("src.alerts.alerter.get_alerter", return_value=fake):
+    with patch("alerts.alerter.get_alerter", return_value=fake):
         yield fake
 
 
@@ -76,7 +76,7 @@ class TestPreMarketSetupConnectsFeed:
         feed = MagicMock()
         order: list[str] = []
         with patch(
-            "src.executor.auto_login.refresh_all_broker_tokens",
+            "executor.auto_login.refresh_all_broker_tokens",
             side_effect=lambda: order.append("refresh") or {"kite": "t"},
         ):
             feed.reauthenticate.side_effect = lambda: order.append("feed")
@@ -88,12 +88,12 @@ class TestPreMarketSetupConnectsFeed:
     def test_feed_connect_failure_alerts_critical(self, alerter):
         feed = MagicMock()
         feed.reauthenticate.side_effect = RuntimeError("ws refused")
-        with patch("src.executor.auto_login.refresh_all_broker_tokens", return_value={}):
+        with patch("executor.auto_login.refresh_all_broker_tokens", return_value={}):
             _pre_market_executor_setup("2026-11-19", 1, db_path=":memory:", brokers=[], feed=feed)
         assert "failed to connect" in alerter.critical.call_args.args[0]
 
     def test_no_feed_is_a_no_op(self, alerter):
-        with patch("src.executor.auto_login.refresh_all_broker_tokens", return_value={}):
+        with patch("executor.auto_login.refresh_all_broker_tokens", return_value={}):
             _pre_market_executor_setup("2026-11-19", 1, db_path=":memory:", brokers=[], feed=None)
         alerter.critical.assert_not_called()
 
@@ -124,7 +124,7 @@ class TestSchedule:
 class TestMinuteBars:
     def test_setup_starts_todays_bar_session(self, alerter, tmp_path):
         rec = SessionBarRecorder(tmp_path)
-        with patch("src.executor.auto_login.refresh_all_broker_tokens", return_value={}):
+        with patch("executor.auto_login.refresh_all_broker_tokens", return_value={}):
             _pre_market_executor_setup(
                 "2026-11-19", 1, db_path=":memory:", brokers=[], feed=None, bar_recorder=rec
             )

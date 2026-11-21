@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.orchestrator.tasks import build_task_registry
+from orchestrator.tasks import build_task_registry
 
 
 def _registry() -> dict:

@@ -9,10 +9,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.orchestrator.models import BotModeStore, TaskRunStore
-from src.orchestrator.scheduler import Scheduler
-from src.orchestrator.tasks import build_task_registry
-from src.orchestrator.tasks_session import _kite_canary, _kite_preflight
+from orchestrator.models import BotModeStore, TaskRunStore
+from orchestrator.scheduler import Scheduler
+from orchestrator.tasks import build_task_registry
+from orchestrator.tasks_session import _kite_canary, _kite_preflight
 from tests.kitesim_kit import SimKite
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -21,7 +21,7 @@ MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
 @pytest.fixture()
 def db_path(tmp_path: Path) -> str:
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     path = str(tmp_path / "t.db")
     run_migrations(path, MIGRATIONS_DIR)

@@ -20,7 +20,7 @@ MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
@@ -71,8 +71,8 @@ def _api_down(call, params, proceed):
 
 class TestSyncEodCapital:
     def test_initialises_ledger_on_first_run(self, db_path: Path) -> None:
-        from src.capital.state import CapitalStateManager
-        from src.orchestrator.capital_sync import sync_eod_capital
+        from capital.state import CapitalStateManager
+        from orchestrator.capital_sync import sync_eod_capital
 
         broker = _broker(80_000.0)
         sync_eod_capital(str(db_path), [broker], "2026-05-11")
@@ -84,8 +84,8 @@ class TestSyncEodCapital:
         assert ledger.total_capital == Decimal("80000.0")
 
     def test_sums_cash_across_two_brokers(self, db_path: Path) -> None:
-        from src.capital.state import CapitalStateManager
-        from src.orchestrator.capital_sync import sync_eod_capital
+        from capital.state import CapitalStateManager
+        from orchestrator.capital_sync import sync_eod_capital
 
         broker_a = _broker(50_000.0)
         broker_b = _broker(30_000.0)
@@ -98,8 +98,8 @@ class TestSyncEodCapital:
 
     def test_deployed_capital_included_in_total(self, db_path: Path) -> None:
         """₹80k cash + 10 shares × ₹200 = ₹82k total capital."""
-        from src.capital.state import CapitalStateManager
-        from src.orchestrator.capital_sync import sync_eod_capital
+        from capital.state import CapitalStateManager
+        from orchestrator.capital_sync import sync_eod_capital
 
         _seed_position(db_path, "intraday", qty=10, entry_price=200.0)
 
@@ -113,8 +113,8 @@ class TestSyncEodCapital:
         assert ledger.intraday_deployed == Decimal("2000.0")
 
     def test_updates_existing_ledger(self, db_path: Path) -> None:
-        from src.capital.state import CapitalStateManager
-        from src.orchestrator.capital_sync import sync_eod_capital
+        from capital.state import CapitalStateManager
+        from orchestrator.capital_sync import sync_eod_capital
 
         # First run: initialise
         broker = _broker(80_000.0)
@@ -132,8 +132,8 @@ class TestSyncEodCapital:
 
     def test_broker_failure_does_not_crash(self, db_path: Path) -> None:
         """A broker that raises on get_funds() is skipped; other brokers still counted."""
-        from src.capital.state import CapitalStateManager
-        from src.orchestrator.capital_sync import sync_eod_capital
+        from capital.state import CapitalStateManager
+        from orchestrator.capital_sync import sync_eod_capital
 
         bad = _broker(999.0)
         bad._kite.interceptor = _api_down
@@ -146,8 +146,8 @@ class TestSyncEodCapital:
         assert ledger.total_cash == Decimal("50000.0")
 
     def test_no_brokers_skips_write(self, db_path: Path) -> None:
-        from src.capital.state import CapitalStateManager
-        from src.orchestrator.capital_sync import sync_eod_capital
+        from capital.state import CapitalStateManager
+        from orchestrator.capital_sync import sync_eod_capital
 
         sync_eod_capital(str(db_path), [], "2026-05-11")
 
