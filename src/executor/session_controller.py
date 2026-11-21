@@ -24,34 +24,30 @@ import logging
 import sqlite3
 import threading
 from collections.abc import Callable
-from datetime import date, datetime, time
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from executor import session_machine as sm
-from executor.brokers.feeds.base import NIFTY_50
 from executor.kite_checks import gate as kite_gate
-from executor.session_halt import acknowledge_mismatch, halt_detail
-from executor.session_inputs import (
-    LegStatus,
-    ReconcileReport,
-    net_by_symbol,
-    nifty_move_pct,
-    realised_pnl,
-    reconcile_report,
-    tripped_breakers,
+from executor.session_context import (  # noqa: F401  (re-exported: public import path)
+    ENTRY_CUTOFF,
+    FEED_MAX_TICK_AGE_SECONDS,
+    MARKET_OPEN,
+    SQUARE_OFF,
+    ContextMixin,
+    _blocker,
 )
+from executor.session_emergency import EmergencyMixin
+from executor.session_halt import acknowledge_mismatch, halt_detail
+from executor.session_inputs import ReconcileReport  # noqa: F401  (re-exported)
+from executor.session_reconcile import ReconcileMixin
 from statemachine import record_created, transition
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
-MARKET_OPEN = time(9, 15)
-ENTRY_CUTOFF = time(14, 30)
-SQUARE_OFF = time(15, 14)
-FEED_MAX_TICK_AGE_SECONDS = 60
 
-
-class SessionController:
+class SessionController(ContextMixin, ReconcileMixin, EmergencyMixin):
     def __init__(
         self,
         conn: sqlite3.Connection,
@@ -234,52 +230,6 @@ class SessionController:
         ctx["broker_open_symbols"] = sorted(self._broker_net())
         self._fire(day, "all_flat", rule="flat_at_broker", ctx=ctx)
 
-    def _cancel_untracked_orders(self, day: date) -> None:
-        """Emergency (#67/#65): cancel every working order the bot doesn't track.
-        Our own orders were already cancelled by square_off_all."""
-        stray = self.untracked_orders() or []
-        for o in stray:
-            try:
-                self._broker.cancel_order(o["broker_order_id"])  # type: ignore[union-attr]
-            except Exception as exc:
-                logger.error("emergency_cancel_failed order=%s error=%s", o, exc)
-        if stray:
-            from observability.emit import emit
-
-            emit(
-                "decision",
-                "emergency_cancel_untracked",
-                severity="critical",
-                entity_type="session",
-                entity_id=day.isoformat(),
-                orders=stray,
-            )
-
-    def _flatten_untracked(self, day: date) -> None:
-        if self._om is None or self._broker is None:
-            return
-        from executor.emergency import flatten_untracked
-        from observability.emit import emit
-
-        tracked = set(self._sup.net_positions()) if self._sup is not None else set()  # type: ignore[attr-defined]
-        actions = flatten_untracked(
-            self._conn,
-            self._om,
-            self._broker.list_positions(),
-            tracked,
-            day,  # type: ignore[attr-defined]
-        )
-        if actions:
-            emit(
-                "decision",
-                "emergency_flatten",
-                severity="critical",
-                entity_type="session",
-                entity_id=day.isoformat(),
-                actions=actions,
-            )
-            logger.error("emergency_flatten %s", actions)
-
     def _halt(self, day: date, reason: str, ctx: dict, trigger: str = "halt") -> None:
         resumable = reason in sm.RESUMABLE
         self._fire(
@@ -303,140 +253,6 @@ class SessionController:
             else "No new entries for the rest of the day. Open trades stay managed."
         )
         self._alert("warn" if resumable else "critical", title, body)
-
-    def _reconcile(self, day: date, ctx: dict) -> None:
-        report = self.reconcile_report(day, ctx)
-        from observability.emit import emit
-
-        emit(
-            "decision",
-            "reconcile_report",
-            severity="info" if report.clean else "critical",
-            entity_type="session",
-            entity_id=day.isoformat(),
-            **report.as_inputs(),
-        )
-        if report.clean:
-            self._fire(
-                day,
-                "reconciled",
-                rule="reconcile_clean",
-                inputs=report.as_inputs(),
-                ctx=ctx,
-                fields={"halt_reason": None, "halt_acked_at": None, "halt_detail": None},
-            )
-            return
-        self._fire(
-            day,
-            "reconcile_failed",
-            rule="reconcile_mismatch",
-            inputs=report.as_inputs(),
-            severity="critical",
-            fields={
-                "halt_reason": "reconcile_mismatch",
-                "halt_acked_at": None,
-                "halt_detail": json.dumps(
-                    {"failed_checks": report.failures(), **report.checks}, default=str
-                ),
-            },
-        )
-        self._alert(
-            "critical",
-            "Reconcile MISMATCH — trading halted",
-            f"Failed checks: {', '.join(report.failures())}. {report.checks}. "
-            "The bot will not trade against this. Fix it at the broker, then acknowledge.",
-        )
-
-    def reconcile_report(self, day: date, ctx: dict) -> ReconcileReport:
-        """§4.5: our trades vs the broker (source of truth), feed, watchlist."""
-        legs = [LegStatus(*x) for x in self._sup.open_legs()] if self._sup else []  # type: ignore[attr-defined]
-        return reconcile_report(
-            trade_net=self._sup.net_positions() if self._sup else {},  # type: ignore[attr-defined]
-            broker_net=self._broker_net(),
-            open_legs=legs,
-            feed_fresh=ctx["feed_fresh"],
-            watchlist_size=ctx["watchlist_size"],
-            untracked_orders=self.untracked_orders(),
-        )
-
-    def untracked_orders(self) -> list[dict] | None:
-        """Orders working at the broker that we don't consider live (#65); None if
-        the broker can't be asked."""
-        if self._broker is None or self._om is None:
-            return []
-        try:
-            ours = self._om.live_broker_order_ids()  # type: ignore[attr-defined]
-            return [
-                o
-                for o in self._broker.list_open_orders()  # type: ignore[attr-defined]
-                if o["broker_order_id"] not in ours
-            ]
-        except Exception:
-            logger.exception("broker_open_orders_unavailable")
-            return None
-
-    # ── Context (SM2: built once per tick, guards stay pure) ─────────────────
-
-    def _context(self, day: date, now: datetime) -> dict:
-        health = self._feed.health() if self._feed is not None else None  # type: ignore[attr-defined]
-        feed_fresh = bool(health and health.is_fresh(now, FEED_MAX_TICK_AGE_SECONDS))
-        row = self._conn.execute(
-            "SELECT halt_reason, halt_acked_at FROM trading_sessions WHERE session_date=?",
-            (day.isoformat(),),
-        ).fetchone()
-        breakers = self._breakers(day, now)
-        ctx = {
-            "now": now.isoformat(),
-            "feed_connected": bool(health and health.connected),
-            "feed_fresh": feed_fresh,
-            "tick_age_s": health.tick_age_seconds(now) if health else None,
-            "bot_mode": str(self._bot_mode()),
-            "breakers": breakers,
-            "watchlist_size": self._watchlist_size(day),
-            "market_open": now.time() >= MARKET_OPEN,
-            "before_cutoff": now.time() < ENTRY_CUTOFF,
-            "halt_reason": row[0] if row else None,
-            "mismatch_acked": bool(row and row[1]),
-            "active_trades": self._active_trades(),
-            "kite_checks": self._kite_check_state(day),
-        }
-        ctx["blocker"] = _blocker(ctx, has_execution=self._sup is not None)
-        return ctx
-
-    def _breakers(self, day: date, now: datetime) -> list[str]:
-        try:
-            ledger = self._ledger()
-            if ledger is None:
-                return ["capital_unavailable"]
-            nifty = self._feed.latest(NIFTY_50) if self._feed is not None else None  # type: ignore[attr-defined]
-            move = (
-                nifty_move_pct(nifty.prev_close, nifty.ltp) if nifty else nifty_move_pct(None, None)
-            )
-            return tripped_breakers(
-                pnl=realised_pnl(self._conn, day),
-                ledger=ledger,  # type: ignore[arg-type]
-                nifty_move=move,
-                now=now,
-                config=self._risk_config(),  # type: ignore[arg-type]
-            )
-        except Exception as exc:  # fail closed: an unreadable breaker blocks entries
-            logger.exception("session_breakers_failed")
-            return [f"breakers_unavailable:{type(exc).__name__}"]
-
-    def _kite_check_state(self, day: date) -> str | None:
-        try:
-            return self._kite_checks(day)
-        except Exception:  # fail closed: unreadable checks block entries
-            logger.exception("kite_checks_unavailable")
-            return "kite_checks_unavailable"
-
-    def _active_trades(self) -> int:
-        return self._sup.active_count() if self._sup is not None else 0  # type: ignore[attr-defined]
-
-    def _broker_net(self) -> dict[str, int]:
-        if self._broker is None:
-            return {}
-        return net_by_symbol(self._broker.list_positions())  # type: ignore[attr-defined]
 
     # ── Plumbing ──────────────────────────────────────────────────────────────
 
@@ -512,23 +328,3 @@ class SessionController:
         log("session_alert %s: %s", title, body)
         if self._alerter is not None:
             getattr(self._alerter, level)(title, body, source_task_id="session_tick")
-
-
-# EMERGENCY_STOP is not a blocker: it squares off at once (#67, see _step).
-# Blockers, most severe first: a halt records the first one, and only the
-# resumable ones (feed_stale, nifty_move, paused) can clear the same day (§4.3).
-def _blocker(ctx: dict, *, has_execution: bool) -> str | None:
-    hard = [b for b in ctx["breakers"] if b not in sm.RESUMABLE]
-    if hard:
-        return hard[0]
-    if ctx.get("kite_checks"):  # #85: today's Kite pre-flight + canary not both passed
-        return ctx["kite_checks"]
-    if not has_execution:
-        return "execution_unavailable"
-    if "breaker:nifty_move" in ctx["breakers"]:
-        return "breaker:nifty_move"
-    if ctx["bot_mode"] == "paused":
-        return "paused"
-    if not ctx["feed_fresh"]:
-        return "feed_stale"
-    return None
