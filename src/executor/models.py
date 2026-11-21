@@ -60,14 +60,6 @@ class BrokerRejected(Exception):
     Distinct from an unknown outcome such as a timeout, where the order may exist (#97)."""
 
 
-class GttStatus(StrEnum):
-    GTT_ACTIVE = "gtt_active"
-    GTT_TRIGGERED = "gtt_triggered"
-    GTT_CANCELLED = "gtt_cancelled"
-    GTT_EXPIRED = "gtt_expired"
-    GTT_DELETED = "gtt_deleted"
-
-
 class OrderSide(StrEnum):
     BUY = "buy"
     SELL = "sell"
@@ -230,29 +222,6 @@ class PositionRecord:
         if self.average_entry_price == 0:
             return 0.0
         return self.unrealised_pnl / (self.average_entry_price * self.quantity)
-
-
-@dataclass
-class GttOrderRecord:
-    gtt_id: str
-    broker_gtt_id: str
-    broker_id: BrokerName
-    symbol: str
-    exchange: str
-    gtt_type: GttType
-    trigger_price: float
-    limit_price: float
-    sl_trigger_price: float
-    sl_limit_price: float
-    target_trigger_price: float
-    target_limit_price: float
-    quantity: int
-    status: GttStatus
-    parent_order_id: str | None
-    triggered_order_id: str | None
-    valid_until: datetime
-    created_at: datetime
-    last_checked_at: datetime
 
 
 @dataclass

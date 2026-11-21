@@ -54,7 +54,7 @@ class Harness:
         self.om = OrderManager(
             self.db, {BrokerName.KITE: self.paper}, ltp_cache={}, clock=self.clock
         )
-        self.pm = PositionManager(self.db, gtt_manager=None, order_manager=self.om)
+        self.pm = PositionManager(self.db, order_manager=self.om)
         self.alerter = MagicMock()
         self.sup = TradeSupervisor(self.db, self.om, self.pm, self.alerter, clock=self.clock)
 

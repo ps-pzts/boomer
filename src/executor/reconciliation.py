@@ -26,7 +26,6 @@ class ReconciliationLoop:
 
     Three cadences (per design doc):
     - Intraday (60s): compare live MIS positions and CNC holdings on Kite
-    - Daily 6 AM: GTT status sync (handled by GttManager.daily_reconcile)
     - EOD: full position + cash reconciliation
     """
 

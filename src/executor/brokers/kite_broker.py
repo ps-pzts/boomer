@@ -13,7 +13,7 @@ from kiteconnect import exceptions as kex
 from executor.brokers.base import Broker
 from executor.brokers.feeds.base import MarketDataFeed
 from executor.brokers.kite_contract import FINAL_ORDER_STATUSES, IN_FLIGHT_ORDER_STATUSES
-from executor.brokers.kite_gtt import gtt_modified_legs, gtt_place_params
+from executor.brokers.kite_gtt import gtt_place_params
 from executor.brokers.kite_instruments import InstrumentCache
 from executor.models import (
     BrokerFunds,
@@ -367,29 +367,6 @@ class KiteBroker(Broker):
         params = gtt_place_params(self._kite, request, last_price)
         resp = self._kite.place_gtt(**params)
         return str(resp["trigger_id"])
-
-    def modify_gtt(self, broker_gtt_id: str, changes: dict) -> None:
-        """Apply `{"legN": {"stopPrice", "limitPrice"}}` changes (GttManager's format).
-
-        Kite's modify_gtt replaces the whole trigger, so the current GTT is read
-        back and resent with only the named legs changed (#84: passing `leg1`
-        straight to the SDK raised TypeError on every live trail)."""
-        self._ensure_authenticated()
-        current = self._kite.get_gtt(trigger_id=int(broker_gtt_id))
-        cond = current["condition"]
-        trigger_values, orders = gtt_modified_legs(current, changes)
-        last_price = self.get_ltp(cond["tradingsymbol"], cond["exchange"])
-        if not last_price:  # same guard as place_gtt: never a stale or made-up price
-            raise RuntimeError(f"Cannot modify GTT {broker_gtt_id}: LTP unavailable.")
-        self._kite.modify_gtt(
-            trigger_id=int(broker_gtt_id),
-            trigger_type=current["type"],
-            tradingsymbol=cond["tradingsymbol"],
-            exchange=cond["exchange"],
-            trigger_values=trigger_values,
-            last_price=last_price,
-            orders=orders,
-        )
 
     def cancel_gtt(self, broker_gtt_id: str) -> None:
         self._ensure_authenticated()

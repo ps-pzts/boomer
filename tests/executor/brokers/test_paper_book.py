@@ -35,7 +35,7 @@ def _with_book(h: Harness) -> Harness:
         clock=h.clock,
     )
     h.om = OrderManager(h.db, {BrokerName.KITE: h.paper}, ltp_cache={}, clock=h.clock)
-    h.pm = PositionManager(h.db, gtt_manager=None, order_manager=h.om)
+    h.pm = PositionManager(h.db, order_manager=h.om)
     h.sup = TradeSupervisor(h.db, h.om, h.pm, h.alerter, clock=h.clock)
     return h
 

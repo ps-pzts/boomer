@@ -125,7 +125,7 @@ def _build_execution(
         return None, None, None
     ltp = FeedLtp(feed)
     om = OrderManager(conn, {BrokerName.KITE: broker}, ltp_cache=ltp, alerter=alerter)
-    pm = PositionManager(conn, gtt_manager=None, order_manager=om)  # type: ignore[arg-type]
+    pm = PositionManager(conn, order_manager=om)  # type: ignore[arg-type]
     logger.info("execution_ready mode=%s broker=%s", mode, broker.broker_id)
     return TradeSupervisor(conn, om, pm, alerter, price=ltp.get), broker, om
 
