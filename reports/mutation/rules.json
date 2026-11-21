@@ -1,0 +1,25 @@
+{
+ "module": "src/executor/brokers/kitesim/rules.py",
+ "func": null,
+ "tests": [
+  "tests/executor/brokers/kitesim"
+ ],
+ "total": 115,
+ "killed": 114,
+ "score": 99.1,
+ "seconds": 238,
+ "survivors": [
+  {
+   "index": 91,
+   "line": 132,
+   "kind": "compare",
+   "original": "required <= available + 1e-09",
+   "mutated": "required < available + 1e-09",
+   "status": "survived",
+   "note": "equivalent: differs only when required == available + 1e-9 exactly (float edge, unreachable in practice)"
+  }
+ ],
+ "score_before": 77.4,
+ "killed_before": 89,
+ "total_before": 115
+}

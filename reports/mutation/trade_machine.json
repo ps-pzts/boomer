@@ -1,0 +1,13 @@
+{
+ "module": "src/executor/trade_machine.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_trade_machine.py",
+  "tests/executor/test_trade_lifecycle.py"
+ ],
+ "total": 1,
+ "killed": 1,
+ "score": 100.0,
+ "seconds": 2,
+ "survivors": []
+}

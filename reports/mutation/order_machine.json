@@ -1,0 +1,13 @@
+{
+ "module": "src/executor/order_machine.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_order_machine.py",
+  "tests/executor/test_order_manager.py"
+ ],
+ "total": 0,
+ "killed": 0,
+ "score": 100.0,
+ "seconds": 0,
+ "survivors": []
+}

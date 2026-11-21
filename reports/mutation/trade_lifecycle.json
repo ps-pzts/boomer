@@ -1,0 +1,74 @@
+{
+ "module": "src/executor/trade_lifecycle.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_trade_lifecycle.py",
+  "tests/executor/test_trade_lifecycle_edges.py",
+  "tests/executor/test_lost_orders.py",
+  "tests/integration/test_trade_paths.py",
+  "tests/integration/test_scenarios.py"
+ ],
+ "total": 118,
+ "killed": 112,
+ "score": 94.9,
+ "seconds": 434,
+ "survivors": [
+  {
+   "index": 87,
+   "line": 392,
+   "kind": "compare",
+   "original": "net > 0",
+   "mutated": "net >= 0",
+   "status": "survived",
+   "note": "equivalent: net == 0 returns earlier, so `net >= 0` and `net > 0` agree for every net that reaches this line"
+  },
+  {
+   "index": 90,
+   "line": 393,
+   "kind": "compare",
+   "original": "net < 0",
+   "mutated": "net <= 0",
+   "status": "survived",
+   "note": "equivalent: net is a non-zero integer here, so `net <= 0`, `net < 1` and `net < 0` agree"
+  },
+  {
+   "index": 91,
+   "line": 393,
+   "kind": "const",
+   "original": "0",
+   "mutated": "1",
+   "status": "survived",
+   "note": "equivalent: net is a non-zero integer here, so `net <= 0`, `net < 1` and `net < 0` agree"
+  },
+  {
+   "index": 94,
+   "line": 412,
+   "kind": "compare",
+   "original": "net < 0",
+   "mutated": "net <= 0",
+   "status": "survived",
+   "note": "equivalent: net is a non-zero integer here, so `net <= 0`, `net < 1` and `net < 0` agree"
+  },
+  {
+   "index": 95,
+   "line": 412,
+   "kind": "const",
+   "original": "0",
+   "mutated": "1",
+   "status": "survived",
+   "note": "equivalent: net is a non-zero integer here, so `net <= 0`, `net < 1` and `net < 0` agree"
+  },
+  {
+   "index": 110,
+   "line": 453,
+   "kind": "const",
+   "original": "2",
+   "mutated": "3",
+   "status": "survived",
+   "note": "equivalent: prices sit on 0.05/0.10 ticks and quantities are integers, so realised P&L never has a third decimal; only the logged rounding changes"
+  }
+ ],
+ "score_before": 66.9,
+ "killed_before": 79,
+ "total_before": 118
+}

@@ -1,0 +1,16 @@
+{
+ "module": "src/executor/order_manager.py",
+ "func": "_pre_trade_checks",
+ "tests": [
+  "tests/executor/test_order_manager.py",
+  "tests/executor/test_lost_orders.py"
+ ],
+ "total": 51,
+ "killed": 51,
+ "score": 100.0,
+ "seconds": 100,
+ "survivors": [],
+ "score_before": 62.7,
+ "killed_before": 32,
+ "total_before": 51
+}

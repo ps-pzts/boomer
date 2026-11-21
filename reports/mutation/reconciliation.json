@@ -1,0 +1,34 @@
+{
+ "module": "src/executor/reconciliation.py",
+ "func": null,
+ "tests": [
+  "tests/executor/test_reconciliation.py"
+ ],
+ "total": 41,
+ "killed": 39,
+ "score": 95.1,
+ "seconds": 76,
+ "survivors": [
+  {
+   "index": 12,
+   "line": 82,
+   "kind": "const",
+   "original": "0",
+   "mutated": "1",
+   "status": "survived",
+   "note": "unreachable: SELECT COUNT(*) always returns a row, the `else 0` arm never runs"
+  },
+  {
+   "index": 41,
+   "line": 245,
+   "kind": "const",
+   "original": "1",
+   "mutated": "2",
+   "status": "survived",
+   "note": "equivalent: bool(2) == bool(1), the default only feeds bool()"
+  }
+ ],
+ "score_before": 41.5,
+ "killed_before": 17,
+ "total_before": 41
+}

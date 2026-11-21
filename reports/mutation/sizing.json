@@ -2,44 +2,24 @@
  "module": "src/capital/sizing.py",
  "func": null,
  "tests": [
-  "tests/capital"
+  "tests/capital/test_sizing.py"
  ],
  "total": 19,
- "killed": 15,
- "score": 78.9,
- "seconds": 158,
+ "killed": 18,
+ "score": 94.7,
+ "seconds": 32,
  "survivors": [
-  {
-   "index": 1,
-   "line": 21,
-   "kind": "const",
-   "original": "True",
-   "mutated": "False",
-   "status": "survived"
-  },
   {
    "index": 5,
    "line": 45,
    "kind": "compare",
    "original": "entry <= 0",
    "mutated": "entry < 0",
-   "status": "survived"
-  },
-  {
-   "index": 6,
-   "line": 45,
-   "kind": "const",
-   "original": "0",
-   "mutated": "1",
-   "status": "survived"
-  },
-  {
-   "index": 8,
-   "line": 45,
-   "kind": "const",
-   "original": "0",
-   "mutated": "1",
-   "status": "survived"
+   "status": "survived",
+   "note": "equivalent: `entry <= 0` is redundant, `stop > 0` and `stop < entry` already refuse every entry <= 0 (pinned by test_non_positive_entry_is_refused)"
   }
- ]
+ ],
+ "score_before": 78.9,
+ "killed_before": 15,
+ "total_before": 19
 }
