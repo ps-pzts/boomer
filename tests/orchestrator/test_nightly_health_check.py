@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.alerts.plain import plain
+
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
 
@@ -64,8 +66,8 @@ class TestNightlyHealthCheckAllClear:
         assert token == "tok"
         assert chat_id == "123"
         assert "all clear" in msg
-        assert "integrity: ok" in msg
-        assert "Stuck tasks: none" in msg
+        assert "DB integrity ok" in plain(msg)
+        assert "Stuck tasks none" in plain(msg)
 
     def test_no_send_when_telegram_not_configured(self, db_path: str) -> None:
         """If env vars are absent, checks still run but send is never called."""

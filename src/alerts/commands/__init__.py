@@ -25,7 +25,7 @@ HANDLERS: dict[str, Callable[[str, str], str]] = {
 }
 
 HELP = (
-    "<b>Boomer Bot Commands</b>\n\n"
+    "<b>🤖 Boomer commands</b>\n\n"
     "<b>Look</b>\n"
     "/status — session, bot mode, Kite checks, trades, P&amp;L\n"
     "/positions — open positions with stops and targets\n"
@@ -41,7 +41,7 @@ HELP = (
     "<b>Setup</b>\n"
     "/mode — show paper or live (/mode paper, /mode live confirm)\n"
     "/toggle — flip next session paper &lt;-&gt; live (to live needs confirm)\n"
-    "/canary — re-run today's Kite pre-flight and order canary\n"
+    "/canary — re-run today's Kite pre-flight and order canary"
 )
 
 

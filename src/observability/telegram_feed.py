@@ -22,8 +22,8 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from alerts.commands.common import esc, money
 from alerts.commands.reads import pnl_numbers
+from alerts.format import capped, dot, esc, header, money, note, rows, stamp
 from alerts.telegram import send_telegram
 
 logger = logging.getLogger(__name__)
@@ -37,72 +37,91 @@ def _inputs(p: dict) -> dict:
     return p.get("inputs") or {}
 
 
+def _card(row: sqlite3.Row, icon: str, title: str, pairs=None, hint: str | None = None) -> str:
+    """Header (event time, IST) + optional aligned rows + optional hint; `hint` is escaped
+    by the caller."""
+    try:
+        when = datetime.fromisoformat(row["ts"]).replace(tzinfo=IST)
+    except (TypeError, ValueError):
+        when = None
+    out = header(icon, title, stamp(now=when))
+    if pairs:
+        out += "\n" + rows(pairs)
+    return out + (f"\n{note(hint)}" if hint else "")
+
+
 def render(row: sqlite3.Row) -> str | None:
     """The message for one event row, or None when it is not worth a message."""
     if row["kind"] != "state_transition":
         return None
     p = json.loads(row["payload"] or "{}")
     name, rule, inputs = row["name"], p.get("rule", ""), _inputs(p)
-    sym = esc(row["symbol"] or "")
+    sym = row["symbol"] or ""
     if row["entity_type"] == "trade":
-        return _trade(name, rule, inputs, sym)
+        return _trade(row, name, rule, inputs, sym)
     if row["entity_type"] == "session":
-        return _session(name, rule, inputs, p)
+        return _session(row, name, rule, p)
     if row["entity_type"] == "order" and name == "rejected":
-        return f"⚠️ <b>{sym}</b> order rejected by the broker ({esc(rule)})"
+        return _card(row, "⚠️", f"{sym} · Order rejected", hint=f"by the broker ({esc(rule)})")
     return None
 
 
-def _trade(name: str, rule: str, inputs: dict, sym: str) -> str | None:
+def _f(inputs: dict, key: str) -> str:
+    return f"{float(inputs.get(key) or 0):,.2f}"
+
+
+def _trade(row, name: str, rule: str, inputs: dict, sym: str) -> str | None:
     if name == "created":
-        return (
-            f"📥 <b>{sym}</b> entry placed: {inputs.get('quantity')} @ "
-            f"{float(inputs.get('entry_price') or 0):,.2f} "
-            f"(stop {float(inputs.get('stop_price') or 0):,.2f}, "
-            f"target {float(inputs.get('target_price') or 0):,.2f})"
-        )
+        pairs = [
+            ("Qty", inputs.get("quantity")),
+            ("Entry", _f(inputs, "entry_price")),
+            ("Stop", _f(inputs, "stop_price")),
+            ("Target", _f(inputs, "target_price")),
+        ]
+        return _card(row, "📥", f"{sym} · Entry placed", pairs)
     if name == "entry_filled":
-        return f"🟢 <b>{sym}</b> entry filled: {inputs.get('qty')} @ {inputs.get('price')}"
+        pairs = [("Qty", inputs.get("qty")), ("Price", inputs.get("price"))]
+        return _card(row, "🟢", f"{sym} · Entry filled", pairs)
     if name == "stop_confirmed":
-        return f"🛡️ <b>{sym}</b> protected: stop {inputs.get('stop')}, target {inputs.get('target')}"
+        pairs = [("Stop", inputs.get("stop")), ("Target", inputs.get("target"))]
+        return _card(row, "🛡️", f"{sym} · Protected", pairs)
     if name == "stop_raised":
-        return f"⬆️ <b>{sym}</b> stop raised to {inputs.get('to')}"  # trailing.py's inputs
-    if name == "leg_filled":
-        icon, what = ("🎯", "target hit") if rule == "target_hit" else ("🛑", "stop hit")
-        return f"{icon} <b>{sym}</b> {what}"
+        return _card(row, "⬆️", f"{sym} · Stop raised", [("New stop", inputs.get("to"))])
+    if name == "leg_filled":  # trailing.py's inputs for stop_raised are `to`
+        icon, what = ("🎯", "Target hit") if rule == "target_hit" else ("🛑", "Stop hit")
+        return _card(row, icon, f"{sym} · {what}")
     if name == "flat":
         pnl = float(inputs.get("realised_pnl") or 0)
-        return f"⚪ <b>{sym}</b> closed: {money(pnl)}"
+        return _card(row, dot(pnl >= 0), f"{sym} · Closed", [("P&L", money(pnl))])
     if name in ("stop_failed", "stop_lost"):
-        return f"🚨 <b>{sym}</b> UNPROTECTED ({esc(rule)}): exiting at market"
+        return _card(row, "🚨", f"{sym} · UNPROTECTED", hint=f"{esc(rule)}: exiting at market")
     if name == "exit_failed":
-        return f"🚨 <b>{sym}</b> exit order failed ({esc(rule)}): retrying"
+        return _card(row, "🚨", f"{sym} · Exit order failed", hint=f"{esc(rule)}: retrying")
     if name == "square_off":
-        return f"🚪 <b>{sym}</b> squaring off"
+        return _card(row, "🚪", f"{sym} · Squaring off")
     if name in ("entry_expired", "entry_rejected"):
-        return f"✖️ <b>{sym}</b> entry cancelled: {name.removeprefix('entry_')}"
+        return _card(row, "✖️", f"{sym} · Entry cancelled", hint=name.removeprefix("entry_"))
     return None
 
 
-def _session(name: str, rule: str, inputs: dict, p: dict) -> str | None:
-    mode = ""
+def _session(row, name: str, rule: str, p: dict) -> str | None:
     if name in ("halt", "checks_failed"):
-        return f"🛑 <b>Session HALTED</b>: {esc(rule)}  → /halt"
+        return _card(row, "🛑", "Session HALTED", hint=f"{esc(rule)} → /halt")
     if name == "reconcile_failed":
-        return "🛑 <b>Session HALTED</b>: reconcile mismatch  → /halt, then /ack"
+        return _card(row, "🛑", "Session HALTED", hint="reconcile mismatch → /halt, then /ack")
     if name in ("recover", "checks_passed", "reconciled") and p.get("to_state") == "trading":
-        return f"✅ <b>Session resumed</b> (trading){mode}"
+        return _card(row, "🟢", "Session resumed", hint="trading")
     if name == "market_open":
-        return "🔔 <b>Market open</b>: trading"
+        return _card(row, "🔔", "Market open", hint="trading")
     if name == "entry_cutoff":
-        return "🟡 <b>No new entries</b> for the rest of the day"
+        return _card(row, "🟡", "No new entries", hint="for the rest of the day")
     if name == "square_off":
         why = "EMERGENCY STOP" if rule == "emergency_stop" else "15:14 square-off"
-        return f"🚪 <b>Session squaring off</b> ({why})"
+        return _card(row, "🚪", "Session squaring off", hint=why)
     if name == "all_flat":
-        return "🏁 <b>Session closed</b>: flat"
+        return _card(row, "🏁", "Session closed", hint="flat")
     if name == "abandon":
-        return f"⚪ <b>Session abandoned</b> (never traded): {esc(rule)}"
+        return _card(row, "⚪", "Session abandoned", hint=f"never traded: {esc(rule)}")
     return None
 
 
@@ -111,7 +130,7 @@ def eod_summary(db_path: str, day: str) -> str:
     c = sqlite3.connect(db_path, timeout=5)
     c.row_factory = sqlite3.Row
     try:
-        rows = c.execute(
+        rows_ = c.execute(
             "SELECT symbol, state, exit_reason, realised_pnl FROM intraday_brackets"
             " WHERE session_date=? ORDER BY created_at",
             (day,),
@@ -128,24 +147,32 @@ def eod_summary(db_path: str, day: str) -> str:
     finally:
         c.close()
     n = pnl_numbers(db_path, day)
-    mode = (sess["mode"] if sess else "?").upper()
-    lines = [
-        f"<b>🏁 End of day — {day} ({mode})</b>",
-        f"Trades: {len(rows)} ({n['closed']} closed: {n['wins']} won, {n['losses']} lost)",
-        f"Realised P&amp;L: <b>{money(n['realised'])}</b>",
+    mode = sess["mode"] if sess else "?"
+    out = [
+        header("🏁", "End of day", f"{day} · {mode.upper()}"),
+        f"{dot(n['realised'] >= 0)} <b>{money(n['realised'])}</b> realised",
+        rows(
+            [
+                ("Trades", len(rows_)),
+                ("Closed", f"{n['closed']} ({n['wins']} won, {n['losses']} lost)"),
+                ("Forced exits (no stop)", unprotected),
+            ]
+        ),
     ]
-    for r in rows:
+    items = []
+    for r in rows_:
         if r["state"] == "closed":
-            lines.append(
-                f"  {esc(r['symbol'])}: {esc(r['exit_reason'])}, {money(r['realised_pnl'])}"
+            pnl = r["realised_pnl"]
+            items.append(
+                f"{dot((pnl or 0) >= 0)} {esc(r['symbol'])}: {esc(r['exit_reason'])}, {money(pnl)}"
             )
         elif r["state"] == "cancelled":
-            lines.append(f"  {esc(r['symbol'])}: cancelled ({esc(r['exit_reason'])})")
+            items.append(f"✖️ {esc(r['symbol'])}: cancelled ({esc(r['exit_reason'])})")
+    if items:
+        out.append(capped(items, 20))
     if unprotected:
-        lines.append(f"🚨 Exits forced by a missing stop: {unprotected}")
-    else:
-        lines.append("Exits forced by a missing stop: 0")
-    return "\n".join(lines)
+        out.append(note("🚨 Exits forced by a missing stop: " + str(unprotected)))
+    return "\n".join(out)
 
 
 # ── the tail loop ─────────────────────────────────────────────────────────────

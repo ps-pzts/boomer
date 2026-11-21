@@ -18,6 +18,7 @@ import pytest
 from alerts import commands, telegram_bot
 from alerts.commands import common
 from db.migrations import run_migrations
+from tests.alerts.plain import plain
 
 IST = ZoneInfo("Asia/Kolkata")
 _MIGRATIONS = Path(__file__).parents[2] / "migrations"
@@ -103,19 +104,19 @@ class TestReads:
         bracket(db, "INFY", "closed", pnl=40.0, reason="target_hit")
         bracket(db, "TCS", "closed", pnl=-25.0, reason="stop_hit")
         position(db, unrealised=15.0)
-        text = commands.run(db, "/pnl")
-        assert "Realised: +₹15 over 2 closed (1 won, 1 lost)" in text
-        assert "Unrealised: +₹15 on 1 open" in text
-        assert "Total: +₹30" in text
+        text = plain(commands.run(db, "/pnl"))
+        assert "Realised +₹15 Closed 2 (1 won, 1 lost)" in text
+        assert "Unrealised +₹15 Open 1" in text
+        assert "🟢 +₹30 total" in text
 
     def test_pnl_with_nothing(self, db):
-        text = commands.run(db, "/pnl")
-        assert "Realised: ₹0 over 0 closed (0 won, 0 lost)" in text and "Total: ₹0" in text
+        text = plain(commands.run(db, "/pnl"))
+        assert "Realised ₹0 Closed 0 (0 won, 0 lost)" in text and "₹0 total" in text
 
     def test_positions_show_stop_and_target(self, db):
         position(db)
-        text = commands.run(db, "/positions")
-        assert "INFY" in text and "stop 98.00" in text and "target 104.00" in text
+        text = plain(commands.run(db, "/positions"))
+        assert "🟢 INFY 10 @ 100.00→101.50 +₹15 · 🛑 98.00 🎯 104.00" in text
         assert "UNPROTECTED" not in text
 
     def test_unprotected_position_is_flagged(self, db):
@@ -130,10 +131,11 @@ class TestReads:
         bracket(db, "TCS", "open")
         bracket(db, "SBIN", "cancelled", reason="entry_expired", qty=5)
         text = commands.run(db, "/trades")
-        assert "Today's trades</b> (3)" in text
-        assert "INFY</b> 10 closed" in text and "target_hit, +₹40" in text
-        assert "TCS</b> 10 open" in text
-        assert "SBIN</b> 5 cancelled" in text and "entry_expired" in text
+        text = plain(text)
+        assert "Today's trades (3)" in text
+        assert "INFY 10 closed — target_hit, +₹40 entry 100.00 · stop 98.00 · target 104.00" in text
+        assert "TCS 10 open" in text
+        assert "SBIN 5 cancelled — entry_expired" in text
 
     def test_no_trades(self, db):
         assert "None yet." in commands.run(db, "/trades")
@@ -146,7 +148,7 @@ class TestReads:
 class TestStatus:
     def test_no_session_yet(self, db):
         text = commands.run(db, "/status")
-        assert "not started today" in text and "Bot mode: <b>auto</b>" in text
+        assert "not started today" in text and "🟢 Bot <b>auto</b>" in text
         assert "Kite checks: none run today" in text
 
     def test_trading_session_with_checks_and_trades(self, db):
@@ -159,14 +161,15 @@ class TestStatus:
         bracket(db, "INFY", "closed", pnl=40.0, reason="target_hit")
         bracket(db, "TCS", "open")
         text = commands.run(db, "/status")
-        assert "Session: <b>trading</b> (PAPER)" in text
-        assert "✅ preflight 08:55" in text
-        assert "Trades: 1 active, 1 closed (1W/0L)" in text
+        assert "· PAPER</i>" in text and "🟢 Session <b>trading</b>" in text
+        assert "🟢 preflight 08:55" in text
+        assert "Active 1 Closed 1 (1W/0L)" in plain(text)
+        assert "Realised +₹40" in plain(text)
 
     def test_halted_points_to_halt(self, db):
         session(db, "halted", "feed_stale")
         text = commands.run(db, "/status")
-        assert "halted: feed_stale" in text and "/halt" in text
+        assert "halted: feed_stale → /halt" in text
 
     def test_latest_check_wins(self, db):
         session(db, "trading")
@@ -176,7 +179,7 @@ class TestStatus:
                 "INSERT INTO kite_daily_checks (session_date, check_name, ok, detail_json,"
                 " source, ran_at) VALUES (?, 'canary', ?, '{}', 's', ?)", DAY, ok, f"{DAY}T{t}:00",
             )  # fmt: skip
-        assert "✅ canary 09:30" in commands.run(db, "/status")
+        assert "🟢 canary 09:30" in commands.run(db, "/status")
 
 
 class TestHalt:
@@ -197,9 +200,9 @@ class TestHalt:
         }
         session(db, "halted", "reconcile_mismatch", detail)
         text = commands.run(db, "/halt")
-        assert "Halted: reconcile_mismatch" in text
+        assert "Halted: reconcile_mismatch" in plain(text)
         assert "net_quantity_matches_broker" in text and "broker" in text
-        assert "/ack" in text and "Acknowledged: not yet" in text
+        assert "/ack" in text and "Acknowledged: 🔴 not yet" in text
 
     def test_kite_check_halt_points_to_canary(self, db):
         session(db, "halted", "canary_failed")
@@ -217,12 +220,12 @@ class TestHalt:
 class TestAck:
     def test_acknowledges_a_mismatch_and_records_it(self, db):
         session(db, "halted", "reconcile_mismatch")
-        assert "✅ Acknowledged" in commands.run(db, "/ack")
+        assert "✅ <b>Acknowledged</b>" in commands.run(db, "/ack")
         c = sqlite3.connect(db)
         acked = c.execute("SELECT halt_acked_at FROM trading_sessions").fetchone()[0]
         c.close()
         assert acked
-        assert "Acknowledged: yes" in commands.run(db, "/halt")
+        assert "Acknowledged: 🟢 yes" in commands.run(db, "/halt")
 
     @pytest.mark.parametrize("state, reason", [("trading", None), ("halted", "feed_stale")])
     def test_refuses_when_there_is_no_mismatch(self, db, state, reason):
@@ -289,9 +292,9 @@ class TestBotDispatch:
     def test_new_commands_are_routed(self, db, sent):
         bot = telegram_bot.TelegramBot("tok", "42", db)
         for cmd, marker in (
-            ("/pnl", "P&amp;L today"),
-            ("/trades", "trades"),
-            ("/status@boomerbot", "Boomer"),
+            ("/pnl", "💰 P&amp;L today"),
+            ("/trades", "🧾 Today's trades"),
+            ("/status@boomerbot", "📊 Boomer"),
         ):
             bot._dispatch(self.update(cmd))
             assert marker in sent[-1]
@@ -347,7 +350,7 @@ class TestToggle:
         text = telegram_bot.handle_toggle(db, "/toggle confirm")
         assert text.startswith("✅") and "LIVE" in text
         assert [a for _, a in self.flips(db)] == ["telegram"]
-        assert "Next session: LIVE" in telegram_bot.handle_mode(db, "/mode")
+        assert "Next session LIVE" in plain(telegram_bot.handle_mode(db, "/mode"))
 
     def test_live_is_refused_while_the_paper_criteria_are_unmet(self, db, monkeypatch):
         monkeypatch.setenv("BOOMER_TRADING_MODE", "live")  # armed, real (empty) evidence
@@ -366,7 +369,7 @@ class TestToggle:
         telegram_bot.handle_toggle(db, "/toggle confirm")
         text = telegram_bot.handle_toggle(db, "/toggle")
         assert text.startswith("✅") and "PAPER" in text
-        assert "Next session: PAPER" in telegram_bot.handle_mode(db, "/mode")
+        assert "Next session PAPER" in plain(telegram_bot.handle_mode(db, "/mode"))
 
     def test_dispatch_routes_toggle_and_help_lists_it(self, db, armed, monkeypatch):
         sent: list[str] = []

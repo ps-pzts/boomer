@@ -5,6 +5,7 @@ from __future__ import annotations
 from alerts import telegram_bot
 from executor import kite_checks
 from executor.preflight import CheckReport, CheckResult
+from tests.alerts.plain import plain
 
 
 def _rep(kind: str, ok: bool) -> CheckReport:
@@ -17,7 +18,7 @@ def test_both_pass(monkeypatch):
         kite_checks, "rerun", lambda db, broker: [_rep("preflight", True), _rep("canary", True)]
     )
     text = telegram_bot.handle_canary("db")
-    assert "✅ preflight passed" in text and "✅ canary passed" in text
+    assert "🟢 preflight passed" in text and "🟢 canary passed" in text
     assert "resume" in text
 
 
@@ -25,7 +26,7 @@ def test_failure_lists_the_failed_checks(monkeypatch):
     monkeypatch.setattr(kite_checks, "kite_broker_from_env", lambda: object())
     monkeypatch.setattr(kite_checks, "rerun", lambda db, broker: [_rep("preflight", False)])
     text = telegram_bot.handle_canary("db")
-    assert "⛔ preflight FAILED" in text and "token: expired" in text
+    assert "🔴 preflight FAILED: token: expired" in plain(text)
     assert "canary not run" in text
 
 
