@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from observability import telegram_feed as feed
+from tests.alerts.plain import is_card, plain
 from tests.executor.test_trade_lifecycle import _req
 from tests.integration.harness import Hostile
 from tests.integration.test_scenarios import open_protected
@@ -55,15 +56,16 @@ class TestTradeMessages:
         h.step()
         h.step()
         feed.poll_once(db_path(h), out)
-        story = "\n".join(out.sent)
-        assert "entry placed: 10 @ 100.00" in story
-        assert "entry filled: 10 @ 100.0" in story
-        assert "protected: stop 98.0, target 104.0" in story
-        assert "target hit" in story
-        assert "closed: +₹40" in story
+        assert out.sent and all(is_card(m) for m in out.sent)
+        story = plain("\n".join(out.sent))
+        assert "Entry placed" in story and "Qty 10 Entry 100.00 Stop 98.00 Target 104.00" in story
+        assert "Entry filled" in story and "Qty 10 Price 100.0" in story
+        assert "Protected" in story and "Stop 98.0 Target 104.0" in story
+        assert "Target hit" in story
+        assert "Closed" in story and "P&L +₹40" in story
         order = [
             story.index(k)
-            for k in ("entry placed", "entry filled", "protected", "target hit", "closed")
+            for k in ("Entry placed", "Entry filled", "Protected", "Target hit", "Closed")
         ]
         assert order == sorted(order)
 
@@ -74,8 +76,8 @@ class TestTradeMessages:
         h.step()
         h.step()
         feed.poll_once(db_path(h), out)
-        story = "\n".join(out.sent)
-        assert "stop hit" in story and "closed: -₹25" in story
+        story = plain("\n".join(out.sent))
+        assert "Stop hit" in story and "P&L -₹25" in story and "🔴 INFY · Closed" in story
 
     def test_an_unprotected_exit_raises_the_alarm(self, h):
         out = start_feed(h)
@@ -84,7 +86,9 @@ class TestTradeMessages:
         h.tick(97.0)  # stop can't be placed through the market
         h.sup.reconcile()
         feed.poll_once(db_path(h), out)
-        assert any("UNPROTECTED" in m and "exiting at market" in m for m in out.sent)
+        assert any(
+            "🚨 INFY · UNPROTECTED" in plain(m) and "exiting at market" in m for m in out.sent
+        )
 
     def test_an_expired_entry_is_reported(self, h):
         from datetime import timedelta
@@ -95,7 +99,7 @@ class TestTradeMessages:
         h.clock.now += timedelta(minutes=31)
         h.step()
         feed.poll_once(db_path(h), out)
-        assert any("entry cancelled: expired" in m for m in out.sent)
+        assert any("Entry cancelled" in m and "<blockquote>expired<" in m for m in out.sent)
 
     def test_order_noise_is_not_sent(self, h):
         out = start_feed(h)
@@ -119,7 +123,8 @@ class TestTradeMessages:
         h.tick(102.0)
         h.sup.reconcile()
         feed.poll_once(db_path(h), out)
-        assert [m for m in out.sent if "stop raised" in m] == ["⬆️ <b>INFY</b> stop raised to 100.0"]
+        (msg,) = [plain(m) for m in out.sent if "Stop raised" in m]
+        assert msg.startswith("⬆️ INFY · Stop raised") and msg.endswith("New stop 100.0")
 
     def test_html_in_symbols_is_escaped(self, h):
         out = start_feed(h)
@@ -128,7 +133,7 @@ class TestTradeMessages:
         h.db.execute("UPDATE events SET symbol='A<B>' WHERE entity_type='trade'")
         h.db.commit()
         feed.poll_once(db_path(h), out)
-        assert any("A&lt;B&gt;" in m for m in out.sent)
+        assert any("A&lt;B&gt; · Entry placed" in m for m in out.sent)
 
 
 class TestCursor:
@@ -147,8 +152,8 @@ class TestCursor:
         h.sup.reconcile()
         feed.poll_once(db_path(h), out)  # a "restarted" feed reads the stored cursor
         assert out.sent[: len(first)] == first
-        assert any("entry filled" in m for m in out.sent[len(first) :])
-        assert sum("entry placed" in m for m in out.sent) == 1
+        assert any("Entry filled" in m for m in out.sent[len(first) :])
+        assert sum("Entry placed" in m for m in out.sent) == 1
 
     def test_a_telegram_outage_delays_instead_of_dropping(self, h):
         start_feed(h)
@@ -158,7 +163,7 @@ class TestCursor:
         assert feed.poll_once(db_path(h), down) == 0
         up = Outbox()
         feed.poll_once(db_path(h), up)
-        assert any("entry placed" in m for m in up.sent)
+        assert any("Entry placed" in m for m in up.sent)
 
     def test_a_big_backlog_is_drained_in_batches(self, h, monkeypatch):
         monkeypatch.setattr(feed, "BATCH", 3)
@@ -167,7 +172,7 @@ class TestCursor:
             h.tick(100.0)
             h.sup.open_trade(_req())
         feed.poll_once(db_path(h), out)
-        assert sum("entry placed" in m for m in out.sent) == 3
+        assert sum("Entry placed" in m for m in out.sent) == 3
 
 
 class TestSessionMessages:
@@ -190,13 +195,14 @@ class TestSessionMessages:
         d.at(10, 4)
         d.at(15, 14)
         feed.poll_once(db_path(d.h), out)
-        story = "\n".join(out.sent)
+        assert all(is_card(m) for m in out.sent)  # session events and the EOD summary
+        story = plain("\n".join(out.sent))
         assert "Market open" in story
-        assert "Session HALTED</b>: paused" in story
+        assert "Session HALTED" in story and "paused → /halt" in story
         assert "Session resumed" in story
         assert "Session squaring off" in story or "Session closed" in story
-        assert "Session closed</b>: flat" in story
-        assert "End of day" in story and "Realised P&amp;L: <b>+₹40</b>" in story
+        assert "Session closed" in story and "flat" in story
+        assert "End of day" in story and "🟢 +₹40 realised" in story
         assert sum("End of day" in m for m in out.sent) == 1
 
     def test_emergency_stop_says_so(self, tmp_path):
@@ -229,10 +235,11 @@ class TestEodSummary:
         h.step()
         h.step()
         text = feed.eod_summary(db_path(h), h.clock.now.date().isoformat())
-        assert "Trades: 1 (1 closed: 1 won, 0 lost)" in text
-        assert "Realised P&amp;L: <b>+₹40</b>" in text
+        text = plain(text)
+        assert "Trades 1 Closed 1 (1 won, 0 lost)" in text
+        assert "+₹40 realised" in text
         assert "target_hit, +₹40" in text
-        assert "forced by a missing stop: 0" in text
+        assert "Forced exits (no stop) 0" in text
 
     def test_forced_exits_are_counted(self, h):
         h.tick(100.0)
@@ -241,12 +248,15 @@ class TestEodSummary:
         h.sup.reconcile()
         h.sup.reconcile()
         text = feed.eod_summary(db_path(h), h.clock.now.date().isoformat())
-        assert "🚨 Exits forced by a missing stop: 1" in text
+        assert (
+            "🚨 Exits forced by a missing stop: 1" in text
+            and "Forced exits (no stop) 1" in plain(text)
+        )
 
     def test_an_empty_day(self, h):
         text = feed.eod_summary(db_path(h), "2026-11-19")
-        assert (
-            "Trades: 0 (0 closed: 0 won, 0 lost)" in text and "Realised P&amp;L: <b>₹0</b>" in text
+        assert "Trades 0 Closed 0 (0 won, 0 lost)" in plain(text) and "🟢 ₹0 realised" in plain(
+            text
         )
 
 

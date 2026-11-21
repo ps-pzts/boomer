@@ -25,6 +25,7 @@ from executor import session_machine as sm
 from executor.brokers.feeds.base import NIFTY_50, Tick
 from executor.trading_mode import session_mode
 from observability import telegram_feed as tg
+from tests.alerts.plain import plain
 from tests.orchestrator import production_day as pd
 
 OPEN, CLOSE = 9 * 60 + 15, 15 * 60 + 30
@@ -328,28 +329,36 @@ class TestWholePaperDay:
         assert len(texts) == self.d.sent
         trade_msgs = [t for t in texts[:-1] if "TCS" in t]  # not the EOD summary
         assert len(trade_msgs) == len(renderable) == 6  # corrective_order is order noise
-        assert [m.split("</b> ")[1] for m in trade_msgs] == [
-            "entry placed: 49 @ 1,008.05 (stop 978.05, target 1,053.05)",
-            "entry filled: 49 @ 1007.0",
-            "protected: stop 978.05, target 1053.05",
-            "stop raised to 1020.0",
-            "squaring off",
-            "closed: +₹1,127",
-        ]
+        for msg, expected in zip(
+            map(plain, trade_msgs),
+            [
+                "TCS · Entry placed",
+                "TCS · Entry filled",
+                "TCS · Protected",
+                "TCS · Stop raised",
+                "TCS · Squaring off",
+                "TCS · Closed",
+            ],
+            strict=True,
+        ):
+            assert expected in msg
+        facts = [plain(m) for m in trade_msgs]
+        assert "Qty 49 Entry 1,008.05 Stop 978.05 Target 1,053.05" in facts[0]
+        assert "Qty 49 Price 1007.0" in facts[1]
+        assert "Stop 978.05 Target 1053.05" in facts[2]
+        assert "New stop 1020.0" in facts[3]
+        assert "P&L +₹1,127" in facts[5]
         assert self.d.out.call_args_list[0].args[:2] == ("token", "chat")
         assert self.d.repeat == 0  # nothing sent twice
 
     def test_end_of_day_summary_reads_the_right_totals(self):
         texts = self.d.texts
-        assert "Session closed" in texts[-2] and texts[-1].startswith("<b>")
-        summary = texts[-1].splitlines()
-        assert summary == [
-            "<b>\U0001f3c1 End of day — 2026-11-19 (PAPER)</b>",
-            "Trades: 1 (1 closed: 1 won, 0 lost)",
-            "Realised P&amp;L: <b>+₹1,127</b>",
-            "  TCS: squareoff, +₹1,127",
-            "Exits forced by a missing stop: 0",
-        ]
+        assert "Session closed" in texts[-2] and texts[-1].startswith("<b>🏁 End of day")
+        assert plain(texts[-1]) == (
+            "🏁 End of day 2026-11-19 · PAPER 🟢 +₹1,127 realised "
+            "Trades 1 Closed 1 (1 won, 0 lost) Forced exits (no stop) 0 "
+            "🟢 TCS: squareoff, +₹1,127"
+        )
 
     def _events(self) -> list[sqlite3.Row]:
         c = sqlite3.connect(self.d.db)
@@ -404,6 +413,6 @@ class TestStaleFeedHaltsTheDay:
 
     def test_telegram_feed_announces_the_halt_and_a_flat_close(self):
         texts = self.d.texts
-        assert any("Session HALTED</b>: feed_stale" in t for t in texts)
-        assert "Trades: 0 (0 closed: 0 won, 0 lost)" in texts[-1]
+        assert any("Session HALTED" in plain(t) and "feed_stale → /halt" in plain(t) for t in texts)
+        assert "Trades 0 Closed 0 (0 won, 0 lost)" in plain(texts[-1])
         assert self.d.snapshots[CLOSE]["state"] == sm.CLOSED
