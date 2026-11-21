@@ -255,4 +255,7 @@ def run_forever() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    from alerts.scrub import install_log_scrubber
+
+    install_log_scrubber()
     run_forever()

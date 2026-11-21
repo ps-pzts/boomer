@@ -9,6 +9,8 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from alerts.scrub import scrub
+
 IST = ZoneInfo("Asia/Kolkata")
 LIMIT = 4000  # Telegram rejects > 4096; headroom for the truncation note
 _TAG = re.compile(r"<(/?)(b|i|u|s|code|pre|blockquote)\b[^>]*>")
@@ -64,7 +66,8 @@ def capped(items: list[str], cap: int = 15) -> str:
 
 def finish(text: str, limit: int = LIMIT) -> str:
     """Hard-cap a message for Telegram: cut at a line end, drop a half tag/entity, close
-    any open tags, and say it was truncated."""
+    any open tags, and say it was truncated. Secrets are scrubbed first (#142)."""
+    text = scrub(text)
     if len(text) <= limit:
         return text
     cut = text[:limit]

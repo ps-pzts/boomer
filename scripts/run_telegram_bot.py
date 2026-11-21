@@ -24,7 +24,10 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
+from alerts.scrub import install_log_scrubber  # noqa: E402
 from alerts.telegram_bot import from_env  # noqa: E402
+
+install_log_scrubber()
 
 bot = from_env()
 bot.run_forever()
