@@ -77,6 +77,13 @@
 
 ## Change log
 
+### 2026-11-21 — Bug: order spec had transitions no code path emits; refusals recorded as ERROR (#100)
+
+- **Symptom:** the #88 transition-coverage gate found spec transitions nothing can emit (`* -> error` from finished states, `pending -> expired`, `created -> error`), and a definite Kite refusal (`InputException`/`OrderException`, e.g. RMS) was recorded ERROR, indistinguishable from an outage.
+- **Root cause:** `ALLOWED_TRANSITIONS` was written ahead of the code, and `OrderManager.submit` turned every `place_order` exception into ERROR.
+- **Fix:** spec trimmed to reachable transitions (`EXPIRED` removed, `FILLED`/`CANCELLED`/`REJECTED`/`ERROR` terminal). `KiteBroker.place_order` raises `BrokerRejected` (also the original Kite exception) for refusals, which land as REJECTED; unknown outcomes (timeouts, #97) stay ERROR. `SPEC_ONLY` list in the integration gate emptied accordingly.
+- Tests: refusal-is-REJECTED in `test_broker_behaviour`, `test_order_paths`, `test_lost_orders`; spec terminal states in `test_order_machine`; new `tests/executor/brokers/test_kite_refusal.py`. 1552 tests pass, lint and format clean.
+
 ### 2026-11-19 — Feat: Telegram alerts and operator commands (#103)
 
 - **Commands** (`src/alerts/commands/`, all read each machine's own table, never `events`): `/status` rebuilt (session, bot mode, Kite checks, trades, P&L), `/positions`, `/trades`, `/pnl`, `/halt` (why + how to resume, with the failed reconcile checks), `/ack` (acknowledge a reconcile mismatch), `/pause`, `/resume`, `/emergency confirm`, `/toggle` (flip the next session paper <-> live; to live shows the paper record and needs `confirm`). Every mode change is audited with `telegram` as the actor. `/mode` and `/canary` unchanged.

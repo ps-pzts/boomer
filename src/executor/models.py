@@ -14,13 +14,15 @@ class OrderStatus(StrEnum):
     FILLED = "filled"
     CANCELLED = "cancelled"
     REJECTED = "rejected"
-    EXPIRED = "expired"
     ERROR = "error"
 
 
-# Valid state transitions enforced by OrderManager
+# Valid state transitions enforced by OrderManager. Only what a real order can do (#100):
+# a placement that fails with an unknown outcome is ERROR; one the broker refuses outright
+# is REJECTED; Kite never reports an order EXPIRED (DAY orders end CANCELLED at close);
+# a finished order is never reopened or relabelled.
 ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
-    OrderStatus.CREATED: frozenset({OrderStatus.SUBMITTING, OrderStatus.ERROR}),
+    OrderStatus.CREATED: frozenset({OrderStatus.SUBMITTING}),
     OrderStatus.SUBMITTING: frozenset(
         {OrderStatus.PENDING, OrderStatus.REJECTED, OrderStatus.ERROR}
     ),
@@ -31,18 +33,15 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
             OrderStatus.FILLED,
             OrderStatus.CANCELLED,
             OrderStatus.REJECTED,
-            OrderStatus.EXPIRED,
-            OrderStatus.ERROR,
         }
     ),
     OrderStatus.TRIGGERED: frozenset(
-        {OrderStatus.PARTIAL, OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.ERROR}
+        {OrderStatus.PARTIAL, OrderStatus.FILLED, OrderStatus.CANCELLED}
     ),
-    OrderStatus.PARTIAL: frozenset({OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.ERROR}),
-    OrderStatus.FILLED: frozenset({OrderStatus.ERROR}),
-    OrderStatus.CANCELLED: frozenset({OrderStatus.ERROR}),
-    OrderStatus.REJECTED: frozenset({OrderStatus.ERROR}),
-    OrderStatus.EXPIRED: frozenset({OrderStatus.ERROR}),
+    OrderStatus.PARTIAL: frozenset({OrderStatus.FILLED, OrderStatus.CANCELLED}),
+    OrderStatus.FILLED: frozenset(),
+    OrderStatus.CANCELLED: frozenset(),
+    OrderStatus.REJECTED: frozenset(),
     OrderStatus.ERROR: frozenset(),
 }
 
@@ -51,10 +50,14 @@ TERMINAL_STATUSES: frozenset[OrderStatus] = frozenset(
         OrderStatus.FILLED,
         OrderStatus.CANCELLED,
         OrderStatus.REJECTED,
-        OrderStatus.EXPIRED,
         OrderStatus.ERROR,
     }
 )
+
+
+class BrokerRejected(Exception):
+    """The broker refused the order outright (bad input, RMS): nothing was placed.
+    Distinct from an unknown outcome such as a timeout, where the order may exist (#97)."""
 
 
 class GttStatus(StrEnum):

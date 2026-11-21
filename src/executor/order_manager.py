@@ -13,6 +13,7 @@ from executor.lost_orders import cancel_lost_orders
 from executor.models import (
     TERMINAL_STATUSES,
     BrokerName,
+    BrokerRejected,
     OrderRecord,
     OrderRequest,
     OrderSide,
@@ -85,6 +86,10 @@ class OrderManager:
         self._transition(order_id, OrderStatus.SUBMITTING, rule="submit")
         try:
             broker_order_id = broker.place_order(request)
+        except BrokerRejected as exc:  # refused outright: nothing exists at the broker
+            self._transition(order_id, OrderStatus.REJECTED, rule="broker_refused")
+            self._log_order_error(order_id, str(exc))
+            raise
         except Exception as exc:
             # The broker may have accepted the order and only the answer was lost
             # (timeout): adopt it rather than leave a working order nobody tracks (#97).

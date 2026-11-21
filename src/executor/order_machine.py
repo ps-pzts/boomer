@@ -2,8 +2,8 @@
 
 Built from ALLOWED_TRANSITIONS so there is one source of truth for legal order
 status changes. The trigger is the target status (an order transition is
-"the broker now says X"). Only ERROR has no outgoing transitions; FILLED,
-CANCELLED, REJECTED and EXPIRED are final but can still be corrected to ERROR.
+"the broker now says X"). FILLED, CANCELLED, REJECTED and ERROR are final (#100:
+the spec lists only transitions a real order can take).
 
 Note (design §6.2): Kite's "TRIGGER PENDING" (a stop still waiting) maps to our
 TRIGGERED, so PENDING and TRIGGERED are both resting states.
@@ -21,7 +21,15 @@ ORDER_SPEC = MachineSpec(
     state_column="status",
     states=frozenset(s.value for s in OrderStatus),
     initial=OrderStatus.CREATED.value,
-    terminal=frozenset({OrderStatus.ERROR.value}),
+    terminal=frozenset(
+        s.value
+        for s in (
+            OrderStatus.FILLED,
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+            OrderStatus.ERROR,
+        )
+    ),
     transitions=tuple(
         Transition(source=frozenset({src.value}), target=dst.value, trigger=dst.value)
         for src, dsts in ALLOWED_TRANSITIONS.items()
