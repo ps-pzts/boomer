@@ -230,12 +230,17 @@ def main() -> None:
         ],
     )
 
+    from alerts.scrub import install_log_scrubber, warn_if_loose_perms
+
+    install_log_scrubber()
     print_banner()
 
     db_path = os.environ.get("BOOMER_DB_PATH", "/var/lib/boomer/boomer.db")
     archive_dir = os.environ.get("BOOMER_ARCHIVE_DIR", "/var/lib/boomer/archive")
     backup_dir = os.environ.get("BOOMER_BACKUP_DIR", "/var/lib/boomer/backups")
     poll_interval = int(os.environ.get("BOOMER_POLL_INTERVAL", "30"))
+    warn_if_loose_perms(pathlib.Path(__file__).parents[2] / ".env")
+    warn_if_loose_perms(pathlib.Path(db_path).parent, mask=0o022)  # dir: 755 is normal
 
     migrations_dir = pathlib.Path(__file__).parents[3] / "migrations"
     run_migrations(db_path, migrations_dir)

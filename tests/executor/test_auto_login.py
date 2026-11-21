@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import stat
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
+from alerts.scrub import ScrubFilter
 from executor.auto_login import (
     _kite_extract_request_token,
     _write_env_token,
@@ -164,3 +169,78 @@ def test_kite_extract_request_token_raises_when_not_found():
 
     with pytest.raises(RuntimeError, match="request_token"):
         _kite_extract_request_token(sess, "key")
+
+
+# ── secrets hygiene (#142) ────────────────────────────────────────────────────
+
+_FAKE_TOKEN = "zq9fakeaccesstokenvalue123"
+
+
+def _sent_texts(urlopen):
+    return [json.loads(c[0][0].data)["text"] for c in urlopen.call_args_list]
+
+
+def _login_env(monkeypatch):
+    for k, v in dict(
+        KITE_API_KEY="fakeapikey1",
+        KITE_API_SECRET="fakeapisecret1",
+        KITE_USER_ID="AB1234",
+        KITE_PASSWORD="fakepassword1",
+        KITE_TOTP_SECRET="FAKETOTPSECRET1",
+        TELEGRAM_BOT_TOKEN="tok",
+        TELEGRAM_CHAT_ID="1",
+    ).items():
+        monkeypatch.setenv(k, v)
+
+
+@patch("executor.auto_login.kite_auto_login", return_value=_FAKE_TOKEN)
+def test_refresh_notice_has_no_token_characters(_mock, tmp_path, monkeypatch):
+    _login_env(monkeypatch)
+    with (
+        patch("executor.auto_login._ENV_PATH", tmp_path / ".env"),
+        patch("alerts.telegram.urllib.request.urlopen") as up,
+    ):
+        refresh_all_broker_tokens()
+    (text,) = _sent_texts(up)
+    assert "AB1234" in text
+    assert _FAKE_TOKEN[:4] not in text
+    assert "Token" not in text
+
+
+def test_refresh_failure_alert_and_log_are_scrubbed(tmp_path, monkeypatch, caplog):
+    _login_env(monkeypatch)
+    exc = requests.HTTPError("403 for url: https://x/login?request_token=reqtok999&api_key=k")
+    caplog.handler.addFilter(ScrubFilter())
+    with (
+        patch("executor.auto_login.kite_auto_login", side_effect=exc),
+        patch("executor.auto_login._ENV_PATH", tmp_path / ".env"),
+        patch("alerts.telegram.urllib.request.urlopen") as up,
+        caplog.at_level(logging.ERROR),
+    ):
+        refresh_all_broker_tokens()
+    (text,) = _sent_texts(up)
+    assert "FAILED" in text
+    assert "reqtok999" not in text
+    assert "reqtok999" not in caplog.handler.format(caplog.records[-1])
+
+
+def test_write_env_token_is_0600_and_keeps_other_lines(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("# c\nA=1\nKITE_ACCESS_TOKEN=old\n\nB=two words\n")
+    env.chmod(0o666)  # the mode it was found in
+    _write_env_token(env, "KITE_ACCESS_TOKEN", "new")
+    assert env.read_text() == "# c\nA=1\nKITE_ACCESS_TOKEN=new\n\nB=two words\n"
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    assert [p.name for p in tmp_path.iterdir()] == [".env"]  # temp file gone
+
+
+def test_write_env_token_failure_leaves_original_and_no_temp(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("A=1\n")
+    with (
+        patch("executor.auto_login.os.replace", side_effect=OSError("disk")),
+        pytest.raises(OSError),
+    ):
+        _write_env_token(env, "A", "2")
+    assert env.read_text() == "A=1\n"
+    assert [p.name for p in tmp_path.iterdir()] == [".env"]

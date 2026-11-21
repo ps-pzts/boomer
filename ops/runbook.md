@@ -82,6 +82,13 @@ dashboard.yourdomain.com {
 
 ---
 
+## Secrets
+
+- Secrets live only in `.env` (dev) or `secrets.env` (VM): mode `600`, owner only (`chmod 600 .env`). The orchestrator logs a WARNING at boot if it is looser; `./dev.sh` creates it `600` and warns on an existing loose one. `.env` is git-ignored and docker-ignored: never commit it or paste it into chat, issues or PRs.
+- Telegram messages and log lines pass through `alerts.scrub` (exact secret env values plus token-shaped patterns). That is a safety net, not permission to log secrets.
+- Rotate: Telegram bot token via BotFather `/revoke`; Kite API secret by regenerating it in the Kite developer console; Zerodha password via Kite settings (then update `.env`).
+- **RISK (operator decision):** storing `KITE_PASSWORD` and `KITE_TOTP_SECRET` next to the API key in one plaintext file defeats 2FA for the Zerodha account: whoever reads the file can log in and trade. Recommended: remove both and log in manually each morning (`scripts/kite_login.py`), unless you accept that risk. Also enable Telegram 2FA, keep the bot on a single chat id, and register the static IP with Kite.
+
 ## Daily operations
 
 **What's normal:**

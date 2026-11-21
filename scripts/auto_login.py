@@ -22,6 +22,10 @@ if _env_path.exists():
     load_dotenv(_env_path, override=True)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
+from alerts.scrub import install_log_scrubber  # noqa: E402
+
+install_log_scrubber()
 
 
 def main() -> None:
@@ -42,9 +46,8 @@ def main() -> None:
     if not updated:
         print("No broker refreshed. Make sure KITE_TOTP_SECRET is set in .env.")
         sys.exit(1)
-    for broker, token in updated.items():
-        print(f"\n── {broker.upper()} ──────────────────────────────────────")
-        print(f"New token (first 12 chars): {token[:12]}…")
+    for broker in updated:
+        print(f"\n── {broker.upper()} ── token saved")
     print("\nToken written to .env — restart the orchestrator to pick it up.")
 
 

@@ -49,12 +49,19 @@ def main() -> None:
     try:
         access_token = exchange_request_token(api_key, api_secret, request_token)
     except Exception as exc:
-        print(f"ERROR: Token exchange failed — {exc}")
+        from alerts.scrub import scrub
+
+        print(f"ERROR: Token exchange failed — {scrub(exc)}")
         sys.exit(1)
 
+    from executor.auto_login import _ENV_PATH, _write_env_token
+
+    if not _ENV_PATH.exists():
+        print(f"ERROR: {_ENV_PATH} not found; cannot save the token.")
+        sys.exit(1)
+    _write_env_token(_ENV_PATH, "KITE_ACCESS_TOKEN", access_token)
     print("\n── Done ──────────────────────────────────────────────")
-    print(f"KITE_ACCESS_TOKEN={access_token}")
-    print("\nAdd or update this line in your .env file, then restart:")
+    print("Token saved to .env. Restart:")
     print("    ./dev.sh stop && ./dev.sh")
     print("─────────────────────────────────────────────────────\n")
 
