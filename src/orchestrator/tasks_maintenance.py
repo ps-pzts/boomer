@@ -109,7 +109,7 @@ def _morning_heartbeat(run_date: str, run_id: int, db_path: str, **_: object) ->
         chat_id,
         f"✅ <b>Boomer — morning check-in</b> ({now_str})\n"
         f"Orchestrator is running. Today is {run_date}.\n"
-        f"🚀 Queued for GTT at 09:25: {queued}"
+        f"🚀 Queued for execution: {queued}"
         f"{cb_line}",
     )
     logger.info(
