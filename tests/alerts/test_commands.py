@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -327,6 +328,9 @@ class TestToggle:
     @pytest.fixture()
     def armed(self, monkeypatch):
         monkeypatch.setenv("BOOMER_TRADING_MODE", "live")
+        monkeypatch.setattr(  # Q5 criteria are tested in test_mode_toggle / test_live_readiness
+            "executor.trading_mode.build_report", lambda db: SimpleNamespace(criteria=[])
+        )
 
     def flips(self, db) -> list[tuple[int, str]]:
         c = sqlite3.connect(db)
@@ -344,6 +348,13 @@ class TestToggle:
         assert text.startswith("✅") and "LIVE" in text
         assert [a for _, a in self.flips(db)] == ["telegram"]
         assert "Next session: LIVE" in telegram_bot.handle_mode(db, "/mode")
+
+    def test_live_is_refused_while_the_paper_criteria_are_unmet(self, db, monkeypatch):
+        monkeypatch.setenv("BOOMER_TRADING_MODE", "live")  # armed, real (empty) evidence
+        for text in ("/toggle", "/toggle confirm"):
+            reply = telegram_bot.handle_toggle(db, text)
+            assert reply.startswith("⛔") and "paper_sessions" in reply
+        assert self.flips(db) == []
 
     def test_live_is_refused_when_the_server_is_not_armed(self, db, monkeypatch):
         monkeypatch.delenv("BOOMER_TRADING_MODE", raising=False)

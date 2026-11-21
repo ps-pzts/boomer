@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from db.migrations import run_migrations
+from executor.live_readiness import Criterion, Report, Status
 from executor.trading_mode import (
     LiveTradingAuthorisationStore,
     paper_record,
@@ -36,6 +37,20 @@ def _session(db: str, day: date, mode: str, state: str = "trading") -> None:
         )
 
 
+def _report(*statuses: Status) -> Report:
+    names = ["paper_sessions", "zero_unprotected", "slippage", "expectancy", "b4_sebi"]
+    return Report(
+        [Criterion(n, st, f"{n} summary 7") for n, st in zip(names, statuses, strict=False)]
+    )
+
+
+@pytest.fixture()
+def ready(monkeypatch):
+    """Every Q5 criterion passes (the criteria themselves are tested in test_live_readiness)."""
+    all_pass = _report(*[Status.PASS] * 5)
+    monkeypatch.setattr("executor.trading_mode.build_report", lambda db: all_pass)
+
+
 def _switch(db, target, env="live", confirmed=False, today=DAY):
     return request_mode(
         db, target, actor="op", reason="test", env_value=env, confirmed=confirmed, today=today
@@ -51,28 +66,64 @@ class TestRequestMode:
         assert not r.ok and "not armed" in r.message
         assert not LiveTradingAuthorisationStore(db).is_enabled()
 
-    def test_live_needs_confirmation_and_shows_the_paper_record(self, db):
+    def test_live_needs_confirmation_and_shows_the_paper_record(self, db, ready):
         r = _switch(db, "live")
         assert not r.ok and "0 sessions closed (criterion: ≥ 20)" in r.message
         assert not LiveTradingAuthorisationStore(db).is_enabled()
 
-    def test_live_confirmed_before_todays_session_applies_today(self, db):
+    def test_live_confirmed_before_todays_session_applies_today(self, db, ready):
         r = _switch(db, "live", confirmed=True)
         assert r.ok and "today's session" in r.message
         assert LiveTradingAuthorisationStore(db).is_enabled()
         assert session_mode(db, DAY, "live") == "live"
 
-    def test_mid_session_switch_applies_next_session_only(self, db):
+    def test_mid_session_switch_applies_next_session_only(self, db, ready):
         _session(db, DAY, "paper")
         r = _switch(db, "live", confirmed=True)
         assert r.ok and "next session" in r.message and "stays PAPER" in r.message
         assert session_mode(db, DAY, "live") == "paper"  # today is locked
         assert session_mode(db, date(2026, 11, 20), "live") == "live"
 
-    def test_back_to_paper_needs_no_confirmation(self, db):
+    def test_back_to_paper_needs_no_confirmation(self, db, ready):
         _switch(db, "live", confirmed=True)
         assert _switch(db, "paper", env="live").ok
         assert session_mode(db, DAY, "live") == "paper"
+
+    @pytest.mark.parametrize("bad", [Status.FAIL, Status.INSUFFICIENT_DATA])
+    @pytest.mark.parametrize("i", range(5))
+    def test_live_refused_when_any_one_criterion_is_not_passing(self, db, monkeypatch, i, bad):
+        sts = [Status.PASS] * 5
+        sts[i] = bad
+        monkeypatch.setattr("executor.trading_mode.build_report", lambda d: _report(*sts))
+        r = _switch(db, "live", confirmed=True)
+        name = _report(*sts).criteria[i].name
+        assert not r.ok and f"{name}: {name} summary 7" in r.message
+        assert r.message.count("summary") == 1  # only the failing criterion is listed
+        assert not LiveTradingAuthorisationStore(db).is_enabled()
+
+    def test_refused_even_before_confirmation_and_audited(self, db, caplog):
+        with caplog.at_level("WARNING"):
+            r = _switch(db, "live")  # real evidence, empty db: 0 of 20 sessions
+        assert not r.ok and "0 closed paper sessions (need >= 20)" in r.message
+        assert "Repeat with" not in r.message
+        assert "live_switch_refused actor=op" in caplog.text
+
+    def test_unreadable_evidence_fails_closed(self, db, monkeypatch):
+        def boom(d):
+            raise sqlite3.OperationalError("no such table: orders")
+
+        monkeypatch.setattr("executor.trading_mode.build_report", boom)
+        r = _switch(db, "live", confirmed=True)
+        assert not r.ok and "could not read the readiness evidence" in r.message
+        assert not LiveTradingAuthorisationStore(db).is_enabled()
+
+    def test_paper_is_never_blocked_by_readiness(self, db, monkeypatch):
+        LiveTradingAuthorisationStore(db).set_enabled(True, "op", "test")
+        monkeypatch.setattr(
+            "executor.trading_mode.build_report", lambda d: _report(*[Status.FAIL] * 5)
+        )
+        assert _switch(db, "paper", env="live").ok
+        assert not LiveTradingAuthorisationStore(db).is_enabled()
 
 
 def test_paper_record_counts_only_paper(db):
@@ -103,7 +154,7 @@ def test_paper_record_counts_only_paper(db):
     }
 
 
-def test_telegram_mode_command(db, monkeypatch):
+def test_telegram_mode_command(db, monkeypatch, ready):
     from alerts.telegram_bot import handle_mode
 
     monkeypatch.setenv("BOOMER_TRADING_MODE", "live")

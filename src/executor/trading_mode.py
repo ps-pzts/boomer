@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from executor.brokers.base import Broker
 from executor.brokers.feeds.base import MarketDataFeed
 from executor.brokers.kitesim.paper import build_paper_broker
+from executor.live_readiness import Status, build_report
 
 logger = logging.getLogger(__name__)
 
@@ -174,8 +175,9 @@ def request_mode(
     confirmed: bool,
     today: date,
 ) -> SwitchResult:
-    """Switch paper/live from the next session. Live needs the server armed (env)
-    and an explicit confirmation after seeing the paper record."""
+    """Switch paper/live from the next session. Live needs the server armed (env),
+    every paper->live criterion (live_readiness, design §9 Q5) passing, and an explicit
+    confirmation after seeing the paper record. Going back to paper is never gated."""
     target = (target or "").strip().lower()
     if target not in (TradingMode.PAPER, TradingMode.LIVE):
         return SwitchResult(False, f"Unknown mode {target!r}: use paper or live.")
@@ -187,6 +189,21 @@ def request_mode(
                 False,
                 f"Live refused: this server is not armed ({ENV_VAR} is not 'live').",
             )
+        try:
+            failing = [c for c in build_report(db_path).criteria if c.status != Status.PASS]
+        except Exception as exc:  # unreadable evidence is not evidence: fail closed
+            failing, error = [], f"could not read the readiness evidence ({exc})"
+        else:
+            error = ""
+        if failing or error:
+            detail = error or "; ".join(f"{c.name}: {c.summary}" for c in failing)
+            logger.warning(
+                "live_switch_refused actor=%s reason=%s failing=%s",
+                actor,
+                reason,
+                detail,
+            )
+            return SwitchResult(False, f"Live refused: paper->live criteria not met. {detail}")
         rec = paper_record(db_path)
         if not confirmed:
             return SwitchResult(
