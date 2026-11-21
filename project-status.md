@@ -77,6 +77,10 @@
 
 ## Change log
 
+### 2026-11-21 - Enhancement: the live switch enforces the paper-to-live criteria (#128)
+
+- **What:** `request_mode(target=live)` (Telegram /mode and /toggle, dashboard POST /trading-mode) now also needs every `live_readiness` criterion to PASS (>= 20 closed paper sessions, zero unprotected, slippage within assumption, positive expectancy after costs, B4 flag). INSUFFICIENT_DATA is a refusal; the message lists each non-passing criterion with its numbers; unreadable evidence refuses (fail closed); refusal is logged as `live_switch_refused`. Checked before the confirm prompt. live -> paper is never gated. No operator override added: a knowing early-live decision now needs a code change, flagged on the PR as a decision for the operator.
+
 ### 2026-11-21 — Bug: get_ltp returned unbounded-stale prices; silent excepts (#132)
 
 - **Symptom/cause/fix:** `KiteBroker.get_ltp` tier 3 returned the last known tick/REST value at any age; removed (it is always older than `_LTP_STALENESS_SECONDS` by construction), so callers get None. Each failed tier and the final None log at WARNING. The two `except: pass` in `get_ltp` and the alerter one in `pre_market_executor_setup` now log WARNING. `live_capital_view` still values a no-LTP position at entry, now with a WARNING. KiteSim/paper goes through the same `get_ltp`, so it is covered.
