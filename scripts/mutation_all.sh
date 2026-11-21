@@ -20,10 +20,11 @@ run src/capital/pre_trade.py tests/capital
 run src/capital/circuit_breakers.py tests/capital
 run src/executor/trade_machine.py tests/executor/test_trade_machine.py tests/executor/test_trade_lifecycle.py
 run src/executor/session_machine.py tests/executor/test_session_machine.py tests/executor/test_session_controller.py tests/executor/test_session_kite_gate.py
+run src/executor/session_reconcile.py tests/executor/test_session_controller.py tests/executor/test_untracked_orders.py tests/executor/test_session_kite_gate.py
 run src/executor/session_inputs.py tests/executor/test_session_inputs.py tests/executor/test_untracked_orders.py tests/executor/test_session_controller.py
 FUNC=map_kite_status run src/executor/brokers/kite_broker.py tests/executor/brokers/test_kite_order_status.py tests/executor/brokers/test_kite_broker.py --func map_kite_status
 run src/executor/brokers/kitesim/rules.py tests/executor/brokers/kitesim
 run src/executor/trade_lifecycle.py tests/executor/test_trade_lifecycle.py tests/executor/test_trade_lifecycle_edges.py tests/executor/test_lost_orders.py tests/integration/test_trade_paths.py tests/integration/test_scenarios.py
-FUNC=_pre_trade_checks run src/executor/order_manager.py tests/executor/test_order_manager.py tests/executor/test_lost_orders.py --func _pre_trade_checks
+FUNC=pre_trade_checks run src/executor/order_checks.py tests/executor/test_order_manager.py tests/executor/test_lost_orders.py --func pre_trade_checks
 run src/executor/reconciliation.py tests/executor/test_reconciliation.py
 run src/executor/order_machine.py tests/executor/test_order_machine.py tests/executor/test_order_manager.py
