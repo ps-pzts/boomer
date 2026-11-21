@@ -104,6 +104,23 @@ class TestTradeMessages:
         assert all("order" not in m.lower() or "rejected" in m for m in out.sent)
         assert len(out.sent) == 3  # placed, filled, protected: not one per order change
 
+    def test_a_trailed_stop_says_where_it_went(self, h):
+        """#122: the message read payload keys trailing.py never writes ("stop raised to
+        None"). Fill 100, stop 98, ATR 2: LTP 102 = 1R -> breakeven stop 100.00."""
+        from executor.trade_lifecycle import TradeSupervisor
+
+        h.sup = TradeSupervisor(
+            h.db, h.om, h.pm, h.alerter, clock=h.clock, price=lambda s: h.feed.latest(s).ltp
+        )
+        out = start_feed(h)
+        h.tick(100.0)
+        h.sup.open_trade(_req())
+        h.sup.reconcile()
+        h.tick(102.0)
+        h.sup.reconcile()
+        feed.poll_once(db_path(h), out)
+        assert [m for m in out.sent if "stop raised" in m] == ["⬆️ <b>INFY</b> stop raised to 100.0"]
+
     def test_html_in_symbols_is_escaped(self, h):
         out = start_feed(h)
         h.tick(100.0)
