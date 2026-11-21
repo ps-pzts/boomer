@@ -106,6 +106,7 @@ class TradeSupervisor:
         self._pm = position_manager
         self._alerter = alerter
         self._clock = clock
+        self._price = price
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -166,6 +167,23 @@ class TradeSupervisor:
             except Exception as exc:
                 logger.exception("trade_reconcile_failed bracket=%s", b["bracket_id"])
                 self._critical(f"Trade reconcile failed — {b['symbol']}", str(exc))
+        self._mark_to_market()
+
+    def _mark_to_market(self) -> None:
+        """Give open positions their last price and unrealised P&L (#106).
+
+        A symbol with no tick is left as it was (never zeroed). update_ltp only touches
+        is_open=1 rows, so a position closed this pass keeps its exit price and P&L.
+        """
+        if self._price is None:
+            return
+        try:
+            for symbol in {b["symbol"] for b in self._store.active() if b["position_id"]}:
+                ltp = self._price(symbol)
+                if ltp:
+                    self._pm.update_ltp(symbol, float(ltp))  # type: ignore[attr-defined]
+        except Exception:  # a display refresh must never break trade management
+            logger.exception("mark_to_market_failed")
 
     def square_off_all(self) -> None:
         """15:14 IST: flatten everything. Never leaves an MIS position."""

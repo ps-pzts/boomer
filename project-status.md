@@ -77,6 +77,12 @@
 
 ## Change log
 
+### 2026-11-21 — Bug: open positions never got a current price or unrealised P&L (#106)
+
+- **Symptom:** `positions.current_price`/`unrealised_pnl` stayed at entry/0 all session, so `/positions`, `/pnl` and the UI showed 0 open P&L.
+- **Root cause:** `PositionManager.update_ltp()` had no caller.
+- **Fix:** `TradeSupervisor.reconcile()` now marks each active symbol to market via its `price` callable (symbols with no tick untouched; closed positions never overwritten). Worked example: qty 10, entry 100, price 101.5 -> +15. Tests: `tests/executor/test_mark_to_market.py`.
+
 ### 2026-11-21 — Bug: order spec had transitions no code path emits; refusals recorded as ERROR (#100)
 
 - **Symptom:** the #88 transition-coverage gate found spec transitions nothing can emit (`* -> error` from finished states, `pending -> expired`, `created -> error`), and a definite Kite refusal (`InputException`/`OrderException`, e.g. RMS) was recorded ERROR, indistinguishable from an outage.
