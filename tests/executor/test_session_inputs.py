@@ -93,6 +93,27 @@ class TestRealisedPnl:
         assert p.consecutive_losses == 2  # the win at 09:40 breaks the streak
         assert p.realised_week == Decimal("-500")
 
+    def test_flat_trade_ends_the_losing_streak(self, conn):
+        _closed(conn, "2026-11-19", -100.0, "2026-11-19T09:40")
+        _closed(conn, "2026-11-19", 0.0, "2026-11-19T10:10")  # breakeven is not a loss
+        assert realised_pnl(conn, DAY).consecutive_losses == 0
+        _closed(conn, "2026-11-19", -50.0, "2026-11-19T10:40")
+        assert realised_pnl(conn, DAY).consecutive_losses == 1  # only the one after it
+
+    def test_small_win_ends_the_losing_streak(self, conn):
+        _closed(conn, "2026-11-19", -100.0, "2026-11-19T09:40")
+        _closed(conn, "2026-11-19", 0.5, "2026-11-19T10:10")
+        assert realised_pnl(conn, DAY).consecutive_losses == 0
+
+    def test_null_pnl_counts_as_zero(self, conn):
+        _closed(conn, "2026-11-19", 10.0, "2026-11-19T09:40")
+        conn.execute(
+            "UPDATE intraday_brackets SET realised_pnl=NULL WHERE closed_at='2026-11-19T09:40'"
+        )
+        _closed(conn, "2026-11-19", -3.0, "2026-11-19T10:10")
+        got = realised_pnl(conn, DAY)
+        assert (got.realised, got.consecutive_losses) == (Decimal("-3.0"), 1)
+
     def test_no_trades(self, conn):
         assert realised_pnl(conn, DAY) == PnlToday(Decimal("0"), 0, Decimal("0"))
 
@@ -143,6 +164,48 @@ class TestTrippedBreakers:
     def test_drawdown_from_high_water_mark(self, config):
         # hwm 10.9L, capital 10L: (10.9 - 10) / 10.9 = 8.26% >= 8%
         assert self._run(config, hwm="1090000") == ["breaker:portfolio_max_drawdown"]
+
+    def test_profit_raises_live_capital_for_drawdown(self, config):
+        # capital 10L + realised +50,000 = live 10.5L; hwm 11L -> 4.5% drawdown: clear.
+        # (live = capital - realised = 9.5L would read 13.6% and halt a winning day)
+        got = tripped_breakers(
+            pnl=PnlToday(Decimal("50000"), 0, Decimal("50000")),
+            ledger=_ledger(hwm="1100000"),
+            nifty_move=Decimal("0"),
+            now=NOW,
+            config=config,
+        )
+        assert got == []
+
+    def test_loss_below_hwm_trips_drawdown(self, config):
+        # capital 1,000 (all intraday), realised -500 -> live 500, hwm 1,000 -> 50%
+        got = tripped_breakers(
+            pnl=PnlToday(Decimal("-500"), 0, Decimal("-500")),
+            ledger=_ledger(capital="1000"),
+            nifty_move=Decimal("0"),
+            now=NOW,
+            config=config,
+        )
+        assert "breaker:portfolio_max_drawdown" in got
+        # and a 1-rupee capital still computes the drawdown (hwm 1, live 0.5 -> 50%)
+        got = tripped_breakers(
+            pnl=PnlToday(Decimal("-0.5"), 0, Decimal("-0.5")),
+            ledger=_ledger(capital="1"),
+            nifty_move=Decimal("0"),
+            now=NOW,
+            config=config,
+        )
+        assert "breaker:portfolio_max_drawdown" in got
+
+    def test_zero_capital_is_clear_not_a_crash(self, config):
+        got = tripped_breakers(
+            pnl=PnlToday(Decimal("0"), 0, Decimal("0")),
+            ledger=_ledger(capital="0", hwm="0"),
+            nifty_move=Decimal("0"),
+            now=NOW,
+            config=config,
+        )
+        assert got == []
 
     def test_late_entry_is_not_a_halt(self, config):
         late = tripped_breakers(
@@ -203,6 +266,39 @@ class TestReconcileReport:
         import json
 
         assert json.loads(json.dumps(self._report().as_inputs()))["clean"] is True
+
+
+def test_pnl_and_leg_records_are_immutable():
+    with pytest.raises(AttributeError):
+        PnlToday(Decimal("0"), 0, Decimal("0")).realised = Decimal("1")  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        LegStatus("b", "INFY", "stop", "o1", True).resting = False  # type: ignore[misc]
+
+
+class TestReconcileMismatchDetail:
+    def _mismatch(self, trade_net, broker_net):
+        r = reconcile_report(
+            trade_net=trade_net, broker_net=broker_net, open_legs=[], feed_fresh=True,
+            watchlist_size=1,
+        )  # fmt: skip
+        return r.checks["net_quantity_matches_broker"]["mismatch"]
+
+    def test_position_only_at_the_broker(self):
+        assert self._mismatch({}, {"A": 1}) == {"A": {"ours": 0, "broker": 1}}
+        assert self._mismatch({}, {"A": 5}) == {"A": {"ours": 0, "broker": 5}}
+
+    def test_position_only_in_our_books(self):
+        assert self._mismatch({"A": 1}, {}) == {"A": {"ours": 1, "broker": 0}}
+
+    def test_matching_and_differing(self):
+        got = self._mismatch({"A": 10, "B": 5}, {"A": 10, "B": 7})
+        assert got == {"B": {"ours": 5, "broker": 7}}
+
+    def test_one_stock_watchlist_is_present(self):
+        r = reconcile_report(
+            trade_net={}, broker_net={}, open_legs=[], feed_fresh=True, watchlist_size=1
+        )
+        assert r.checks["watchlist_present"] == {"ok": True, "size": 1}
 
 
 def test_net_by_symbol_mis_only_and_drops_zero():

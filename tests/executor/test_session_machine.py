@@ -67,6 +67,8 @@ class TestGuards:
         g = _guard(sm.CONNECTED, "watchlist_ready")
         assert g({"watchlist_size": 0}) == "watchlist_empty"
         assert g({"watchlist_size": 50}) is None
+        assert g({"watchlist_size": 1}) is None
+        assert g({}) == "watchlist_empty"  # nothing recorded = nothing watched
 
     @pytest.mark.parametrize(
         "ctx, blocked",
@@ -124,6 +126,7 @@ class TestGuards:
         assert g({"active_trades": 1, "broker_open_symbols": []}) == "trades_active"
         assert g({"active_trades": 0, "broker_open_symbols": ["INFY"]}) == "broker_not_flat"
         assert g({"active_trades": 0, "broker_open_symbols": []}) is None
+        assert g({}) is None  # nothing recorded = no trades, no broker positions
 
 
 class TestKiteChecks:
