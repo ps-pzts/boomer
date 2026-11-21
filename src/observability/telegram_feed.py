@@ -66,7 +66,7 @@ def _trade(name: str, rule: str, inputs: dict, sym: str) -> str | None:
     if name == "stop_confirmed":
         return f"🛡️ <b>{sym}</b> protected: stop {inputs.get('stop')}, target {inputs.get('target')}"
     if name == "stop_raised":
-        return f"⬆️ <b>{sym}</b> stop raised to {inputs.get('new_stop') or inputs.get('stop')}"
+        return f"⬆️ <b>{sym}</b> stop raised to {inputs.get('to')}"  # trailing.py's inputs
     if name == "leg_filled":
         icon, what = ("🎯", "target hit") if rule == "target_hit" else ("🛑", "stop hit")
         return f"{icon} <b>{sym}</b> {what}"
