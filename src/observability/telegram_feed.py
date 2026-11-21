@@ -1,6 +1,6 @@
 """Live Telegram feed of trade and session events, plus the end-of-day summary (#103).
 
-A separate process (`python -m src.observability.telegram_feed`) that tails the `events`
+A separate process (`python -m observability.telegram_feed`) that tails the `events`
 table. Only src/observability may read events (designs/observability.md §2), and it only
 reads: nothing here can influence a trading decision. It remembers the last event it sent
 in `telegram_feed_cursor`, so a restart neither repeats nor skips messages; a first run
@@ -22,9 +22,9 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from src.alerts.commands.common import esc, money
-from src.alerts.commands.reads import pnl_numbers
-from src.alerts.telegram import send_telegram
+from alerts.commands.common import esc, money
+from alerts.commands.reads import pnl_numbers
+from alerts.telegram import send_telegram
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")

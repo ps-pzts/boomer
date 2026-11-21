@@ -73,7 +73,7 @@ def test_all_migrations_apply_to_single_db(tmp_path):
 
 def test_migrations_idempotent_via_run_migrations(tmp_path):
     """run_migrations skips already-applied migrations (IF NOT EXISTS semantics)."""
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     db_path = str(tmp_path / "idempotent.db")
     migrations_dir = Path("migrations")
@@ -86,7 +86,7 @@ def test_migrations_idempotent_via_run_migrations(tmp_path):
 
 def test_crash_recovery_marks_running_as_interrupted(tmp_path):
     """On startup, Orchestrator must mark any RUNNING task_runs as INTERRUPTED."""
-    from src.orchestrator.models import TaskRunStore
+    from orchestrator.models import TaskRunStore
 
     db_path = _make_db(tmp_path)
     store = TaskRunStore(db_path)
@@ -117,8 +117,8 @@ def test_crash_recovery_marks_running_as_interrupted(tmp_path):
 
 def test_task_runner_records_success(tmp_path):
     """execute_with_retry writes SUCCESS to task_runs when fn completes cleanly."""
-    from src.orchestrator.models import RetryPolicy, TaskRunStore
-    from src.orchestrator.task_runner import execute_with_retry
+    from orchestrator.models import RetryPolicy, TaskRunStore
+    from orchestrator.task_runner import execute_with_retry
 
     db_path = _make_db(tmp_path)
     store = TaskRunStore(db_path)
@@ -146,8 +146,8 @@ def test_task_runner_records_success(tmp_path):
 
 def test_task_runner_records_failed_final_after_exhausting_retries(tmp_path):
     """Task that always raises is marked FAILED_FINAL after max_attempts."""
-    from src.orchestrator.models import RetryPolicy, TaskRunStore
-    from src.orchestrator.task_runner import execute_with_retry
+    from orchestrator.models import RetryPolicy, TaskRunStore
+    from orchestrator.task_runner import execute_with_retry
 
     db_path = _make_db(tmp_path)
     store = TaskRunStore(db_path)
@@ -173,8 +173,8 @@ def test_task_runner_records_failed_final_after_exhausting_retries(tmp_path):
 
 def test_task_runner_timeout(tmp_path):
     """Task that exceeds timeout_seconds is recorded as TIMEOUT."""
-    from src.orchestrator.models import RetryPolicy, TaskRunStore
-    from src.orchestrator.task_runner import execute_with_retry
+    from orchestrator.models import RetryPolicy, TaskRunStore
+    from orchestrator.task_runner import execute_with_retry
 
     db_path = _make_db(tmp_path)
     store = TaskRunStore(db_path)
@@ -204,8 +204,8 @@ def test_scheduler_already_succeeded_blocks_rerun(tmp_path):
     """Scheduler returns already_succeeded if task succeeded on run_date."""
     import datetime as dt
 
-    from src.orchestrator.models import BotModeStore, RetryPolicy, TaskDefinition, TaskRunStore
-    from src.orchestrator.scheduler import Scheduler
+    from orchestrator.models import BotModeStore, RetryPolicy, TaskDefinition, TaskRunStore
+    from orchestrator.scheduler import Scheduler
 
     db_path = _make_db(tmp_path)
     run_store = TaskRunStore(db_path)
@@ -250,7 +250,7 @@ def test_scheduler_already_succeeded_blocks_rerun(tmp_path):
 
 def test_latest_for_date_returns_true_latest(tmp_path):
     """latest_for_date returns the row with the highest id (most recently inserted)."""
-    from src.orchestrator.models import TaskRunStore
+    from orchestrator.models import TaskRunStore
 
     db_path = _make_db(tmp_path)
     store = TaskRunStore(db_path)
@@ -272,8 +272,8 @@ def test_latest_for_date_returns_true_latest(tmp_path):
 
 def test_collection_run_context_records_success(tmp_path):
     """run_context yields a row and finishes it as SUCCESS when no exception."""
-    from src.collector.health import CollectionRunStore
-    from src.collector.models import DataSource, RunStatus
+    from collector.health import CollectionRunStore
+    from collector.models import DataSource, RunStatus
 
     db_path = _make_db(tmp_path)
     conn = sqlite3.connect(db_path)
@@ -302,8 +302,8 @@ def test_collection_run_context_records_success(tmp_path):
 
 def test_collection_run_context_records_failed_on_exception(tmp_path):
     """run_context marks run FAILED and re-raises when an exception escapes the block."""
-    from src.collector.health import CollectionRunStore
-    from src.collector.models import DataSource
+    from collector.health import CollectionRunStore
+    from collector.models import DataSource
 
     db_path = _make_db(tmp_path)
     conn = sqlite3.connect(db_path)
@@ -330,8 +330,8 @@ def test_collection_run_context_records_failed_on_exception(tmp_path):
 
 def test_fetcher_404_skips_without_retrying(tmp_path):
     """A fetcher whose validate() raises PermanentFetchError on 404 must return None immediately."""
-    from src.collector.base import BaseFetcher, PermanentFetchError
-    from src.collector.models import DataSource, FetchResult
+    from collector.base import BaseFetcher, PermanentFetchError
+    from collector.models import DataSource, FetchResult
 
     class TestFetcher(BaseFetcher):
         source = DataSource.BSE_BULK_DEALS
@@ -351,7 +351,7 @@ def test_fetcher_404_skips_without_retrying(tmp_path):
             from datetime import datetime
             from zoneinfo import ZoneInfo
 
-            from src.collector.models import FetchResult
+            from collector.models import FetchResult
 
             body = b"Not Found"
             return FetchResult(
@@ -388,8 +388,8 @@ def test_fetcher_404_skips_without_retrying(tmp_path):
 
 def test_archive_deduplicates_on_content_hash(tmp_path):
     """Archiving the same content twice must return the existing row, not insert a duplicate."""
-    from src.collector.base import BaseFetcher
-    from src.collector.models import DataSource, FetchResult
+    from collector.base import BaseFetcher
+    from collector.models import DataSource, FetchResult
 
     class MinimalFetcher(BaseFetcher):
         source = DataSource.PRICES
@@ -434,8 +434,8 @@ def test_archive_stores_date_params_as_string(tmp_path):
     """archive() must not crash when request_params contains a date object."""
     import datetime as dt
 
-    from src.collector.base import BaseFetcher
-    from src.collector.models import DataSource, FetchResult
+    from collector.base import BaseFetcher
+    from collector.models import DataSource, FetchResult
 
     class DateParamFetcher(BaseFetcher):
         source = DataSource.FO_OI
@@ -486,7 +486,7 @@ def test_nightly_eod_collector_completes_with_mocked_fetchers(tmp_path):
     Verifies correct API usage: CollectionRunStore(conn), run_context(source),
     fetcher.run(trade_date=date).
     """
-    from src.collector.models import DataSource
+    from collector.models import DataSource
 
     db_path = _make_db(tmp_path)
     archive_dir = str(tmp_path / "archive")
@@ -510,8 +510,8 @@ def test_nightly_eod_collector_completes_with_mocked_fetchers(tmp_path):
         DataSource.PRICES: make_mock_fetcher(DataSource.PRICES),
     }
 
-    with patch("src.collector.parser.build_fetcher_registry", return_value=mock_registry):
-        from src.orchestrator.tasks_collector import _nightly_eod_collector
+    with patch("collector.parser.build_fetcher_registry", return_value=mock_registry):
+        from orchestrator.tasks_collector import _nightly_eod_collector
 
         _nightly_eod_collector(
             run_date="2026-05-09",
@@ -550,7 +550,7 @@ def test_nightly_eod_collector_bulk_deals_use_prev_weekday(tmp_path):
     """Bulk deal fetchers receive the previous weekday, not run_date."""
     import datetime as dt
 
-    from src.collector.models import DataSource
+    from collector.models import DataSource
 
     db_path = _make_db(tmp_path)
 
@@ -572,8 +572,8 @@ def test_nightly_eod_collector_bulk_deals_use_prev_weekday(tmp_path):
         DataSource.PRICES: make_mock(DataSource.PRICES),
     }
 
-    with patch("src.collector.parser.build_fetcher_registry", return_value=mock_registry):
-        from src.orchestrator.tasks_collector import _nightly_eod_collector
+    with patch("collector.parser.build_fetcher_registry", return_value=mock_registry):
+        from orchestrator.tasks_collector import _nightly_eod_collector
 
         _nightly_eod_collector(
             run_date="2026-05-11",  # Monday
@@ -595,8 +595,8 @@ def test_nightly_eod_collector_bulk_deals_use_prev_weekday(tmp_path):
 def test_orchestrator_dispatches_task_and_records_result(tmp_path):
     """Orchestrator loop dispatches a task and task_runner records SUCCESS."""
 
-    from src.orchestrator.models import RetryPolicy, TaskDefinition, TaskRunStore
-    from src.orchestrator.orchestrator import Orchestrator
+    from orchestrator.models import RetryPolicy, TaskDefinition, TaskRunStore
+    from orchestrator.orchestrator import Orchestrator
 
     db_path = _make_db(tmp_path)
 

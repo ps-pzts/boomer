@@ -8,13 +8,13 @@ from pathlib import Path
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
-from src.capital.state import CapitalStateManager
-from src.db.migrations import run_migrations
-from src.executor.brokers.feeds.base import Tick
-from src.executor.brokers.feeds.manual_feed import ManualFeed
-from src.orchestrator.execution import FeedLtp, build_session
-from src.orchestrator.tasks_executor import _pre_market_executor_setup
-from src.orchestrator.tasks_session import _session_tick
+from capital.state import CapitalStateManager
+from db.migrations import run_migrations
+from executor.brokers.feeds.base import Tick
+from executor.brokers.feeds.manual_feed import ManualFeed
+from orchestrator.execution import FeedLtp, build_session
+from orchestrator.tasks_executor import _pre_market_executor_setup
+from orchestrator.tasks_session import _session_tick
 
 IST = ZoneInfo("Asia/Kolkata")
 MIGRATIONS = Path(__file__).parents[2] / "migrations"
@@ -101,7 +101,7 @@ def test_session_tick_task_calls_tick():
 
 
 def test_setup_task_creates_todays_session(monkeypatch):
-    monkeypatch.setattr("src.executor.auto_login.refresh_all_broker_tokens", lambda: {})
+    monkeypatch.setattr("executor.auto_login.refresh_all_broker_tokens", lambda: {})
     session = MagicMock()
     _pre_market_executor_setup(run_date="2026-11-19", run_id=1, db_path=":memory:", session=session)
     session.ensure.assert_called_once_with(datetime.date(2026, 11, 19))
@@ -111,7 +111,7 @@ class TestEmergencyWatcher:
     """Orchestrator.check_emergency: the 5 s poll that runs the session at once (#67)."""
 
     def _orc(self, tmp_path, session):
-        from src.orchestrator.orchestrator import Orchestrator
+        from orchestrator.orchestrator import Orchestrator
 
         return Orchestrator(_db(tmp_path), str(tmp_path), str(tmp_path), session=session)
 
@@ -119,7 +119,7 @@ class TestEmergencyWatcher:
         return datetime.datetime(2026, 11, day, hh, mm, tzinfo=IST)
 
     def test_runs_session_on_emergency_stop(self, tmp_path):
-        from src.orchestrator.models import BotMode
+        from orchestrator.models import BotMode
 
         session = MagicMock()
         orc = self._orc(tmp_path, session)
@@ -129,7 +129,7 @@ class TestEmergencyWatcher:
         session.tick.assert_called_once()
 
     def test_only_in_market_window_on_trading_days(self, tmp_path):
-        from src.orchestrator.models import BotMode
+        from orchestrator.models import BotMode
 
         session = MagicMock()
         orc = self._orc(tmp_path, session)
@@ -140,7 +140,7 @@ class TestEmergencyWatcher:
         session.tick.assert_not_called()
 
     def test_failure_is_swallowed(self, tmp_path):
-        from src.orchestrator.models import BotMode
+        from orchestrator.models import BotMode
 
         session = MagicMock()
         session.tick.side_effect = RuntimeError("broker down")
@@ -151,7 +151,7 @@ class TestEmergencyWatcher:
 
 class TestDecisionCycleWiring:
     def test_built_for_a_paper_session(self, tmp_path):
-        from src.orchestrator.execution import build_decision_cycle
+        from orchestrator.execution import build_decision_cycle
 
         db = _db(tmp_path)
         feed = ManualFeed()
@@ -161,7 +161,7 @@ class TestDecisionCycleWiring:
         assert cycle._session is s
 
     def test_none_without_execution(self, tmp_path):
-        from src.orchestrator.execution import build_decision_cycle
+        from orchestrator.execution import build_decision_cycle
 
         db = _db(tmp_path)
         s = build_session(db, "paper", ManualFeed(), brokers=[])
@@ -169,7 +169,7 @@ class TestDecisionCycleWiring:
         assert build_decision_cycle(db, None, ManualFeed(), None) is None
 
     def test_task_runs_the_cycle(self):
-        from src.orchestrator.tasks_executor import _intraday_cycle
+        from orchestrator.tasks_executor import _intraday_cycle
 
         cycle = MagicMock()
         cycle.run.return_value = MagicMock(skipped=None, opened=["b1"], rejected={})
@@ -178,7 +178,7 @@ class TestDecisionCycleWiring:
         _intraday_cycle(run_date="2026-11-19", run_id=1, cycle=None)  # no-op
 
     def test_registry_passes_the_cycle(self):
-        from src.orchestrator.tasks import build_task_registry
+        from orchestrator.tasks import build_task_registry
 
         cycle = MagicMock()
         cycle.run.return_value = MagicMock(skipped="x", opened=[], rejected={})
@@ -191,18 +191,18 @@ class TestBootstrap:
     """#74: a fresh database must be able to trade."""
 
     def test_risk_config_seeded_once(self, tmp_path):
-        from src.orchestrator.bootstrap import seed_risk_config
+        from orchestrator.bootstrap import seed_risk_config
 
         db = _db(tmp_path)
         day = datetime.date(2026, 11, 19)
         assert seed_risk_config(db, day) is True
         assert seed_risk_config(db, day) is False  # never overwritten
-        from src.capital.risk_config import RiskConfigStore
+        from capital.risk_config import RiskConfigStore
 
         assert RiskConfigStore(db).load_current().intraday_consecutive_loss_count == 3
 
     def test_capital_from_broker_cash(self, tmp_path):
-        from src.orchestrator.bootstrap import bootstrap_capital
+        from orchestrator.bootstrap import bootstrap_capital
 
         db = _db(tmp_path, capital=False)
         kite = MagicMock(broker_id="kite")
@@ -216,7 +216,7 @@ class TestBootstrap:
         assert alerts == ["Capital ledger initialised"]
 
     def test_existing_ledger_untouched(self, tmp_path):
-        from src.orchestrator.bootstrap import bootstrap_capital
+        from orchestrator.bootstrap import bootstrap_capital
 
         db = _db(tmp_path)  # ₹10 L ledger
         kite = MagicMock(broker_id="kite")
@@ -224,7 +224,7 @@ class TestBootstrap:
         kite.get_funds.assert_not_called()
 
     def test_no_cash_fails_closed(self, tmp_path):
-        from src.orchestrator.bootstrap import bootstrap_capital
+        from orchestrator.bootstrap import bootstrap_capital
 
         db = _db(tmp_path, capital=False)
         kite = MagicMock(broker_id="kite")

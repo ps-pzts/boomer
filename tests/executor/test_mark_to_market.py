@@ -12,10 +12,10 @@ import sqlite3
 
 import pytest
 
+from alerts import commands
 from db.migrations import run_migrations
 from executor.position_manager import PositionManager
 from executor.trade_lifecycle import TradeSupervisor
-from src.alerts import commands
 from tests.executor.test_trade_lifecycle import _MIGRATIONS, Harness, _filled_and_protected
 
 

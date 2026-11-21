@@ -8,14 +8,14 @@ import pytest
 
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
-from src.orchestrator.models import RetryPolicy, TaskRunStore, TaskStatus
-from src.orchestrator.task_runner import execute_with_retry
+from orchestrator.models import RetryPolicy, TaskRunStore, TaskStatus
+from orchestrator.task_runner import execute_with_retry
 
 
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     run_migrations(str(path), MIGRATIONS_DIR)
     return path
@@ -109,7 +109,7 @@ class TestExecuteWithRetry:
             calls.append(1)
             raise RuntimeError("always fails")
 
-        with patch("src.orchestrator.task_runner.time.sleep"):
+        with patch("orchestrator.task_runner.time.sleep"):
             result = execute_with_retry(
                 "task_fail",
                 "2026-05-10",
@@ -130,7 +130,7 @@ class TestExecuteWithRetry:
             if len(attempts) == 1:
                 raise RuntimeError("first attempt fails")
 
-        with patch("src.orchestrator.task_runner.time.sleep"):
+        with patch("orchestrator.task_runner.time.sleep"):
             result = execute_with_retry(
                 "task_retry",
                 "2026-05-10",
@@ -148,7 +148,7 @@ class TestExecuteWithRetry:
         def fn(run_date: str, run_id: int) -> None:
             raise RuntimeError("done")
 
-        with patch("src.orchestrator.task_runner.time.sleep"):
+        with patch("orchestrator.task_runner.time.sleep"):
             execute_with_retry(
                 "task_ff",
                 "2026-05-10",

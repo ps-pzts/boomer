@@ -94,7 +94,7 @@ jobs:
       - name: Run migrations on test DB
         run: |
           PYTHONPATH=src python - <<'EOF'
-          from src.db.migrations import run_migrations
+          from db.migrations import run_migrations
           run_migrations("/tmp/boomer_test.db")
           print("Migrations OK")
           EOF

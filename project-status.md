@@ -83,6 +83,12 @@
 - **Root cause:** `PositionManager.update_ltp()` had no caller.
 - **Fix:** `TradeSupervisor.reconcile()` now marks each active symbol to market via its `price` callable (symbols with no tick untouched; closed positions never overwritten). Worked example: qty 10, entry 100, price 101.5 -> +15. Tests: `tests/executor/test_mark_to_market.py`.
 
+### 2026-11-21 — Bug: modules imported under two paths, `src.X` and `X` (#94)
+
+- **Symptom:** `isinstance` across the orchestrator and executor silently failed; module-level state existed twice (worked around by class name in `kite_checks.kite_broker()` and an `sys.modules` alias in `observability/emit.py`).
+- **Root cause:** ~16 files imported `src.executor...`, ~49 imported `executor...`; both resolve (editable install + repo-root cwd) but give two module objects.
+- **Fix:** one style, bare names, everywhere (src, tests, scripts, patch targets, systemd units, `dev.sh`, Dockerfile, CI/CD). `banner.py` is now a declared `py-module` imported absolutely (its `..banner` relative import only worked under `src.`). Class-name workaround and alias hack removed; `kite_broker()` uses `isinstance`. `tests/test_import_paths.py` fails on any `src.` import/string path, any package-escaping relative import, and smoke-imports every module in a fresh interpreter. Follow-up: #109 (`executor.main`, named by the executor systemd unit, does not exist).
+
 ### 2026-11-21 — Bug: order spec had transitions no code path emits; refusals recorded as ERROR (#100)
 
 - **Symptom:** the #88 transition-coverage gate found spec transitions nothing can emit (`* -> error` from finished states, `pending -> expired`, `created -> error`), and a definite Kite refusal (`InputException`/`OrderException`, e.g. RMS) was recorded ERROR, indistinguishable from an outage.

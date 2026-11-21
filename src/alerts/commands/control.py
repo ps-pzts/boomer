@@ -3,8 +3,8 @@ through BotModeStore, so it is logged in bot_mode_log with `telegram` as the act
 
 from __future__ import annotations
 
-from src.alerts.commands.common import conn, session_row, today
-from src.orchestrator.models import BotMode, BotModeStore
+from alerts.commands.common import conn, session_row, today
+from orchestrator.models import BotMode, BotModeStore
 
 
 def _set(db_path: str, mode: BotMode, reason: str) -> None:

@@ -39,7 +39,7 @@ def _session_tick(run_date: str, run_id: int, session: object | None = None, **_
 
 def canary_config() -> object:
     """The canary's instrument and recording directory, from the environment."""
-    from src.executor.kite_checks import CanaryConfig
+    from executor.kite_checks import CanaryConfig
 
     return CanaryConfig(
         symbol=os.environ.get("BOOMER_CANARY_SYMBOL", "INFY"),
@@ -49,7 +49,7 @@ def canary_config() -> object:
 
 def _default_alerter() -> object | None:
     try:
-        from src.alerts.alerter import get_alerter
+        from alerts.alerter import get_alerter
 
         return get_alerter()
     except Exception as exc:
@@ -68,7 +68,7 @@ def _kite_preflight(
 ) -> None:
     """08:55 IST: read-only Kite pre-flight. The result (pass or fail) is recorded;
     the task itself only fails if recording does."""
-    from src.executor import kite_checks
+    from executor import kite_checks
 
     kite_checks.run_and_record(
         db_path,
@@ -93,7 +93,7 @@ def _kite_canary(
     **_: object,
 ) -> None:
     """09:15 IST: the order canary on the real KiteBroker, never the paper broker."""
-    from src.executor import kite_checks
+    from executor import kite_checks
 
     clock = clock or (lambda: datetime.now(IST))
     now = clock()

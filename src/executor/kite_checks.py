@@ -79,14 +79,14 @@ def gate(conn: sqlite3.Connection, day: date) -> str | None:
 
 def kite_broker(brokers: list) -> object | None:
     """The real KiteBroker; never the paper broker (the canary runs on paper days too).
-    Matched by class name, not isinstance: the orchestrator imports `src.executor...`
-    and this module `executor...`, two distinct class objects for the same broker.
     #86: paper is a KiteBroker too (on KiteSim), so the broker's own id must be kite."""
+    from executor.brokers.kite_broker import KiteBroker  # lazy: keeps the SDK off import
+
     return next(
         (
             b
             for b in brokers
-            if type(b).__name__ == "KiteBroker" and str(getattr(b, "broker_id", "")) == "kite"
+            if isinstance(b, KiteBroker) and str(getattr(b, "broker_id", "")) == "kite"
         ),
         None,
     )

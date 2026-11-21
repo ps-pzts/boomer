@@ -24,7 +24,6 @@ import json
 import logging
 import queue
 import sqlite3
-import sys
 import threading
 import uuid
 from collections import defaultdict
@@ -244,15 +243,6 @@ class Emitter:
                 **extra,
             )
 
-
-# ── One module object under both import roots ─────────────────────────────────
-# The codebase imports this package both as `observability` (editable install,
-# used by src/statemachine and src/executor) and as `src.observability` (used by
-# src/orchestrator). Without this, one process would hold two emitters and events
-# from half the code would go to the unconfigured one. Register this module under
-# both names so whichever is imported first is the only one.
-for _alias in ("observability.emit", "src.observability.emit"):
-    sys.modules.setdefault(_alias, sys.modules[__name__])
 
 # ── Process-wide emitter ──────────────────────────────────────────────────────
 # Until configure() is called (tests, scripts), async emit() is a counted no-op,

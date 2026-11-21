@@ -7,7 +7,7 @@ import pytest
 
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
-from src.dashboard.queries import (
+from dashboard.queries import (
     get_capital_view,
     get_recent_task_runs,
     get_today_snapshot,
@@ -17,7 +17,7 @@ from src.dashboard.queries import (
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     run_migrations(str(path), MIGRATIONS_DIR)
     return path

@@ -48,7 +48,7 @@ BASIC_AUTH_PASSWORD=<strong-password>
 
 ### 4. Run migrations
 ```bash
-sudo -u boomer .venv/bin/python -c "from src.db.migrations import run_migrations; run_migrations('/var/lib/boomer/boomer.db')"
+sudo -u boomer .venv/bin/python -c "from db.migrations import run_migrations; run_migrations('/var/lib/boomer/boomer.db')"
 ```
 
 ### 5. Install systemd services
@@ -133,7 +133,7 @@ sqlite3 /var/lib/boomer/boomer.db "PRAGMA integrity_check;"
 Checklist before resuming:
 - [ ] Understand why emergency_stop was triggered
 - [ ] Verify all open positions are visible in broker app with active stops
-- [ ] Run EOD reconciliation manually: `python -m src.executor.reconciliation --eod`
+- [ ] Run EOD reconciliation manually: `python -m executor.reconciliation --eod`
 - [ ] Verify no reconciliation alerts are unresolved
 - [ ] Check that the cause of emergency has been resolved (bug fixed, investigation complete)
 - [ ] Set bot_mode to `paused` first, monitor for one hour, then `auto`

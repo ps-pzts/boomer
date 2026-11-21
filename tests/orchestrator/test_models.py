@@ -7,7 +7,7 @@ import pytest
 
 MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
-from src.orchestrator.models import (
+from orchestrator.models import (
     BotMode,
     BotModeStore,
     RetryPolicy,
@@ -22,7 +22,7 @@ from src.orchestrator.models import (
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     path = tmp_path / "test.db"
-    from src.db.migrations import run_migrations
+    from db.migrations import run_migrations
 
     run_migrations(str(path), MIGRATIONS_DIR)
     return path

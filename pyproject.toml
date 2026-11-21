@@ -42,3 +42,7 @@ markers = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools]
+# banner.py is a top-level module (not a package); ship it with a non-editable install too.
+py-modules = ["banner"]

@@ -91,7 +91,7 @@ mkdir -p .pids data/logs "$BOOMER_ARCHIVE_DIR" "$BOOMER_BACKUP_DIR" "$BOOMER_MIN
 BOOMER_DB_PATH="$BOOMER_DB_PATH" \
 BOOMER_ARCHIVE_DIR="$BOOMER_ARCHIVE_DIR" \
 BOOMER_BACKUP_DIR="$BOOMER_BACKUP_DIR" \
-nohup python -m src.orchestrator.orchestrator >> "$LOG_ORC" 2>&1 &
+nohup python -m orchestrator.orchestrator >> "$LOG_ORC" 2>&1 &
 echo $! > "$PIDFILE_ORC"
 echo "Orchestrator started (pid $!, log: $LOG_ORC)"
 
@@ -100,7 +100,7 @@ echo "Orchestrator started (pid $!, log: $LOG_ORC)"
 BOOMER_DB_PATH="$BOOMER_DB_PATH" \
 BASIC_AUTH_USER="$BASIC_AUTH_USER" \
 BASIC_AUTH_PASSWORD="$BASIC_AUTH_PASSWORD" \
-nohup uvicorn src.dashboard.app:app --host 0.0.0.0 --port "$DASHBOARD_PORT" >> "$LOG_DASH" 2>&1 &
+nohup uvicorn dashboard.app:app --host 0.0.0.0 --port "$DASHBOARD_PORT" >> "$LOG_DASH" 2>&1 &
 echo $! > "$PIDFILE_DASH"
 echo "Dashboard started  (pid $!, log: $LOG_DASH)"
 
@@ -110,13 +110,13 @@ if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
     BOOMER_DB_PATH="$BOOMER_DB_PATH" \
     TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
     TELEGRAM_CHAT_ID="$TELEGRAM_CHAT_ID" \
-    nohup python -m src.alerts.telegram_bot >> "$LOG_BOT" 2>&1 &
+    nohup python -m alerts.telegram_bot >> "$LOG_BOT" 2>&1 &
     echo $! > "$PIDFILE_BOT"
     echo "Telegram bot  started (pid $!, log: $LOG_BOT)"
     BOOMER_DB_PATH="$BOOMER_DB_PATH" \
     TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
     TELEGRAM_CHAT_ID="$TELEGRAM_CHAT_ID" \
-    nohup python -m src.observability.telegram_feed >> "$LOG_FEED" 2>&1 &
+    nohup python -m observability.telegram_feed >> "$LOG_FEED" 2>&1 &
     echo $! > "$PIDFILE_FEED"
     echo "Telegram feed started (pid $!, log: $LOG_FEED)"
 else

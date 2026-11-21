@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def seed_risk_config(db_path: str, today: date) -> bool:
     """Insert the default risk config if the table is empty. True if seeded."""
-    from src.capital.risk_config import RiskConfigStore
+    from capital.risk_config import RiskConfigStore
 
     with sqlite3.connect(db_path, timeout=10) as conn:
         if conn.execute("SELECT COUNT(*) FROM risk_config").fetchone()[0]:
@@ -38,7 +38,7 @@ def seed_risk_config(db_path: str, today: date) -> bool:
 def bootstrap_capital(db_path: str, brokers: list, today: date, alert=None) -> bool:
     """Create the first capital ledger row from broker cash if none exists.
     True if a ledger exists afterwards. Never overwrites an existing ledger."""
-    from src.capital.state import CapitalStateManager
+    from capital.state import CapitalStateManager
 
     mgr = CapitalStateManager(db_path)
     if mgr.latest_ledger() is not None:

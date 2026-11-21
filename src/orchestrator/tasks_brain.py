@@ -16,7 +16,7 @@ def _compute_market_regime(db_path: str, run_date: str) -> str:
     """
     import sqlite3
 
-    from src.brain.regime import RegimeDetector
+    from brain.regime import RegimeDetector
 
     conn = sqlite3.connect(db_path, timeout=5)
     try:
@@ -74,10 +74,10 @@ def _morning_batch_features(run_date: str, run_id: int, db_path: str, **_: objec
     """
     import datetime as _dt
 
-    from src.brain.feature_store import FeatureStore
-    from src.brain.features.runner import run_track_computers
-    from src.brain.features.track_intraday import INTRADAY_COMPUTERS
-    from src.brain.universe import intraday_universe
+    from brain.feature_store import FeatureStore
+    from brain.features.runner import run_track_computers
+    from brain.features.track_intraday import INTRADAY_COMPUTERS
+    from brain.universe import intraday_universe
 
     as_of_date = _dt.date.fromisoformat(run_date)
     fs = FeatureStore(db_path)
@@ -104,10 +104,10 @@ def _intraday_watchlist(
     """
     import datetime as _dt
 
-    from src.brain.feature_store import FeatureStore
-    from src.brain.universe import intraday_universe
-    from src.brain.watchlist import WatchlistStore, select_watchlist
-    from src.capital.risk_config import RiskConfigStore
+    from brain.feature_store import FeatureStore
+    from brain.universe import intraday_universe
+    from brain.watchlist import WatchlistStore, select_watchlist
+    from capital.risk_config import RiskConfigStore
 
     session_date = _dt.date.fromisoformat(run_date)
     now_ist = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=5, minutes=30)))
@@ -159,7 +159,7 @@ def _intraday_watchlist(
 
 def _alert_critical_brain(title: str, body: str) -> None:
     try:
-        from src.alerts.alerter import get_alerter
+        from alerts.alerter import get_alerter
 
         get_alerter().critical(title, body, source_task_id="intraday_watchlist")
     except Exception as exc:

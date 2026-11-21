@@ -10,7 +10,7 @@ WorkingDirectory=/opt/boomer
 EnvironmentFile=/etc/boomer/secrets.env
 # Executor process manages the Kite WebSocket tick feed in-process (Q5-1 resolution).
 # No separate boomer-websocket.service — the executor owns its own connection.
-ExecStart=/opt/boomer/.venv/bin/python -m src.executor.main
+ExecStart=/opt/boomer/.venv/bin/python -m executor.main
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/boomer/executor.log

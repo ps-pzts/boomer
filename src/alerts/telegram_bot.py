@@ -19,7 +19,7 @@ import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from src.alerts import commands
+from alerts import commands
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _send(token: str, chat_id: str | int, text: str, reply_markup: dict | None =
 
 def handle_mode(db_path: str, text: str) -> str:
     """/mode [paper|live [confirm]] (#76). Applies from the next session."""
-    from src.executor.trading_mode import (
+    from executor.trading_mode import (
         ENV_VAR,
         LiveTradingAuthorisationStore,
         paper_record,
@@ -103,7 +103,7 @@ def handle_toggle(db_path: str, text: str) -> str:
 
     paper -> live needs `/toggle confirm` (real money); live -> paper is immediate. Same
     audited path as /mode, so it applies from the next session, never mid-day."""
-    from src.executor.trading_mode import (
+    from executor.trading_mode import (
         ENV_VAR,
         LiveTradingAuthorisationStore,
         resolve_trading_mode,
@@ -124,7 +124,7 @@ def handle_canary(db_path: str) -> str:
     """/canary (#85): re-run today's Kite pre-flight and (09:15-15:20) order canary
     on the real Kite account. Safe at any time; both passing lets a session halted
     by a failed check resume (through a broker reconcile)."""
-    from src.executor import kite_checks
+    from executor import kite_checks
 
     try:
         broker = kite_checks.kite_broker_from_env()

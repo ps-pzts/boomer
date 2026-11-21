@@ -6,16 +6,16 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from src.collector.live_bars import SessionBarRecorder
-from src.executor.brokers.feeds.kite_feed import KiteFeed
-from src.executor.brokers.feeds.manual_feed import ManualFeed
-from src.executor.brokers.kite_broker import KiteBroker
-from src.orchestrator.orchestrator import _build_bar_recorder, _build_feed, _log_trading_mode
+from collector.live_bars import SessionBarRecorder
+from executor.brokers.feeds.kite_feed import KiteFeed
+from executor.brokers.feeds.manual_feed import ManualFeed
+from executor.brokers.kite_broker import KiteBroker
+from orchestrator.orchestrator import _build_bar_recorder, _build_feed, _log_trading_mode
 
 
 def _paper() -> KiteBroker:
     """A paper-labelled KiteBroker (#86): never the one the feed is built from."""
-    from src.executor.models import BrokerName
+    from executor.models import BrokerName
 
     return KiteBroker(kite=object(), broker_name=BrokerName.PAPER)
 
@@ -49,7 +49,7 @@ def test_bar_recorder_receives_every_feed_tick(tmp_path, monkeypatch):
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    from src.executor.brokers.feeds.base import Tick
+    from executor.brokers.feeds.base import Tick
 
     monkeypatch.setenv("BOOMER_MINUTE_BARS_DIR", str(tmp_path))
     feed = ManualFeed()
@@ -70,7 +70,7 @@ def test_event_stream_started_with_mode_and_feed_health(tmp_path, monkeypatch):
     import time
 
     from observability import emit as obs
-    from src.orchestrator.orchestrator import _start_event_stream
+    from orchestrator.orchestrator import _start_event_stream
 
     monkeypatch.setattr(obs, "_current", obs._current)  # restore global after the test
     monkeypatch.setattr(obs, "HEARTBEAT_SECONDS", 0.05)

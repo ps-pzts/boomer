@@ -18,7 +18,7 @@ ALLOWED_DIR = SRC / "observability"
 _READ_SQL = re.compile(r"\b(from|join)\s+events\b", re.IGNORECASE)
 # Anything in observability other than the emitter is reader-side.
 _READER_IMPORT = re.compile(
-    r"^\s*(from|import)\s+(src\.)?observability(\.(?!emit\b)\w+|\s+import\s+(?!emit\b)\w+)",
+    r"^\s*(from|import)\s+observability(\.(?!emit\b)\w+|\s+import\s+(?!emit\b)\w+)",
     re.MULTILINE,
 )
 
@@ -52,6 +52,6 @@ def test_patterns_catch_what_they_should():
     assert not _READ_SQL.search("INSERT INTO events (ts) VALUES (?)")
     assert not _READ_SQL.search("SELECT * FROM events_archive")
     assert _READER_IMPORT.search("from observability.projection import Live")
-    assert _READER_IMPORT.search("from src.observability import projection")
+    assert _READER_IMPORT.search("from observability import projection")
     assert not _READER_IMPORT.search("from observability import emit as obs")
     assert not _READER_IMPORT.search("from observability.emit import emit")
