@@ -15,6 +15,7 @@ import pytest
 
 from db.migrations import run_migrations
 from executor.brokers.kite_broker import KiteBroker, map_kite_status
+from executor.brokers.kite_contract import IN_FLIGHT_ORDER_STATUSES
 from executor.models import (
     BrokerName,
     OrderRequest,
@@ -67,6 +68,23 @@ class TestMap:
     )
     def test_in_flight_and_unknown_are_no_change_never_error(self, status):
         assert map_kite_status(status, "SL-M", 0, 10) is None
+
+    def test_one_share_filled_is_already_partial(self):
+        assert map_kite_status("OPEN", "LIMIT", 1, 10) == S.PARTIAL
+        assert map_kite_status("OPEN", "LIMIT", 10, 10) == S.PENDING  # all filled: not partial
+
+    @pytest.mark.parametrize("status", sorted(IN_FLIGHT_ORDER_STATUSES))
+    def test_in_flight_is_silent(self, status, caplog):
+        with caplog.at_level("WARNING"):
+            map_kite_status(status, "SL-M", 0, 10)
+        assert caplog.records == []
+
+    def test_unknown_status_is_logged_once(self, caplog):
+        with caplog.at_level("WARNING"):
+            assert map_kite_status("SOMETHING NEW", "SL-M", 0, 10) is None
+        assert [r.getMessage() for r in caplog.records] == [
+            "kite_unknown_order_status status='SOMETHING NEW' (treated as unchanged)"
+        ]
 
 
 _PLACED = kf.sdk("place_order")  # the id Kite gives the order we place
